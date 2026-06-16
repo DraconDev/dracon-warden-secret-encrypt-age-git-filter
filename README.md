@@ -1,6 +1,6 @@
 # Dracon Warden
 
-Age, git-filter, secret, encrypt — repository hardening and smudge/clean encryption for Dracon workspaces.
+Secret, encrypt, age, git-filter — repository hardening and smudge/clean encryption for Dracon workspaces.
 
 This repository is a feature façade for `dracon-warden`. It does **not**
 duplicate the implementation code. The canonical source of truth remains the
@@ -55,7 +55,7 @@ regenerate this façade with:
 cd /path/to/dracon-utilities
 ./scripts/scaffold_feature_repos.py --apply --repo dracon-warden
 ./scripts/scaffold_feature_repos.py --push-all-remotes --repo dracon-warden \
-    --ssh-target /path/to/dracon-warden-age-git-filter-secret-encrypt
+    --ssh-target /path/to/dracon-warden-secret-encrypt-age-git-filter
 ```
 
 Do not paste implementation code into this façade repo. Keep it as a stable
