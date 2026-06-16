@@ -1,0 +1,46 @@
+# Dracon Warden Policy
+# Path: ~/.dracon/utilities/warden/dracon-warden.toml
+#
+# Controls secret encryption and repo discovery roots.
+#
+# Quick start:
+#   1. Install: ./install.sh (installs binary + hooks automatically)
+#   2. Or manually: dracon-warden setup-hooks --global
+#   3. Harden a repo: dracon-warden once <repo>
+#
+# The setup-hooks command installs git hooks (pre-commit + pre-push) globally
+# that enforce encryption. The pre-commit hook blocks commits if the filter
+# is not configured. The pre-push hook scans for plaintext secrets.
+
+# Directories to scan for git repos when running `once`, `repair`, or
+# `setup-hooks`. These are NOT filesystem watchers (warden has no daemon
+# mode); they are the search roots for the recursive git-repo discovery.
+# Paths that do not exist on disk are silently filtered out.
+repo_roots = ["~/.dracon", "~/Dev"]
+
+# Directories to scan during discovery (once/repair commands) in addition
+# to repo_roots. Use this only if you want a DIFFERENT set of paths for
+# discovery (e.g. wider search) than the canonical repo_roots list.
+# If omitted, repo_roots are used for discovery as well.
+# discover_roots = ["~/extra-search-root"]
+
+# --- Deprecated ---
+# The `watch_roots` key is still accepted for backwards compatibility but
+# logs a deprecation warning to stderr and a yellow ⚠ row in
+# `dracon-warden status`. Rename to `repo_roots` to silence it. This alias
+# will be removed in a future release.
+
+# Glob patterns for files that MUST be encrypted (age filter + gitattributes)
+# These files are tracked in git but stored as encrypted blobs.
+# Example: ["*.key", "*.pem", "*.env", ".ssh/*", "secrets/*"]
+protected_patterns = []
+
+# Glob patterns for files that must remain plaintext (excluded from encryption)
+# Use for files that need to be readable without decryption keys.
+# Example: ["*.md", "*.txt", "LICENSE*"]
+plaintext_patterns = []
+
+# Glob patterns for hygiene checks (files that should NOT exist in repo)
+# Warden will warn if these patterns are found in the working tree.
+# Example: ["*.secret", "*.private", "*.bak"]
+hygiene_patterns = []

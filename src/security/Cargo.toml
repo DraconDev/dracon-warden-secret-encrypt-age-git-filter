@@ -1,0 +1,37 @@
+[package]
+name = "dracon-security"
+version = "0.3.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Secret scanning and age-based encryption primitives used by Dracon tooling"
+repository = "https://github.com/DraconDev/dracon-utilities"
+homepage = "https://github.com/DraconDev/dracon-utilities"
+documentation = "https://docs.rs/dracon-security/0.3.0"
+
+[dependencies]
+log = "0.4"
+walkdir = "2.5"
+age = "0.10"
+aes-gcm = "0.10"
+anyhow = "1.0"
+rand = "0.8"
+regex = "1.10"
+secrecy = { version = "0.8", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+zeroize = { version = "1.7", features = ["derive"] }
+dirs = "6.0"
+once_cell = "1.19"
+aes = "0.8"
+cfb-mode = "0.8"
+sha2 = "0.10"
+bech32 = "0.11.1"
+uuid = { version = "1.0", features = ["v4"] }
+serde_json = "1.0"
+base64 = "0.22.1"
+rayon = "1.10"
+
+
+[dev-dependencies]
+age = "0.10"
+proptest = "1.9.0"
+tempfile = "3.8"
