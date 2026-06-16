@@ -1,8 +1,8 @@
 # Dracon Warden
 
-Git filter encryption and repository hardening for Dracon workspaces.
+Age, git-filter, secret, encrypt — repository hardening and smudge/clean encryption for Dracon workspaces.
 
-This repository is a GitHub feature façade for dracon-warden. It does **not**
+This repository is a feature façade for `dracon-warden`. It does **not**
 duplicate the implementation code. The canonical source of truth remains the
 [`DraconDev/dracon-utilities`](https://github.com/DraconDev/dracon-utilities)
 monorepo, with this utility's code and docs under:
@@ -12,14 +12,22 @@ monorepo, with this utility's code and docs under:
 - Design notes: [`dracon-warden/BLUEPRINT.md`](https://github.com/DraconDev/dracon-utilities/tree/main/dracon-warden/BLUEPRINT.md)
 - Example config: [`dracon-warden/dracon-warden.example.toml`](https://github.com/DraconDev/dracon-utilities/tree/main/dracon-warden/dracon-warden.example.toml)
 
+## Why this name?
+
+The descriptive name is a deliberate choice for Codeberg/Forgejo, where
+descriptive repo names get upvotes and free attention because readers
+immediately know what the project does. The full word list (no fillers, no
+audience/UX claims) is documented in
+[`docs/design/github-feature-repos.md`](https://github.com/DraconDev/dracon-utilities/blob/main/docs/design/github-feature-repos.md).
+
 ## Purpose
 
-Encrypts secret-shaped content at rest in git while preserving normal plaintext files in the working tree.
+Encrypts secret-shaped content at rest in git while preserving normal plaintext files in the working tree. Uses age encryption and git smudge/clean filters plus a pre-commit hook for plaintext-secret prevention.
 
-Use this repo to feature the utility on GitHub without splitting the actual
-implementation out of the monorepo. Issues, project boards, and roadmap notes can
-live here, while commits, releases, tests, and packaging stay anchored in
-`dracon-utilities`.
+Use this repo to feature the utility on GitHub, GitLab, and Codeberg without
+splitting the actual implementation out of the monorepo. Issues, project
+boards, and roadmap notes can live here, while commits, releases, tests, and
+packaging stay anchored in `dracon-utilities`.
 
 ## Runtime
 
@@ -34,7 +42,7 @@ live here, while commits, releases, tests, and packaging stay anchored in
 |----------|----------|
 | Source code | Lives in `dracon-utilities/dracon-warden` |
 | Release artifacts | Built and published from `dracon-utilities` |
-| GitHub feature surface | This façade repo |
+| Feature surface | This façade repo (and short-name alias) |
 | Operational policy | `~/.dracon/utilities/` TOML files |
 | Shared libraries | Sibling `dracon-libs` workspace where applicable |
 
@@ -46,6 +54,8 @@ regenerate this façade with:
 ```bash
 cd /path/to/dracon-utilities
 ./scripts/scaffold_feature_repos.py --apply --repo dracon-warden
+./scripts/scaffold_feature_repos.py --push-all-remotes --repo dracon-warden \
+    --ssh-target /path/to/dracon-warden-age-git-filter-secret-encrypt
 ```
 
 Do not paste implementation code into this façade repo. Keep it as a stable
