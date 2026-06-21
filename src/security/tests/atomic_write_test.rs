@@ -46,7 +46,7 @@ fn test_backup_file_recursion_guard_rejects_arcane_backups() {
 }
 
 #[test]
-fn test_restore_file_error_when_backups_missing() {
+fn test_restore_rejects_nonexistent_path() {
     let (security, _guard) = init_with_temp_home();
     let temp_home = std::env::var("HOME").map(PathBuf::from).unwrap();
     let file_path = temp_home.join("nonexistent_file.txt");

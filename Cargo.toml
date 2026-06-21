@@ -1,13 +1,16 @@
 [package]
 name = "dracon-warden"
-version = "0.3.2"
+version = "0.112.12"
 edition = "2021"
 license = "AGPL-3.0-only"
 description = "Git filter encryption and repository hardening for secrets at rest"
 readme = "README.md"
 repository = "https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter"
 homepage = "https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter"
-documentation = "https://docs.rs/dracon-warden/0.3.0"
+documentation = "https://docs.rs/dracon-warden"
+keywords = ["git", "secret", "encrypt", "age", "filter"]
+categories = ["command-line-utilities"]
+exclude = [".github/", "docs/", "*.md", "!README.md", "Cargo.lock", "target/"]
 
 [dependencies]
 age = "0.10"

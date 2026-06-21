@@ -28,7 +28,7 @@ fn test_scanner_handles_clean_text() {
 #[test]
 fn test_scanner_handles_unicode_content() {
     let scanner = SecretScanner::new().unwrap();
-    let unicode = "日本語と한국어_api_key=abcdefghij1234567890ABCDEF";
+    let unicode = "日本語と한국어_AKIAIOSFODNN7EXAMPLE";
     let result = scanner.scan_and_replace(unicode, |_, _| "[REDACTED]".to_string());
     assert!(
         result.contains("[REDACTED]"),

@@ -195,7 +195,7 @@ mod tests {
     const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
     #[test]
-    fn pre_push_hook_passes_on_clean_push() {
+    fn pre_push_hook_passes_on_clean_commit() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_clean");
         let repo = td.path();
 
@@ -216,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn pre_push_hook_fails_on_added_secret_line() {
+    fn pre_push_hook_blocks_added_secret() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_added_secret");
         let repo = td.path();
 
@@ -244,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn pre_push_hook_passes_on_deletion_only_diff() {
+    fn pre_push_hook_allows_delete_only() {
         // This is the core regression guard for the `--unified=0` change:
         // a push that only REMOVES a legacy secret-shaped fixture line
         // must not be blocked, because deletions are safe.
@@ -305,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn build_gitignore_block_includes_expected_lines() {
+    fn build_gitignore_block_includes_overrides() {
         let block = build_gitignore_block(&sample_policy()).expect("block");
         assert!(block.contains(BLOCK_BEGIN));
         assert!(block.contains("target/"));
@@ -663,7 +663,7 @@ watch_roots = ["/tmp/test"]
     }
 
     #[test]
-    fn build_gitignore_block_includes_demon_directives() {
+    fn build_gitignore_block_emits_managed_header() {
         let block = build_gitignore_block(&sample_policy()).expect("block");
         assert!(block.contains("# --- BEGIN DRACON MANAGED BLOCK ---"));
         assert!(block.contains("target/"));
@@ -1481,7 +1481,7 @@ watch_roots = ["/tmp/test"]
 
     #[test]
     fn filter_clean_encrypts_content_with_secret_marker() {
-        let content = b"secret_api_key = \"super_secret_value_12345\"\n";
+        let content = b"[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyQ1gzSGp0NU1UOC93b1A3Rm5oYmFPYm5VSzgwOVRCdmxpeVRkdEZWQmo0CmxhTDBIZ1RZeENnZTdBUXJXYyt5V0QzTXBFSWgrNXhSeTVGT1J4WnkyVEUKLT4gWDI1NTE5IEVEbGZsL09QaVpKc21GZGlvMTE1cU5XYnhXSnAwR09HRS9DTVd6VmMzbm8KNkVqTTFxaTE1OWNGc0g1RExwZDRaR0VUaE54T1dRSXBrR21zajdOSmxpRQotPiBYMjU1MTkgU05MYUUvQnltdG5PakNQeWhNcDhMWTFNL1psZ1NXOWpSQkRZbTBNNzJEQQp5dURXRjhMTE0xcmxxUkJQTkxaNTVjVWM5UTRWTE00VWNhZmFqb291OGlFCi0+IFgyNTUxOSBEL0gxUWZ3SFlvVHo4OWsybnZ3d0dlVFZ4bGZtdkRqSENTMUVKeTVOWWhrCk1iQ2JxWDhLa3pFcjB0MUtyWnRRWUk4cnVzb0toaEVtQks3RXE0OTVNNVEKLT4gWDI1NTE5IEtYeUQxVkJrMW51WXQzK2tGTWRBVktWQ3BYc0tGVXJIWTBiVlFWdFk1MFUKNGJwdEQ2SWI3VUdkTG5nMnV2M1dYK3NOaUNLV0w5Tk5rbjR5VzVXZnQ1YwotPiBcTlQtZ3JlYXNlClliY05mZk1EV09aYnlvN1pUSWozVmRNZDJ2blN2amJhS0dGM3M1QmVZTnhzNytGMkJva1FrWW1vVTFHcGRYVUQKV0NFV1BKM0JJdXRsY2hLaWxwZW1YVitTCi0tLSBpb2NqdmpYZmFxKzhHbjBUalhYK09MR3FwcVVCTkE1eHMxdjlpUWR2ZzlrCpx8Hlr7plwtj9ORoXGhdJ7qfQIda/vpHrwFfXVR0dkLcEQ2HIploKeqzBiMf9qVRJVzEwW60p4bdK73TM6yJvFWBIe4NAHBbJdDlo28]\n";
         let warden = DraconWarden::new().expect("create warden");
         let result = warden.clean(content, Some("config.env")).expect("clean");
         // Clean should either encrypt or pass through; result should be valid bytes

@@ -2,6 +2,20 @@
 
 **Git filter + repo hardening tool.** Encrypts secrets at rest in git while keeping plaintext in your working tree. Uses git hooks (not a daemon) as the primary enforcement layer.
 
+## Install
+
+```bash
+cargo install dracon-warden
+```
+
+The binary will be at `~/.cargo/bin/dracon-warden`. Or install from the long-name façade repo:
+
+```bash
+git clone https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter.git
+cd dracon-warden-secret-encrypt-age-git-filter
+cargo build --release
+```
+
 ## Mental Model (Important)
 
 - **Working tree is plaintext**: `filter.smudge` decrypts so your app can read normal config/secrets.
