@@ -2376,3 +2376,4 @@ fn install_hooks_for_repo(repo: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests;
+// end-to-end test: 2026-06-21T12:26:19Z — verify daemon still auto-pushes after .gitignore change
