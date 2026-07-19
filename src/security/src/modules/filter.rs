@@ -420,11 +420,12 @@ impl WardenSecurity {
             return Err(anyhow::anyhow!("Path does not exist: {:?}", root));
         }
 
-        if root.is_file() {
-            return self.decrypt_file(root, dry_run);
-        }
-
+        // FDRACONWARDEN-003 (2026-07-18): refuse to follow symlinks
+        // during the recursive walk. A symlink inside the repo
+        // pointing outside could cause dr-walk to read or overwrite
+        // a path the operator didn't authorise.
         let walker = walkdir::WalkDir::new(root)
+            .follow_links(false)
             .max_depth(if recursive { usize::MAX } else { 1 })
             .into_iter()
             .filter_entry(|e| {
@@ -514,6 +515,7 @@ impl WardenSecurity {
         }
 
         let walker = walkdir::WalkDir::new(root)
+            .follow_links(false) // FDRACONWARDEN-003 (2026-07-18): don't follow symlinks in migrate walk either.
             .max_depth(if recursive { usize::MAX } else { 1 })
             .into_iter()
             .filter_entry(|e| {

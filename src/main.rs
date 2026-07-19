@@ -2135,6 +2135,36 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
         std::io::stdout().write_all(&input)?;
         return Ok(());
     }
+
+    // FDRACONWARDEN-002 (2026-07-18): defensively verify the path git
+    // gave us stays inside the working repo. Git invokes the filter
+    // with CWD = repo root and `%f` = repo-relative path, but a
+    // malicious `.gitattributes` or a misconfigured submodule could
+    // pass a path that escapes the repo. We refuse absolute paths
+    // and any path containing a `..` component that would walk above
+    // CWD after canonicalisation.
+    if let Some(p) = path {
+        let p_buf = std::path::PathBuf::from(p);
+        if p_buf.is_absolute() {
+            eprintln!(
+                "dracon-warden: refusing filter path '{}' (absolute paths not allowed)",
+                p
+            );
+            std::io::stdout().write_all(&input)?;
+            return Ok(());
+        }
+        for comp in p_buf.components() {
+            if matches!(comp, std::path::Component::ParentDir) {
+                eprintln!(
+                    "dracon-warden: refusing filter path '{}' (contains '..')",
+                    p
+                );
+                std::io::stdout().write_all(&input)?;
+                return Ok(());
+            }
+        }
+    }
+
     let warden = DraconWarden::new()?;
     let output = if is_clean {
         warden.clean(&input, path)?

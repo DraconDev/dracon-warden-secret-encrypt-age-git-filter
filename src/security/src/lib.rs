@@ -30,6 +30,15 @@ static DEFAULT_SECURITY_CACHE: OnceCell<WardenSecurity> = OnceCell::new();
 
 static ALLOW_V1_FALLBACK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+// DEPRECATED 2026-07-18 (FDRACONWARDEN-001): V1 decryption uses
+// AES-256-CFB with a deterministic IV derived as SHA256(repo_key)[..16].
+// This is a textbook CFB nonce-misuse vulnerability: identical plaintexts
+// under the same key produce identical ciphertexts. We retain the
+// runtime gate ONLY for one migration cycle so operators can recover
+// V1-format ciphertexts. The escape hatch will be removed in v0.113.0.
+// To migrate: set `allow_v1_fallback = true` in the policy, decrypt once
+// to re-encrypt under V2 (AES-256-GCM with a random nonce), then unset
+// the gate.
 pub fn set_allow_v1_fallback(allow: bool) {
     ALLOW_V1_FALLBACK.store(allow, std::sync::atomic::Ordering::Relaxed);
 }
