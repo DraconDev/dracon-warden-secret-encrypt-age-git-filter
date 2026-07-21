@@ -29,7 +29,16 @@ toml = "0.8"
 walkdir = "2"
 dirs = "6.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time", "signal", "sync"] }
-dracon-security-kit = { package = "dracon-security", version = "0.3.0" }
+# CHANGED 2026-07-21 (v0.112.32, audit H9/F4.2): depend on the LOCAL
+# security crate source (path) instead of the published crates.io
+# v0.3.0. The binary previously built the published crate, so fixes
+# to the local `src/security/` source never reached the binary — the
+# H9 whole-file binary-smudge corruption fix lives in that source.
+# `path` works for both the monorepo workspace build and the
+# standalone dracon-warden repo (src/security is tracked inside it).
+# Keep `version` so a future crates.io publish can revert to the
+# registry form by dropping `path`.
+dracon-security-kit = { package = "dracon-security", version = "0.3.0", path = "src/security" }
 
 [dev-dependencies]
 tempfile = "3"
