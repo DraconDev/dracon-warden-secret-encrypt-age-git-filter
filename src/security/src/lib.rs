@@ -807,7 +807,11 @@ impl WardenSecurity {
             let p = prefix.as_bytes();
             if trimmed.starts_with(p) && trimmed.ends_with(b"]") {
                 let b64 = &trimmed[p.len()..trimmed.len() - 1];
-                let encrypted = match general_purpose::STANDARD.decode(b64.trim()) {
+                // Base64 payloads are ASCII by construction; the
+                // `unwrap_or("")` makes a malformed payload decode-fail
+                // below rather than panic.
+                let b64_str = std::str::from_utf8(b64).unwrap_or("");
+                let encrypted = match general_purpose::STANDARD.decode(b64_str.trim()) {
                     Ok(e) => e,
                     Err(e) => {
                         return Some(Err(anyhow::anyhow!(
