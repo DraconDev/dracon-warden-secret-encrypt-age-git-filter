@@ -2332,8 +2332,10 @@ const PRE_PUSH_HOOK: &str = r##"#!/bin/sh
 # `git diff --name-only -z` (via `tr '\0' '\n'` + `IFS= read -r`,
 # which preserves spaces; the residual newline-in-filename edge is
 # accepted as absurd) and pass the accepted files to the second diff
-# via `--pathspec-from-file --pathspec-file-nul` (no word-splitting,
-# no glob expansion of metacharacters).
+# as arguments via `xargs -0` (no word-splitting, no glob expansion
+# of metacharacters; `-r` = --no-run-if-empty on GNU xargs).
+# `--pathspec-from-file` was tried first but `git diff` does NOT
+# support it (usage error, exit 129 — verified against git 2.51.2).
 
 # Accumulator for the per-ref accepted file list (NUL-delimited).
 SCAN_FILES_NUL=$(mktemp)
@@ -2374,7 +2376,7 @@ while read local_ref local_sha remote_ref remote_sha; do
 
     # Scan only newly added diff lines. Deletions of old secret-shaped fixtures
     # are safe, while additions still trip the defense-in-depth guard.
-    DIFF=$(git diff --unified=0 "$RANGE" --pathspec-from-file="$SCAN_FILES_NUL" --pathspec-file-nul 2>/dev/null | grep -E '^\+[^+]' || true)
+    DIFF=$(xargs -0 -r git diff --unified=0 "$RANGE" -- < "$SCAN_FILES_NUL" 2>/dev/null | grep -E '^\+[^+]' || true)
     if echo "$DIFF" | grep -qE '(A{1}KIA[A-Z0-9]{16}|-----BEGIN [A-Z]+ PRIVATE KEY|password\s*=\s*["\x27][^"\x27]+|secret\s*=\s*["\x27][^"\x27]+|api_key\s*=\s*["\x27][^"\x27]+)'; then
         echo "⚠️  Possible plaintext secrets detected in push."
         echo "   The warden filter may have been bypassed."
