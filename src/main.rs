@@ -2378,9 +2378,9 @@ while read local_ref local_sha remote_ref remote_sha; do
     # are safe, while additions still trip the defense-in-depth guard.
     DIFF=$(xargs -0 -r git diff --unified=0 "$RANGE" -- < "$SCAN_FILES_NUL" 2>/dev/null | grep -E '^\+[^+]' || true)
     if echo "$DIFF" | grep -qE '(A{1}KIA[A-Z0-9]{16}|-----BEGIN [A-Z]+ PRIVATE KEY|password\s*=\s*["\x27][^"\x27]+|secret\s*=\s*["\x27][^"\x27]+|api_key\s*=\s*["\x27][^"\x27]+)'; then
-        echo "⚠️  Possible plaintext secrets detected in push."
-        echo "   The warden filter may have been bypassed."
-        echo "   Run: dracon-warden once $(git rev-parse --show-toplevel)"
+        echo "⚠️  Possible plaintext secrets detected in push." >&2
+        echo "   The warden filter may have been bypassed." >&2
+        echo "   Run: dracon-warden once $(git rev-parse --show-toplevel)" >&2
         exit 1
     fi
 
@@ -2391,11 +2391,11 @@ while read local_ref local_sha remote_ref remote_sha; do
     # after which the daemon committed with the poisoned identity and
     # the poisoned commit landed on all mirrors. Only the PUSHED
     # range is scanned, so historical commits are unaffected.
-    BAD_AUTHORS=$(git log --format='%ae%n%ce' "$RANGE" 2>/dev/null | sort -u | grep -Eix 'test@test(\.(com|local|net|org))?|test@example\.com' || true)
+    BAD_AUTHORS=$(git log --format='%ae%n%ce' "$RANGE" 2>/dev/null | sort -u | grep -Eix '^test@test$|^test@test\.com$|^test@example\.com$' || true)
     if [ -n "$BAD_AUTHORS" ]; then
-        echo "⚠️  Push contains commits authored by a test identity:"
-        echo "$BAD_AUTHORS" | sed 's/^/   /'
-        echo "   Amend the author identity before pushing (git commit --amend --reset-author)."
+        echo "⚠️  Push contains commits authored by a test identity:" >&2
+        echo "$BAD_AUTHORS" | sed 's/^/   /' >&2
+        echo "   Amend the author identity before pushing (git commit --amend --reset-author)." >&2
         exit 1
     fi
 done
