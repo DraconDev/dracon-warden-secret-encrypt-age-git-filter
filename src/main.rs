@@ -293,6 +293,17 @@ pub(crate) struct WardenPolicy {
     watch_roots: Vec<String>,
     #[serde(default)]
     discover_roots: Vec<String>,
+    /// ADDED 2026-07-21 (v0.112.32, audit M29/F4.3): one-migration-
+    /// cycle escape hatch for legacy V1 (AES-CFB) ciphertexts.
+    /// FDRACONWARDEN-001's remediation kept the runtime gate
+    /// (`set_allow_v1_fallback`) but never wired it — this field did
+    /// not exist, so the documented migration path ("set
+    /// `allow_v1_fallback = true`, decrypt once to re-encrypt under
+    /// V2, then unset") was inaccessible: `set_allow_v1_fallback`
+    /// had zero callers and serde silently ignored the TOML key.
+    /// Default false = V1 ciphertexts are refused.
+    #[serde(default)]
+    allow_v1_fallback: bool,
 }
 
 impl WardenPolicy {
@@ -301,6 +312,11 @@ impl WardenPolicy {
             .with_context(|| format!("failed to read policy {}", path.display()))?;
         let policy: Self = toml::from_str(&content)
             .with_context(|| format!("failed to parse policy {}", path.display()))?;
+        // ADDED 2026-07-21 (v0.112.32, audit M29/F4.3): wire the V1
+        // escape hatch at the single chokepoint every migration-
+        // relevant command (repair / resmudge / once / filter paths
+        // that load this policy) goes through.
+        dracon_security_kit::set_allow_v1_fallback(policy.allow_v1_fallback);
         Ok(policy)
     }
 
@@ -2284,7 +2300,7 @@ if ! command -v dracon-warden >/dev/null 2>&1; then
 fi
 "#;
 
-const PRE_PUSH_HOOK: &str = r#"#!/bin/sh
+const PRE_PUSH_HOOK: &str = r##"#!/bin/sh
 # Dracon Warden — pre-push hook
 # Defense-in-depth: scans push for plaintext secrets.
 # Catches --no-verify bypass of pre-commit hook.
@@ -2293,6 +2309,22 @@ const PRE_PUSH_HOOK: &str = r#"#!/bin/sh
 # Plaintext-sibling escape hatch: a file with a `<path>.plaintext` sibling
 # is treated as intentionally plaintext. Such files are excluded from the
 # scan (silent allow). See docs/design/warden-plaintext-sibling.md.
+#
+# CHANGED 2026-07-21 (v0.112.32, audit M32/F4.6): filenames are
+# handled NUL-delimited. The previous
+# `for f in $(git diff --name-only "$RANGE")` word-split on
+# whitespace: a file named `prod secrets.env` split into `prod` and
+# `secrets.env`, neither fragment was scanned, and a plaintext
+# secret in a space-containing filename pushed clean. We now iterate
+# `git diff --name-only -z` (via `tr '\0' '\n'` + `IFS= read -r`,
+# which preserves spaces; the residual newline-in-filename edge is
+# accepted as absurd) and pass the accepted files to the second diff
+# via `--pathspec-from-file --pathspec-file-nul` (no word-splitting,
+# no glob expansion of metacharacters).
+
+# Accumulator for the per-ref accepted file list (NUL-delimited).
+SCAN_FILES_NUL=$(mktemp)
+trap 'rm -f "$SCAN_FILES_NUL"' EXIT
 
 # Read push info from stdin (remote URL and branch refs)
 while read local_ref local_sha remote_ref remote_sha; do
@@ -2313,23 +2345,23 @@ while read local_ref local_sha remote_ref remote_sha; do
     fi
 
     # Collect non-hatched files (skip files with a `.plaintext` sibling)
-    SCAN_FILES=""
-    for f in $(git diff --name-only "$RANGE" 2>/dev/null); do
+    : > "$SCAN_FILES_NUL"
+    git diff --name-only -z "$RANGE" 2>/dev/null | tr '\0' '\n' | while IFS= read -r f; do
         if [ -f "$f.plaintext" ]; then
             # Hatched file — silently allow
             continue
         fi
-        SCAN_FILES="$SCAN_FILES $f"
+        printf '%s\0' "$f" >> "$SCAN_FILES_NUL"
     done
 
     # Nothing left to scan — push is safe
-    if [ -z "$SCAN_FILES" ]; then
+    if [ ! -s "$SCAN_FILES_NUL" ]; then
         continue
     fi
 
     # Scan only newly added diff lines. Deletions of old secret-shaped fixtures
     # are safe, while additions still trip the defense-in-depth guard.
-    DIFF=$(git diff --unified=0 "$RANGE" -- $SCAN_FILES 2>/dev/null | grep -E '^\+[^+]' || true)
+    DIFF=$(git diff --unified=0 "$RANGE" --pathspec-from-file="$SCAN_FILES_NUL" --pathspec-file-nul 2>/dev/null | grep -E '^\+[^+]' || true)
     if echo "$DIFF" | grep -qE '(A{1}KIA[A-Z0-9]{16}|-----BEGIN [A-Z]+ PRIVATE KEY|password\s*=\s*["\x27][^"\x27]+|secret\s*=\s*["\x27][^"\x27]+|api_key\s*=\s*["\x27][^"\x27]+)'; then
         echo "⚠️  Possible plaintext secrets detected in push."
         echo "   The warden filter may have been bypassed."
@@ -2337,7 +2369,7 @@ while read local_ref local_sha remote_ref remote_sha; do
         exit 1
     fi
 done
-"#;
+"##;
 
 fn run_setup_hooks(mode: HookMode, repo: Option<&Path>) -> Result<()> {
     let dir = hook_dir(mode, repo)?;
