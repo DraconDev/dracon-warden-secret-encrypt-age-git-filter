@@ -243,6 +243,111 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-07-21 (v0.112.32, audit M32/F4.6): a secret-shaped
+    /// line in a file whose name contains a SPACE must still be
+    /// caught. The pre-fix hook iterated
+    /// `for f in $(git diff --name-only ...)`, word-splitting
+    /// `prod secrets.env` into `prod` + `secrets.env` — neither
+    /// fragment was scanned and the secret pushed clean.
+    #[test]
+    fn pre_push_hook_blocks_secret_in_space_filename() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_space_filename");
+        let repo = td.path();
+
+        fs::write(
+            repo.join("prod secrets.env"),
+            concat!("AWS_ACCESS_KEY_ID=AK", "IAIOSFODNN7EXAMPLE\n"),
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "prod secrets.env"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add spaced secret file"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, EMPTY_TREE);
+        assert_eq!(
+            status.code(),
+            Some(1),
+            "hook must catch a secret in a space-containing filename (regression M32/F4.6); stderr was: {}",
+            stderr
+        );
+    }
+
+    /// ADDED 2026-07-21 (v0.112.32, audit M30/F4.4):
+    /// `setup-hooks --local` must actually set `core.hooksPath` —
+    /// the pre-fix code ran `git config local core.hooksPath <dir>`
+    /// (missing `--`), which git rejects with "key does not contain
+    /// a section: local", so the command ALWAYS failed after the
+    /// hook files were already written.
+    #[test]
+    fn setup_hooks_local_sets_core_hooks_path() {
+        let td = TestDir::new("setup_hooks_local");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        run_git_in(&repo, &["init", "-q", "-b", "main"]);
+
+        run_setup_hooks(HookMode::Local, Some(&repo)).expect("setup-hooks --local must succeed");
+
+        let hooks_path = git_in_output(&repo, &["config", "--local", "--get", "core.hooksPath"]);
+        assert!(
+            !hooks_path.trim().is_empty(),
+            "core.hooksPath must be set after setup-hooks --local"
+        );
+        assert!(
+            repo.join(".git/hooks/pre-push").exists(),
+            "pre-push hook file must be written"
+        );
+    }
+
+    /// ADDED 2026-07-21 (v0.112.32, audit M31/F4.5): the clean
+    /// direction must FAIL CLOSED for oversized inputs and refused
+    /// paths (passthrough would commit the file UNENCRYPTED), while
+    /// smudge always passes through.
+    #[test]
+    fn filter_clean_refusal_reason_fails_closed_for_clean_only() {
+        // Oversized: clean refuses, smudge passes.
+        let oversized = STREAM_IO_MAX_BYTES + 1;
+        assert!(filter_clean_refusal_reason(true, oversized, None).is_some());
+        assert!(filter_clean_refusal_reason(false, oversized, None).is_none());
+        // At the limit: allowed.
+        assert!(filter_clean_refusal_reason(true, STREAM_IO_MAX_BYTES, None).is_none());
+        // Absolute path: clean refuses, smudge passes.
+        assert!(filter_clean_refusal_reason(true, 10, Some("/etc/passwd")).is_some());
+        assert!(filter_clean_refusal_reason(false, 10, Some("/etc/passwd")).is_none());
+        // `..` path: clean refuses, smudge passes.
+        assert!(filter_clean_refusal_reason(true, 10, Some("../escape.txt")).is_some());
+        assert!(filter_clean_refusal_reason(false, 10, Some("../escape.txt")).is_none());
+        assert!(filter_clean_refusal_reason(true, 10, Some("a/../../b")).is_some());
+        // Normal relative path: allowed.
+        assert!(filter_clean_refusal_reason(true, 10, Some("src/main.rs")).is_none());
+    }
+
+    /// ADDED 2026-07-21 (v0.112.32, audit M29/F4.3): the
+    /// `allow_v1_fallback` policy field must parse AND drive the
+    /// runtime gate — pre-fix the field did not exist and
+    /// `set_allow_v1_fallback` had zero callers, so the documented
+    /// V1 migration path was inaccessible.
+    #[test]
+    fn warden_policy_allow_v1_fallback_wires_the_gate() {
+        let td = TestDir::new("v1_fallback_policy");
+        let with_flag = td.path().join("with.toml");
+        fs::write(&with_flag, "allow_v1_fallback = true\n").expect("write");
+        let _ = WardenPolicy::load(&with_flag).expect("load with flag");
+        assert!(
+            dracon_security_kit::is_v1_fallback_allowed(),
+            "gate must be ON after loading a policy with allow_v1_fallback = true"
+        );
+
+        let without_flag = td.path().join("without.toml");
+        fs::write(&without_flag, "repo_roots = []\n").expect("write");
+        let _ = WardenPolicy::load(&without_flag).expect("load without flag");
+        assert!(
+            !dracon_security_kit::is_v1_fallback_allowed(),
+            "gate must be OFF (default) after loading a policy without the field"
+        );
+    }
+
     #[test]
     fn pre_push_hook_allows_delete_only() {
         // This is the core regression guard for the `--unified=0` change:

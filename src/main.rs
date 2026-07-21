@@ -2169,71 +2169,84 @@ async fn run_filter_with_timeout(is_clean: bool, label: &str, path: Option<Strin
     }
 }
 
-fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
-    let mut input = Vec::new();
-    std::io::stdin().read_to_end(&mut input)?;
-    if input.len() > STREAM_IO_MAX_BYTES {
-        // CHANGED 2026-07-21 (v0.112.32, audit M31/F4.5): in the
-        // CLEAN direction, passthrough means the file is committed
-        // UNENCRYPTED — a 15 MiB `.env` would land in history in
-        // plaintext with no warning. Fail closed instead: git
-        // aborts the add and the operator sees why. Smudge
-        // passthrough stays correct (keeps ciphertext as-is).
-        if is_clean {
-            return Err(anyhow::anyhow!(
-                "dracon-warden: refusing to clean {} bytes (limit {} bytes): the file would be committed UNENCRYPTED. Encrypt it out-of-band (dracon-warden encrypt-file) or .gitignore it.",
-                input.len(),
-                STREAM_IO_MAX_BYTES
-            ));
-        }
-        std::io::stdout().write_all(&input)?;
-        return Ok(());
+/// ADDED 2026-07-21 (v0.112.32, audit M31/F4.5): pure refusal
+/// predicate for the filter guards. In the CLEAN direction,
+/// passthrough for oversized inputs or refused paths means the file
+/// is committed UNENCRYPTED (silent plaintext leak into history), so
+/// those cases must fail closed. In the SMUDGE direction passthrough
+/// is correct (keeps ciphertext as-is), so this always returns None.
+/// Returns the refusal reason for logging/erroring.
+fn filter_clean_refusal_reason(
+    is_clean: bool,
+    input_len: usize,
+    path: Option<&str>,
+) -> Option<String> {
+    if !is_clean {
+        return None;
     }
-
-    // FDRACONWARDEN-002 (2026-07-18): defensively verify the path git
-    // gave us stays inside the working repo. Git invokes the filter
-    // with CWD = repo root and `%f` = repo-relative path, but a
-    // malicious `.gitattributes` or a misconfigured submodule could
-    // pass a path that escapes the repo. We refuse absolute paths
-    // and any path containing a `..` component that would walk above
-    // CWD after canonicalisation.
+    if input_len > STREAM_IO_MAX_BYTES {
+        return Some(format!(
+            "dracon-warden: refusing to clean {} bytes (limit {} bytes): the file would be committed UNENCRYPTED. Encrypt it out-of-band (dracon-warden encrypt-file) or .gitignore it.",
+            input_len,
+            STREAM_IO_MAX_BYTES
+        ));
+    }
     if let Some(p) = path {
         let p_buf = std::path::PathBuf::from(p);
         if p_buf.is_absolute() {
-            eprintln!(
-                "dracon-warden: refusing filter path '{}' (absolute paths not allowed)",
+            return Some(format!(
+                "dracon-warden: refusing to clean absolute filter path '{}'",
                 p
-            );
-            // CHANGED 2026-07-21 (v0.112.32, audit M31/F4.5): fail
-            // closed for clean (passthrough would commit plaintext).
-            if is_clean {
-                return Err(anyhow::anyhow!(
-                    "dracon-warden: refusing to clean absolute filter path '{}'",
-                    p
-                ));
-            }
+            ));
+        }
+        if p_buf
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Some(format!(
+                "dracon-warden: refusing to clean filter path '{}' (contains '..')",
+                p
+            ));
+        }
+    }
+    None
+}
+
+fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
+    let mut input = Vec::new();
+    std::io::stdin().read_to_end(&mut input)?;
+    // CHANGED 2026-07-21 (v0.112.32, audit M31/F4.5): all three
+    // guards (oversized, absolute path, `..` path) now fail closed
+    // in the clean direction via the shared predicate. Previously
+    // each guard wrote the input back to stdout and exited 0 —
+    // committing the file UNENCRYPTED with no warning.
+    if let Some(reason) = filter_clean_refusal_reason(is_clean, input.len(), path) {
+        eprintln!("{}", reason);
+        return Err(anyhow::anyhow!("{}", reason));
+    }
+    if input.len() > STREAM_IO_MAX_BYTES {
+        // Smudge-only passthrough (the predicate returns None for
+        // smudge): keeps ciphertext as-is.
+        std::io::stdout().write_all(&input)?;
+        return Ok(());
+    }
+    if let Some(p) = path {
+        let p_buf = std::path::PathBuf::from(p);
+        if p_buf.is_absolute()
+            || p_buf
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            eprintln!("dracon-warden: refusing filter path '{}' (smudge passthrough)", p);
             std::io::stdout().write_all(&input)?;
             return Ok(());
         }
-        for comp in p_buf.components() {
-            if matches!(comp, std::path::Component::ParentDir) {
-                eprintln!(
-                    "dracon-warden: refusing filter path '{}' (contains '..')",
-                    p
-                );
-                // CHANGED 2026-07-21 (v0.112.32, audit M31/F4.5):
-                // fail closed for clean.
-                if is_clean {
-                    return Err(anyhow::anyhow!(
-                        "dracon-warden: refusing to clean filter path '{}' (contains '..')",
-                        p
-                    ));
-                }
-                std::io::stdout().write_all(&input)?;
-                return Ok(());
-            }
-        }
     }
+
+    // FDRACONWARDEN-002 (2026-07-18) path-containment guard: folded
+    // into `filter_clean_refusal_reason` above (v0.112.32, audit
+    // M31/F4.5) — clean direction fails closed, smudge passes through
+    // via the block above.
 
     let warden = DraconWarden::new()?;
     let output = if is_clean {
