@@ -1105,6 +1105,7 @@ watch_roots = ["/tmp/test"]
             repo_roots: vec![],
             watch_roots: vec![p1.display().to_string()],
             discover_roots: vec![],
+            allow_v1_fallback: false,
         };
 
         // Effective roots still includes p1 (backwards compat)
@@ -1143,6 +1144,7 @@ watch_roots = ["/tmp/test"]
             repo_roots: vec![p_new.display().to_string()],
             watch_roots: vec![p_old.display().to_string()],
             discover_roots: vec![],
+            allow_v1_fallback: false,
         };
 
         // Effective roots uses p_new (the canonical key), not p_old
@@ -1176,6 +1178,7 @@ watch_roots = ["/tmp/test"]
             repo_roots: vec![p1.display().to_string()],
             watch_roots: vec![],
             discover_roots: vec![],
+            allow_v1_fallback: false,
         };
 
         assert!(
