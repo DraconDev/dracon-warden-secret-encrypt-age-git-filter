@@ -348,6 +348,80 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-07-21 (v0.112.33, audit H2/F0.1 follow-up): a
+    /// push containing a commit authored by a test identity must be
+    /// REJECTED (the F0.1 test-pollution class — the daemon
+    /// committed with a poisoned `test@test` identity and it landed
+    /// on all mirrors). Only the PUSHED range is scanned.
+    #[test]
+    fn pre_push_hook_rejects_test_identity_author() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_test_author");
+        let repo = td.path();
+
+        // Baseline commit with the NORMAL (trusted) identity.
+        fs::write(repo.join("ok.txt"), "ok\n").unwrap();
+        run_git_in(repo, &["add", "ok.txt"]);
+        run_git_in(repo, &["commit", "-q", "-m", "baseline"]);
+        let baseline = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        // Second commit with a POISONED identity (simulating F0.1).
+        run_git_in(repo, &["config", "user.email", "test@test"]);
+        run_git_in(repo, &["config", "user.name", "test"]);
+        fs::write(repo.join("more.txt"), "more\n").unwrap();
+        run_git_in(repo, &["add", "more.txt"]);
+        run_git_in(repo, &["commit", "-q", "-m", "poisoned commit"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        // Restore the trusted identity so the repo is clean for the hook run.
+        run_git_in(repo, &["config", "user.email", "test@test.local"]);
+        run_git_in(repo, &["config", "user.name", "test"]);
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, &baseline);
+        assert_eq!(
+            status.code(),
+            Some(1),
+            "hook must reject a push containing a test-identity-authored commit (H2/F0.1); stderr was: {}",
+            stderr
+        );
+        assert!(
+            stderr.contains("test identity"),
+            "stderr should name the cause, got: {}",
+            stderr
+        );
+    }
+
+    /// ADDED 2026-07-21 (v0.112.33, audit H2/F0.1 follow-up): a push
+    /// of commits authored ONLY by the trusted identity passes the
+    /// author check.
+    #[test]
+    fn pre_push_hook_passes_trusted_author() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_trusted_author");
+        let repo = td.path();
+
+        fs::write(repo.join("ok.txt"), "ok\n").unwrap();
+        run_git_in(repo, &["add", "ok.txt"]);
+        run_git_in(repo, &["commit", "-q", "-m", "baseline"]);
+        let baseline = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        fs::write(repo.join("more.txt"), "more\n").unwrap();
+        run_git_in(repo, &["add", "more.txt"]);
+        run_git_in(repo, &["commit", "-q", "-m", "good commit"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, &baseline);
+        assert!(
+            status.success(),
+            "hook must pass for trusted-author commits; stderr was: {}",
+            stderr
+        );
+    }
+
     #[test]
     fn pre_push_hook_allows_delete_only() {
         // This is the core regression guard for the `--unified=0` change:

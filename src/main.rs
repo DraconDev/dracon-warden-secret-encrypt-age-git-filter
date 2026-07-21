@@ -2383,6 +2383,21 @@ while read local_ref local_sha remote_ref remote_sha; do
         echo "   Run: dracon-warden once $(git rev-parse --show-toplevel)"
         exit 1
     fi
+
+    # ADDED 2026-07-21 (v0.112.33, audit H2/F0.1 follow-up): reject
+    # pushes containing commits authored by known TEST identities.
+    # The F0.1 incident showed a test writing `user.email = test@test`
+    # into a LIVE repo's config (via a positional `git config` arg),
+    # after which the daemon committed with the poisoned identity and
+    # the poisoned commit landed on all mirrors. Only the PUSHED
+    # range is scanned, so historical commits are unaffected.
+    BAD_AUTHORS=$(git log --format='%ae%n%ce' "$RANGE" 2>/dev/null | sort -u | grep -Eix 'test@test(\.(com|local|net|org))?|test@example\.com' || true)
+    if [ -n "$BAD_AUTHORS" ]; then
+        echo "⚠️  Push contains commits authored by a test identity:"
+        echo "$BAD_AUTHORS" | sed 's/^/   /'
+        echo "   Amend the author identity before pushing (git commit --amend --reset-author)."
+        exit 1
+    fi
 done
 "##;
 
