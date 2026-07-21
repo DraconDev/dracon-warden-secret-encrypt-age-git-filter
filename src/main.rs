@@ -2157,6 +2157,19 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
     let mut input = Vec::new();
     std::io::stdin().read_to_end(&mut input)?;
     if input.len() > STREAM_IO_MAX_BYTES {
+        // CHANGED 2026-07-21 (v0.112.32, audit M31/F4.5): in the
+        // CLEAN direction, passthrough means the file is committed
+        // UNENCRYPTED — a 15 MiB `.env` would land in history in
+        // plaintext with no warning. Fail closed instead: git
+        // aborts the add and the operator sees why. Smudge
+        // passthrough stays correct (keeps ciphertext as-is).
+        if is_clean {
+            return Err(anyhow::anyhow!(
+                "dracon-warden: refusing to clean {} bytes (limit {} bytes): the file would be committed UNENCRYPTED. Encrypt it out-of-band (dracon-warden encrypt-file) or .gitignore it.",
+                input.len(),
+                STREAM_IO_MAX_BYTES
+            ));
+        }
         std::io::stdout().write_all(&input)?;
         return Ok(());
     }
@@ -2175,6 +2188,14 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
                 "dracon-warden: refusing filter path '{}' (absolute paths not allowed)",
                 p
             );
+            // CHANGED 2026-07-21 (v0.112.32, audit M31/F4.5): fail
+            // closed for clean (passthrough would commit plaintext).
+            if is_clean {
+                return Err(anyhow::anyhow!(
+                    "dracon-warden: refusing to clean absolute filter path '{}'",
+                    p
+                ));
+            }
             std::io::stdout().write_all(&input)?;
             return Ok(());
         }
@@ -2184,6 +2205,14 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
                     "dracon-warden: refusing filter path '{}' (contains '..')",
                     p
                 );
+                // CHANGED 2026-07-21 (v0.112.32, audit M31/F4.5):
+                // fail closed for clean.
+                if is_clean {
+                    return Err(anyhow::anyhow!(
+                        "dracon-warden: refusing to clean filter path '{}' (contains '..')",
+                        p
+                    ));
+                }
                 std::io::stdout().write_all(&input)?;
                 return Ok(());
             }
@@ -2364,7 +2393,16 @@ fn run_setup_hooks(mode: HookMode, repo: Option<&Path>) -> Result<()> {
             let output = std::process::Command::new("git")
                 .args(["-C"])
                 .arg(repo_path)
-                .args(["config", "local", "core.hooksPath", &dir.to_string_lossy()])
+                // FIXED 2026-07-21 (v0.112.32, audit M30/F4.4): the
+                // previous args were `config local core.hooksPath <dir>`
+                // (no `--`), which git parses as
+                // `git config <name> <value> <pattern>` and rejects
+                // with "key does not contain a section: local" — the
+                // command ALWAYS failed (after the hook files were
+                // already written, leaving a partial application).
+                // Same bug class as the dracon-sync test-config
+                // incident the same week, but in production code.
+                .args(["config", "--local", "core.hooksPath", &dir.to_string_lossy()])
                 .output()
                 .context("failed to run git config")?;
             if !output.status.success() {

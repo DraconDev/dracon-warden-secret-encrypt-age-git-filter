@@ -100,7 +100,7 @@ pub fn path_is_protected(path_str: &str, protected_patterns: &[String]) -> bool 
         if pat.starts_with("**/") {
             let needle = pat.trim_start_matches("**");
             // `**/audit/**` -> check for `/audit/` or `audit/`
-            if path_str.contains(&needle.trim_start_matches("/")) {
+            if path_str.contains(needle.trim_start_matches("/")) {
                 return true;
             }
         }
