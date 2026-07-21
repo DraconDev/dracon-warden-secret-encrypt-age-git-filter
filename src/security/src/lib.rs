@@ -786,11 +786,66 @@ impl WardenSecurity {
         }
     }
 
+    /// ADDED 2026-07-21 (v0.112.32, audit H9/F4.2): if the ENTIRE
+    /// content is a single whole-file secret tag (`[MARKER:<b64>]`,
+    /// optionally with one trailing newline), decode + decrypt and
+    /// return the RAW plaintext bytes. Returns `None` when the
+    /// content is not a whole-file tag — the caller should fall back
+    /// to the inline-tag smudge path (`smart_smudge`), which remains
+    /// correct for tags embedded in otherwise-textual content.
+    ///
+    /// The pre-fix smudge path ran whole-file plaintext through
+    /// `String::from_utf8_lossy`, replacing every invalid UTF-8
+    /// sequence with U+FFFD — silently corrupting whole-file-
+    /// encrypted BINARY secrets (DER keys, SQLite under `secrets/**`,
+    /// `.kdbx`) on checkout. Worse, the corrupted working-tree file
+    /// was later re-cleaned, so the corruption was re-encrypted into
+    /// git history and the original bytes were lost.
+    fn decrypt_whole_file_tag(&self, content: &[u8]) -> Option<Result<Vec<u8>>> {
+        let trimmed = content.strip_suffix(b"\n").unwrap_or(content);
+        for prefix in self.secret_tag_prefixes() {
+            let p = prefix.as_bytes();
+            if trimmed.starts_with(p) && trimmed.ends_with(b"]") {
+                let b64 = &trimmed[p.len()..trimmed.len() - 1];
+                let encrypted = match general_purpose::STANDARD.decode(b64.trim()) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        return Some(Err(anyhow::anyhow!(
+                            "whole-file tag base64 decode failed: {}",
+                            e
+                        )))
+                    }
+                };
+                return Some(self.unlock_payload(&encrypted));
+            }
+        }
+        None
+    }
+
     /// In-situ Smudge: Decrypt REDACTED_REGEX tags back to plaintext.
     /// Git Clean Filter: Encrypt stdin -> stdout
     /// V2 Upgrade: Encrypts to ALL known public keys (User + Machines + Teams)
     /// Recursive disk-wide decryption: Replaces all [*_SECRET:...] tags with plaintext in-place.
     fn decrypt_file(&self, path: &Path, dry_run: bool) -> Result<usize> {
+        // ADDED 2026-07-21 (v0.112.32, audit H9/F4.2): whole-file
+        // secret tag (binary-safe path) — decrypt to RAW BYTES.
+        // The String-based `smart_smudge` path below corrupts
+        // non-UTF-8 payloads via `from_utf8_lossy` (U+FFFD).
+        if let Ok(raw) = std::fs::read(path) {
+            if let Some(Ok(plaintext)) = self.decrypt_whole_file_tag(&raw) {
+                if plaintext != raw {
+                    if !dry_run {
+                        std::fs::write(path, &plaintext)?;
+                        println!("  🔓 Restored whole-file secret in {:?}", path);
+                    } else {
+                        println!("  [dry-run] Would restore whole-file secret in {:?}", path);
+                    }
+                    return Ok(1);
+                }
+                return Ok(0);
+            }
+        }
+
         let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(_) => return Ok(0),
@@ -1399,6 +1454,73 @@ API_KEY=original"#;
         let key = x25519::Identity::generate();
         security.master_identities.push(key);
         security
+    }
+
+    /// ADDED 2026-07-21 (v0.112.32, audit H9/F4.2): whole-file-
+    /// encrypted BINARY content must round-trip byte-identically.
+    /// The pre-fix smudge path converted decrypted plaintext via
+    /// `String::from_utf8_lossy`, replacing invalid UTF-8 sequences
+    /// with U+FFFD — silently corrupting DER keys, SQLite files,
+    /// .kdbx, etc., and the corrupted file was later re-encrypted
+    /// into history.
+    #[test]
+    fn test_whole_file_tag_binary_roundtrip_byte_identical() {
+        let security = test_security_with_identity();
+        // Non-UTF-8 payload: invalid sequences, NUL bytes, high bytes.
+        let plaintext: Vec<u8> = vec![
+            0x00, 0xFF, 0xFE, 0x80, 0x81, 0xC3, 0x28, 0xA0, 0xC1, 0xBF, 0xED, 0xA0, 0x80, 0xF5,
+            0x90, 0x80, 0x90, 0x00, 0x01, 0x02, 0x7F, 0x80, 0x90, 0xA0, 0xB0, 0xF0, 0x90, 0x80,
+            0x90,
+        ];
+        // Sanity: the payload is genuinely invalid UTF-8.
+        assert!(std::str::from_utf8(&plaintext).is_err());
+
+        // Clean side: whole-file encrypt to the b64 tag format.
+        let tag = security.encrypt_v2_to_b64_tag(&plaintext).unwrap();
+        assert!(security.starts_with_any_secret_tag(&tag));
+
+        // Smudge side: byte-safe whole-file decrypt must return the
+        // EXACT original bytes (no lossy UTF-8 conversion).
+        let decrypted = security
+            .decrypt_whole_file_tag(&tag)
+            .expect("tag must be recognized as whole-file")
+            .expect("decrypt must succeed");
+        assert_eq!(
+            decrypted, plaintext,
+            "whole-file binary secret must round-trip byte-identically"
+        );
+
+        // With a trailing newline (git sometimes adds one), still works.
+        let mut tag_nl = tag.clone();
+        tag_nl.push(b'\n');
+        let decrypted_nl = security
+            .decrypt_whole_file_tag(&tag_nl)
+            .expect("tag with trailing newline must be recognized")
+            .expect("decrypt must succeed");
+        assert_eq!(decrypted_nl, plaintext);
+
+        // Non-tag content returns None (caller falls back to inline path).
+        assert!(security.decrypt_whole_file_tag(b"plain text").is_none());
+        assert!(security
+            .decrypt_whole_file_tag(&plaintext)
+            .is_none());
+    }
+
+    /// ADDED 2026-07-21 (v0.112.32, audit H9/F4.2): inline tags in
+    /// TEXTUAL content still go through `smart_smudge` correctly
+    /// (the whole-file path must not swallow them).
+    #[test]
+    fn test_inline_tag_still_uses_smart_smudge() {
+        let security = test_security_with_identity();
+        let secret = b"hunter2";
+        let tag = security.encrypt_v2_to_b64_tag(secret).unwrap();
+        let tag_str = String::from_utf8(tag).unwrap();
+        let inline = format!("prefix {} suffix", tag_str);
+        // The inline form is NOT a whole-file tag → None from the
+        // byte-safe path → smart_smudge handles it.
+        assert!(security.decrypt_whole_file_tag(inline.as_bytes()).is_none());
+        let smudged = security.smart_smudge(&inline).unwrap();
+        assert_eq!(smudged, "prefix hunter2 suffix");
     }
 
     #[test]

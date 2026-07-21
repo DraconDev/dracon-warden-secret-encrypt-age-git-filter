@@ -582,6 +582,28 @@ impl WardenSecurity {
             }
         }
 
+        // 2.5. ADDED 2026-07-21 (v0.112.32, audit H9/F4.2):
+        // whole-file secret tag (`[MARKER:<b64>]` = the ENTIRE
+        // content). This is the format `smart_clean_with_path` uses
+        // for BINARY files in sensitive locations. Decrypt to RAW
+        // BYTES — the inline path below (`smart_smudge`) converts
+        // plaintext via `String::from_utf8_lossy`, which corrupts
+        // non-UTF-8 payloads (DER keys, SQLite, .kdbx) with U+FFFD.
+        if let Some(result) = self.decrypt_whole_file_tag(&buffer) {
+            match result {
+                Ok(plaintext) => {
+                    std::io::stdout().write_all(&plaintext)?;
+                    return Ok(());
+                }
+                Err(e) => {
+                    eprintln!("⚠️ whole-file tag decryption failed: {}", e);
+                    // Fallthrough: pass the tag through unchanged
+                    // (inline path will no-op on it) rather than
+                    // write corrupted bytes.
+                }
+            }
+        }
+
         // 3. Check for *_SECRET text wrapper format
         if let Ok(text) = std::str::from_utf8(&buffer) {
             if self.contains_any_secret_tag(text) {
