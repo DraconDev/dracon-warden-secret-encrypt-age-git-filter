@@ -407,6 +407,81 @@ mod tests {
     }
 
     #[test]
+    fn harden_repo_preserves_operator_content_outside_managed_block() {
+        // ADDED 2026-07-21 (v0.112.32, audit H8/F4.1): previously
+        // `harden_repo` overwrote the ENTIRE .gitignore /
+        // .gitattributes with just the managed block — verified in
+        // the dracon-utilities repo's own history (commit
+        // `3a67685f` deleted the operator's 8-line nested-repo
+        // section). Operator content BEFORE and AFTER the delimited
+        // block must survive a harden pass.
+        let td = TestDir::new("warden_harden_preserve");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        let status = ProcessCommand::new("git")
+            .arg("init")
+            .arg(&repo)
+            .status()
+            .expect("git init");
+        assert!(status.success(), "git init should succeed");
+
+        // First harden pass: creates the managed block.
+        let (a, b, _c) = harden_repo(&repo, &sample_policy(), None, true).expect("harden");
+        assert!(a && b);
+
+        // Operator adds content BEFORE and AFTER the managed block
+        // (mirrors the real-world nested-repo section in
+        // dracon-utilities/.gitignore).
+        let header = "# operator header rule\n/custom-dir/\n";
+        let footer = "\n# --- NESTED STANDALONE REPOS (NOT warden-managed) ---\n/dracon-sync/\n/dracon-warden/\n";
+        let gitignore_after_first = fs::read_to_string(repo.join(".gitignore")).expect("read");
+        fs::write(
+            repo.join(".gitignore"),
+            format!("{}{}{}", header, gitignore_after_first, footer),
+        )
+        .expect("write gitignore");
+        let gitattributes_after_first =
+            fs::read_to_string(repo.join(".gitattributes")).expect("read");
+        fs::write(
+            repo.join(".gitattributes"),
+            format!("# operator attr\n*.bin binary\n{}\n*.dat filter=custom\n", gitattributes_after_first),
+        )
+        .expect("write gitattributes");
+
+        // Second harden pass: operator content must survive intact.
+        let _ = harden_repo(&repo, &sample_policy(), None, true).expect("harden 2");
+        let gitignore_final = fs::read_to_string(repo.join(".gitignore")).expect("read final");
+        let gitattributes_final =
+            fs::read_to_string(repo.join(".gitattributes")).expect("read final attr");
+
+        assert!(
+            gitignore_final.contains("/custom-dir/"),
+            "operator header rule must survive harden: {:?}",
+            gitignore_final
+        );
+        assert!(
+            gitignore_final.contains("/dracon-sync/") && gitignore_final.contains("/dracon-warden/"),
+            "operator footer section must survive harden (regression H8/F4.1): {:?}",
+            gitignore_final
+        );
+        assert!(
+            gitignore_final.contains(BLOCK_BEGIN) && gitignore_final.contains(BLOCK_END),
+            "managed block must still be present"
+        );
+        assert!(
+            gitattributes_final.contains("*.bin binary") && gitattributes_final.contains("*.dat filter=custom"),
+            "operator .gitattributes rules must survive harden: {:?}",
+            gitattributes_final
+        );
+        // Exactly ONE managed block (no duplication across passes).
+        assert_eq!(
+            gitignore_final.matches(BLOCK_BEGIN).count(),
+            1,
+            "exactly one managed block after two passes"
+        );
+    }
+
+    #[test]
     fn harden_repo_sets_local_dracon_filter_config() {
         let td = TestDir::new("warden_harden_repo_filter_cfg");
         let repo = td.path().join("repo");

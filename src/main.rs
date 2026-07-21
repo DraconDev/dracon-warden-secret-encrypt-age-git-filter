@@ -486,7 +486,18 @@ pub(crate) fn effective_discovery_roots(policy: &WardenPolicy) -> Vec<PathBuf> {
     roots.into_iter().collect()
 }
 
-#[cfg(test)]
+/// CHANGED 2026-07-21 (v0.112.32, audit H8/F4.1): promoted from
+/// `#[cfg(test)]` to production — `harden_repo` now uses this for
+/// BOTH `.gitignore` and `.gitattributes`. Previously
+/// `harden_repo` passed `build_gitignore_block_with_existing(...)`
+/// (which returns ONLY the managed block) straight to
+/// `apply_overwrite_file`, wiping ALL operator content outside the
+/// delimited block on every harden pass — verified in this repo's
+/// own history (commit `3a67685f` deleted the operator's 8-line
+/// nested-repo section; the re-added 2026-07-15 section survived
+/// only because no harden pass ran since). The surgical semantics:
+/// replace ONLY the delimited block, preserve everything outside it,
+/// append the block if absent.
 pub(crate) fn replace_managed_block(current: &str, managed_block: &str) -> String {
     // Replace ALL existing managed blocks, then append if none existed
     let mut out = String::new();
@@ -1099,13 +1110,27 @@ pub(crate) fn harden_repo(
     // Read existing .gitignore content to preserve patterns added by other tools (e.g., dracon-sync)
     let existing_gitignore = fs::read_to_string(&gitignore_path).unwrap_or_default();
 
-    // Build gitignore block while preserving existing non-policy patterns
-    let gitignore_changed = apply_overwrite_file(
-        &gitignore_path,
+    // CHANGED 2026-07-21 (v0.112.32, audit H8/F4.1): surgical merge
+    // — `build_gitignore_block_with_existing` returns ONLY the
+    // managed block; passing it straight to `apply_overwrite_file`
+    // wiped all operator content outside the block (verified in this
+    // repo's history: commit `3a67685f`). `replace_managed_block`
+    // replaces only the delimited block and preserves everything
+    // outside it. `.gitattributes` gets the same treatment
+    // (`build_gitattributes_block` never even looked at existing
+    // content).
+    let existing_gitattributes =
+        fs::read_to_string(&gitattributes_path).unwrap_or_default();
+    let merged_gitignore = replace_managed_block(
+        &existing_gitignore,
         &build_gitignore_block_with_existing(policy, &existing_gitignore)?,
-    )?;
-    let gitattributes_changed =
-        apply_overwrite_file(&gitattributes_path, &build_gitattributes_block(policy)?)?;
+    );
+    let merged_gitattributes =
+        replace_managed_block(&existing_gitattributes, &build_gitattributes_block(policy)?);
+
+    // Build gitignore block while preserving existing non-policy patterns
+    let gitignore_changed = apply_overwrite_file(&gitignore_path, &merged_gitignore)?;
+    let gitattributes_changed = apply_overwrite_file(&gitattributes_path, &merged_gitattributes)?;
     let filter_cfg_changed = if repo.join(".git").exists() {
         ensure_repo_filter_config(repo)?
     } else {
