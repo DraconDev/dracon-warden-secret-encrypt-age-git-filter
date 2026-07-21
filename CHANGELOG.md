@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### v0.112.33 — 2026-07-21 — H2 follow-up: pre-push test-identity author rejection
+
+**Operator-visible change (from `AUDIT_FULL_2026-07-21.md`, F0.1 follow-up):**
+
+- **Pre-push hook now rejects pushes containing commits authored by test identities** (`test@test`, `test@test.com`, `test@example.com`) in the PUSHED range. The F0.1 incident (2026-07-21) showed a test writing `user.email = test@test` into a LIVE repo's config, after which the daemon committed with the poisoned identity and the poisoned commit landed on all mirrors. Historical commits outside the pushed range are unaffected. Hook diagnostics now go to stderr. 2 behavioral tests (reject poisoned author, pass trusted author).
+
+**Tests:** dracon-warden 83 (+2). `cargo clippy --workspace --locked -- -D warnings` clean. `cargo deny check` clean.
+
 ### v0.112.32 — 2026-07-21 — audit warden batch (H8/H9 HIGH + M29-M32 MEDIUM)
 
 **Operator-visible changes (from `AUDIT_FULL_2026-07-21.md`):**
