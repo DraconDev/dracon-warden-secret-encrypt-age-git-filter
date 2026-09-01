@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # scripts/release.sh — cut a dracon-warden release end-to-end.
 #
-# This is the single command that updates every release surface for the
-# standalone dracon-warden repo (own Cargo.toml + own CHANGELOG.md + own
-# release-notes file + own GitHub release + own crates.io publish + own
-# git tag) so a new release is consistent across all surfaces.
+# This command releases the dracon-warden package from the dracon-utilities
+# monorepo: it updates the utility's Cargo.toml/CHANGELOG/release notes,
+# the monorepo lockfile, crates.io, the monorepo tag, and its GitHub release.
 #
 # Hard rules baked into this script:
 #   - The git tag is created only AFTER successful crates.io publish.
 #     The tag is the contract that "this version is on crates.io".
-#   - The working tree must be clean before starting. No half-done releases.
+#   - The parent monorepo working tree must be clean before starting. Run
+#     this through `dracon-sync maintenance -- ...` to avoid daemon races.
 #   - Every step is idempotent: re-running with the same version is a no-op
 #     or a clear "already done" message.
 #   - `--dry-run` runs every step without mutating remote state (no push,
@@ -51,19 +51,19 @@ set -euo pipefail
 
 # ----- paths ---------------------------------------------------------------
 # FIXED 2026-09-01 (post-monorepo conversion 2026-08-22): the previous
-# `REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"` walked
-# up to the monorepo root and `cd`-ed there, so `Cargo.toml` resolved
-# to the workspace `[workspace]` manifest (no `version` line) and step
-# 2 failed with "no version found in Cargo.toml". The release script
-# operates on a single utility crate, so anchor on the crate's own
-# gitdir instead: BASH_SOURCE[0] is `dracon-warden/scripts/release.sh`,
-# so dirname's parent is the crate dir, which is also the standalone
-# repo's git toplevel (each utility was converted via subtree merge
-# onto its own nested gitdir).
+# version of this script treated the utility directory as a standalone Git
+# repository. The utility directories are now tracked inside the parent
+# monorepo and are intentionally ignored for ordinary `git add`, so resolve
+# both roots explicitly and force-stage only the release paths below.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CRATE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$CRATE_DIR"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+CRATE_REL="${CRATE_DIR#"$REPO_ROOT"/}"
 cd "$REPO_ROOT"
+
+CRATE_TOML="$CRATE_DIR/Cargo.toml"
+CHANGELOG="$CRATE_DIR/CHANGELOG.md"
+LOCKFILE="$REPO_ROOT/Cargo.lock"
 
 # ----- defaults ------------------------------------------------------------
 DRY_RUN=0
