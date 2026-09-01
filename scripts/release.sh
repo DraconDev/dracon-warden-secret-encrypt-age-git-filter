@@ -131,7 +131,8 @@ run() {
 
 require_clean_tree() {
     if ! git diff --quiet HEAD 2>/dev/null || \
-       [[ -n "$(git status --porcelain)" ]]; then
+       [[ -n "$(git ls-files --others --exclude-standard)" ]] || \
+       [[ -n "$(release_note_files)" ]]; then
         die_pre "working tree is dirty; commit or stash before releasing"
     fi
 }
@@ -148,18 +149,49 @@ require_credentials() {
         || die_pre "missing ~/.cargo/credentials.toml; run 'cargo login <token>' first"
 }
 
-# Auto-resolve the github remote when --remote was not passed.
-# (FIXED 2026-08-09, audit HIGH: the hardcoded `github` default failed out
-# of the box because this repo names its github remote `origin` — ported
-# resolve-github-remote.sh from dracon-sync v0.113.11. Moved AFTER the
-# helper definitions 2026-08-09: it called `log` before `log` was defined,
-# dying on every real invocation; --help exited earlier so the break was
-# invisible to --help smoke tests.)
-if [[ -z "$REMOTE" ]]; then
-    REMOTE="$(bash "$SCRIPT_DIR/resolve-github-remote.sh" "$REPO_ROOT")" || exit $?
-    log "Resolved github remote: $REMOTE"
-fi
+is_release_surface() {
+    local path=$1
+    [[ "$path" == "$CRATE_REL/Cargo.toml" ||
+       "$path" == "$CRATE_REL/CHANGELOG.md" ||
+       "$path" == "Cargo.lock" ||
+       "$path" == "$CRATE_REL"/release-notes-v*.md ]]
+}
 
+release_note_files() {
+    # The parent .gitignore intentionally ignores the utility directory, so
+    # include ignored-but-untracked release notes when handling --abort.
+    git ls-files --others --ignored --exclude-standard -- \
+        "$CRATE_REL/release-notes-v*.md" 2>/dev/null || true
+}
+
+confirm_remote_mutation() {
+    [[ "$DRY_RUN" -eq 1 || "$ASSUME_YES" -eq 1 ]] && return 0
+    if [[ ! -t 0 ]]; then
+        die_pre "--yes is required for a non-interactive real release"
+    fi
+    local answer
+    if ! read -r -p "Publish ${CRATE_NAME}@${VERSION}, tag ${TAG}, and push to ${REMOTE}? [y/N] " answer; then
+        die_pre "release confirmation was not provided"
+    fi
+    case "${answer,,}" in
+        y|yes) ;;
+        *) die_pre "release cancelled" ;;
+    esac
+}
+
+refresh_workspace_lock() {
+    # A package version is part of the workspace lockfile. Cargo updates only
+    # the affected local package entry here; unlike generate-lockfile this
+    # does not discard the monorepo's intentionally pinned dependency graph.
+    if ! cargo check -p "$CRATE_NAME" --quiet; then
+        die_pre "failed to synchronize the workspace Cargo.lock for $CRATE_NAME@$VERSION"
+    fi
+    [[ -s "$LOCKFILE" ]] || die_pre "workspace Cargo.lock is missing after cargo check"
+    ok "  Cargo.lock synchronized for $CRATE_NAME@$VERSION"
+}
+
+# Remote resolution is intentionally performed after --abort so a local
+# recovery does not require a configured GitHub remote.
 # ----- abort path ----------------------------------------------------------
 if [[ $ABORT -eq 1 ]]; then
     log "Reverting local modifications from a previous --dry-run..."
