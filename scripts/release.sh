@@ -129,6 +129,12 @@ run() {
     "$@"
 }
 
+run_local() {
+    # Local validation still runs during --dry-run.
+    printf '   $ %s\n' "$*"
+    "$@"
+}
+
 require_clean_tree() {
     if ! git diff --quiet HEAD 2>/dev/null || \
        [[ -n "$(git ls-files --others --exclude-standard)" ]] || \
@@ -331,7 +337,7 @@ fi
 
 # ----- step 4: cargo publish --dry-run (sanity) ---------------------------
 log "step 4/${TOTAL_STEPS}: cargo publish --dry-run (sanity check)"
-run cargo publish -p "$CRATE_NAME" --dry-run --allow-dirty
+run_local cargo publish -p "$CRATE_NAME" --dry-run --allow-dirty
 
 # ----- step 5: cargo publish for real -------------------------------------
 log "step 5/${TOTAL_STEPS}: cargo publish -p $CRATE_NAME"
