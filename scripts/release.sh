@@ -24,11 +24,13 @@
 #
 # Options:
 #   --dry-run             Run the pipeline end-to-end without mutating remote
-#                         state. Local files (Cargo.toml, CHANGELOG.md,
-#                         release-notes file) ARE modified so the operator
-#                         can inspect the diff. Use --abort to revert.
+#                         state. Local release surfaces (utility Cargo.toml,
+#                         workspace Cargo.lock, CHANGELOG, release notes) ARE
+#                         modified so the operator can inspect the diff. Use
+#                         --abort to revert.
 #   --abort               Revert any local modifications made by --dry-run
-#                         (cargo + changelog + release-notes). Refuses to
+#                         (utility Cargo.toml + workspace lock + changelog +
+#                         release notes). Refuses to
 #                         run if the working tree was already dirty at start.
 #   --remote <name>       Push to this git remote (default: auto-resolved —
 #                         the repo's github.com remote).
