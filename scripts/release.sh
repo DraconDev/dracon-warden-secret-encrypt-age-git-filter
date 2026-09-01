@@ -195,18 +195,39 @@ refresh_workspace_lock() {
 # ----- abort path ----------------------------------------------------------
 if [[ $ABORT -eq 1 ]]; then
     log "Reverting local modifications from a previous --dry-run..."
+    other_modified=()
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        if ! is_release_surface "$f"; then
+            other_modified+=("$f")
+        fi
+    done < <(git diff --name-only HEAD 2>/dev/null || true)
+    other_untracked=()
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        if ! is_release_surface "$f"; then
+            other_untracked+=("$f")
+        fi
+    done < <({ git ls-files --others --exclude-standard; release_note_files; } | sort -u)
+    if [[ ${#other_modified[@]} -gt 0 || ${#other_untracked[@]} -gt 0 ]]; then
+        die_pre "working tree dirty outside the release surfaces (${#other_modified[@]} modified, ${#other_untracked[@]} untracked); commit or stash first — --abort only reverts dry-run changes"
+    fi
     abort_tracked=()
     while IFS= read -r f; do
-        abort_tracked+=("$f")
-    done < <(git ls-files --modified --exclude-standard -- '*.toml' 'CHANGELOG.md' 2>/dev/null || true)
+        [[ -z "$f" ]] && continue
+        if is_release_surface "$f"; then
+            abort_tracked+=("$f")
+        fi
+    done < <(git diff --name-only HEAD 2>/dev/null || true)
     abort_untracked=()
     while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
         abort_untracked+=("$f")
-    done < <(git ls-files --others --exclude-standard -- 'release-notes-v*.md' 2>/dev/null || true)
+    done < <(release_note_files)
     if [[ ${#abort_tracked[@]} -gt 0 || ${#abort_untracked[@]} -gt 0 ]]; then
         set +e
         if [[ ${#abort_tracked[@]} -gt 0 ]]; then
-            git checkout -- "${abort_tracked[@]}" 2>/dev/null
+            git restore --source=HEAD --staged --worktree -- "${abort_tracked[@]}" 2>/dev/null
         fi
         if [[ ${#abort_untracked[@]} -gt 0 ]]; then
             rm -f -- "${abort_untracked[@]}" 2>/dev/null
@@ -217,6 +238,11 @@ if [[ $ABORT -eq 1 ]]; then
         ok "no local modifications to revert"
     fi
     exit 0
+fi
+
+if [[ -z "$REMOTE" ]]; then
+    REMOTE="$(bash "$SCRIPT_DIR/resolve-github-remote.sh" "$REPO_ROOT")" || exit $?
+    log "Resolved github remote: $REMOTE"
 fi
 
 # ----- preconditions -------------------------------------------------------
@@ -230,8 +256,7 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
 fi
 
 # ----- step 1: bump Cargo.toml version ------------------------------------
-log "step 1/${TOTAL_STEPS}: bumping Cargo.toml to ${VERSION}"
-CRATE_TOML="Cargo.toml"
+log "step 1/${TOTAL_STEPS}: bumping ${CRATE_REL}/Cargo.toml to ${VERSION}"
 current=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$CRATE_TOML" 2>/dev/null || true)
 if [[ -z "$current" ]]; then
     die_pre "no version found in $CRATE_TOML"
@@ -239,37 +264,31 @@ fi
 if [[ "$current" == "$VERSION" ]]; then
     ok "  $CRATE_TOML already at $VERSION"
 else
-    if [[ $DRY_RUN -eq 0 ]]; then
-        sed -i "0,/^version[[:space:]]*=/{s/^version[[:space:]]*=.*$/version = \"${VERSION}\"/}" "$CRATE_TOML"
-    fi
+    sed -i "0,/^version[[:space:]]*=/{s/^version[[:space:]]*=.*$/version = \"${VERSION}\"/}" "$CRATE_TOML"
     ok "  $CRATE_TOML: $current → $VERSION"
 fi
+refresh_workspace_lock
 
 # ----- step 2: close CHANGELOG [Unreleased] -------------------------------
-log "step 2/${TOTAL_STEPS}: closing CHANGELOG.md [Unreleased] → [${VERSION}]"
-CHANGELOG="CHANGELOG.md"
+log "step 2/${TOTAL_STEPS}: closing ${CRATE_REL}/CHANGELOG.md [Unreleased] → [${VERSION}]"
 DATE=$(date -u +%Y-%m-%d)
-if [[ $DRY_RUN -eq 0 ]]; then
-    # FIXED 2026-08-09 (audit MEDIUM): ported close-changelog.py from
-    # dracon-sync v0.113.11. The inline heredoc had NO already-closed
-    # guard — a re-run after a partial failure duplicated the `## [VERSION]`
-    # header (the exact v0.113.10 bug sync fixed). The script is
-    # idempotent: when `## [VERSION]` already exists, the file is left
-    # byte-identical.
-    python3 "$SCRIPT_DIR/close-changelog.py" "$CHANGELOG" "$VERSION" "$DATE"
-    ok "  CHANGELOG.md: [Unreleased] closed as [${VERSION}] - ${DATE} (or already closed)"
-else
-    ok "  CHANGELOG.md: would close [Unreleased] → [${VERSION}] - ${DATE} (skipped: --dry-run)"
-fi
+# FIXED 2026-08-09 (audit MEDIUM): ported close-changelog.py from
+# dracon-sync v0.113.11. The inline heredoc had NO already-closed
+# guard — a re-run after a partial failure duplicated the `## [VERSION]`
+# header (the exact v0.113.10 bug sync fixed). The script is
+# idempotent: when `## [VERSION]` already exists, the file is left
+# byte-identical.
+python3 "$SCRIPT_DIR/close-changelog.py" "$CHANGELOG" "$VERSION" "$DATE"
+ok "  $CHANGELOG: [Unreleased] closed as [${VERSION}] - ${DATE} (or already closed)"
 
 # ----- step 3: create release-notes file ----------------------------------
-log "step 3/${TOTAL_STEPS}: creating release-notes-v${VERSION}.md"
-NOTES="release-notes-v${VERSION}.md"
+log "step 3/${TOTAL_STEPS}: creating ${CRATE_REL}/release-notes-v${VERSION}.md"
+NOTES_REL="$CRATE_REL/release-notes-v${VERSION}.md"
+NOTES="$REPO_ROOT/$NOTES_REL"
 if [[ -f "$NOTES" ]]; then
-    ok "  $NOTES already exists"
+    ok "  $NOTES_REL already exists"
 else
-    if [[ $DRY_RUN -eq 0 ]]; then
-        cat > "$NOTES" <<EOF
+    cat > "$NOTES" <<EOF
 # dracon-warden v${VERSION} (${DATE})
 
 Git filter encryption and repository hardening for secrets at rest.
@@ -305,10 +324,9 @@ dracon-warden keygen
 dracon-warden once <repo>
 \`\`\`
 
-**Full Changelog**: https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter/compare/$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")...v${VERSION}
+**Full Changelog**: https://github.com/DraconDev/dracon-utilities/compare/$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")...v${VERSION}
 EOF
-    fi
-    ok "  $NOTES created"
+    ok "  $NOTES_REL created"
 fi
 
 # ----- step 4: cargo publish --dry-run (sanity) ---------------------------
@@ -324,7 +342,7 @@ log "step 5/${TOTAL_STEPS}: cargo publish -p $CRATE_NAME"
 # (protected-patterns wiring) was only caught by manual publish-verify
 # against a manually-published twin. Fail here, before uploading, when the
 # registry twin is missing or stale.
-REQ_SEC="$(grep -oP 'dracon-security-kit[^}]*version = "\K[^"]+' Cargo.toml | head -1 || true)"
+REQ_SEC="$(grep -oP 'dracon-security-kit[^}]*version = "\K[^"]+' "$CRATE_TOML" | head -1 || true)"
 if [[ -z "$REQ_SEC" ]]; then
     die_pub "could not extract the required dracon-security version from Cargo.toml — publish order unverifiable"
 fi
@@ -344,6 +362,7 @@ fi
 # 2026-08-09): when a previous run already published this version but
 # failed later, 'already published' / 'already exists on crates.io index'
 # is success, not a fatal error.
+confirm_remote_mutation
 if [[ $DRY_RUN -eq 1 ]]; then
     run cargo publish -p "$CRATE_NAME" --allow-dirty
 else
@@ -385,7 +404,9 @@ fi
 
 # ----- step 7: commit, tag, push, gh release ------------------------------
 log "step 7/${TOTAL_STEPS}: commit + tag + push + gh release"
-run git add Cargo.toml CHANGELOG.md "$NOTES"
+# The utility directory is parent-gitignored by design; force staging is
+# scoped to the exact release surfaces and never uses `git add .`.
+run git add -f -- "$CRATE_REL/Cargo.toml" "Cargo.lock" "$CRATE_REL/CHANGELOG.md" "$NOTES_REL"
 # Idempotent re-run path (ported from dracon-sync v0.113.11, audit MEDIUM
 # 2026-08-09): skip the commit when there is nothing to commit, skip the
 # tag when it already exists, skip the gh release when it already exists.
@@ -450,11 +471,11 @@ ok ""
 ok "════════════════════════════════════════════"
 ok "✓ dracon-warden v${VERSION} released"
 ok "  crates.io:  https://crates.io/crates/dracon-warden"
-ok "  github:     https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter/releases/tag/${TAG}"
+ok "  github:     https://github.com/DraconDev/dracon-utilities/releases/tag/${TAG}"
 ok "════════════════════════════════════════════"
 
 if [[ $DRY_RUN -eq 1 ]]; then
     echo ""
     warn "This was a --dry-run. Local files were modified but no remote state was changed."
-    warn "Run 'scripts/release.sh ${VERSION} --abort' to revert, or 'scripts/release.sh ${VERSION} --yes' to execute for real."
+    warn "Run '${CRATE_REL}/scripts/release.sh --abort' to revert, or '${CRATE_REL}/scripts/release.sh ${VERSION} --yes' to execute for real."
 fi
