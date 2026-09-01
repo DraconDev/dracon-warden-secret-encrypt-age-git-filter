@@ -2,6 +2,8 @@
 
 Secret, encrypt, age, git-filter — repository hardening and smudge/clean encryption for Dracon workspaces.
 
+![`dracon-warden status` output](docs/status-output.png)
+
 This repository is the **canonical standalone source** for `dracon-warden` on
 GitHub and GitLab. It contains the source code, embedded security
 crate, `Cargo.toml`, tests, examples, and release metadata.
