@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
-"""close-changelog.py — close CHANGELOG.md's [Unreleased] section as [VERSION].
+"""Close CHANGELOG.md's [Unreleased] section as [VERSION].
 
-Ported from dracon-sync v0.113.11 (2026-08-09, audit MEDIUM): warden's
-release.sh used an inline heredoc with NO already-closed idempotency guard —
-a re-run after a partial failure duplicated the `## [VERSION]` header (the
-exact v0.113.10 bug sync fixed with this script). Idempotent: when a
-`## [VERSION]` header already exists, the file is left BYTE-IDENTICAL.
-
-Usage: close-changelog.py <changelog-path> <version> <date>
-Exit 0 always (a missing [Unreleased] or an already-closed version is a
-no-op with a message on stderr, not an error).
+The operation is idempotent: when a ``## [VERSION]`` header already exists,
+the file is left byte-identical.
 """
 import pathlib
 import re
@@ -17,24 +10,21 @@ import sys
 
 
 def main() -> int:
+    if len(sys.argv) != 4:
+        print("usage: close-changelog.py <changelog-path> <version> <date>", file=sys.stderr)
+        return 2
+
     path, version, date = sys.argv[1], sys.argv[2], sys.argv[3]
     p = pathlib.Path(path)
     text = p.read_text()
 
-    # Idempotency: this version is already closed -> leave byte-identical.
     if re.search(rf"^## \[{re.escape(version)}\][^\n]*$", text, re.MULTILINE):
-        print(
-            f"  {p}: [{version}] already closed; leaving unchanged",
-            file=sys.stderr,
-        )
+        print(f"  {p}: [{version}] already closed; leaving unchanged", file=sys.stderr)
         return 0
 
     marker = "## [Unreleased]"
     if marker not in text:
-        print(
-            f"  {p}: no [Unreleased] section found; leaving unchanged",
-            file=sys.stderr,
-        )
+        print(f"  {p}: no [Unreleased] section found; leaving unchanged", file=sys.stderr)
         return 0
 
     unreleased_match = re.search(r"^## \[Unreleased\][^\n]*\n", text, re.MULTILINE)
@@ -46,8 +36,7 @@ def main() -> int:
     next_match = re.search(r"^## \[[^\n]*\n", text[start:], re.MULTILINE)
     if next_match:
         end = start + next_match.start()
-        new_header = f"## [{version}] - {date}\n"
-        new_text = text[:start] + new_header + text[start:end] + text[end:]
+        new_text = text[:start] + f"## [{version}] - {date}\n" + text[start:end] + text[end:]
     else:
         new_text = text[:start] + f"\n## [{version}] - {date}\n" + text[start:]
     p.write_text(new_text)
