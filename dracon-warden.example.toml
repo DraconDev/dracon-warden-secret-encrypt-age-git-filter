@@ -46,6 +46,14 @@ plaintext_patterns = []
 # to extend or replace them for a particular installation.
 hygiene_patterns = [
     "**/.pi*",
+    # Product-default machine-local audit/cache hygiene (2026-08-30).
+    # These artifacts are regeneratable and must not rebloat repositories.
+    "web/games/audit-evidence/",
+    "**/audit-evidence/",
+    "**/.pi-glla/",
+    "**/.bucket-cache/",
+    "web/games/wip/football-forever/docs/audit/",
+    "web/games/wip/football-forever/audit-evidence/",
     "**/chrometrace.log",
     "**/.svelte-kit/",
     "**/.vite/",
