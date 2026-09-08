@@ -4,10 +4,11 @@ Secret, encrypt, age, git-filter — repository hardening and smudge/clean encry
 
 ![`dracon-warden status` output](docs/status-output.png)
 
-This repository is the **canonical standalone source** for `dracon-warden` on
-GitHub and GitLab. It contains the source code, embedded security
-crate, `Cargo.toml`, tests, examples, and release metadata.
-You can build and install this utility directly from this repo.
+This page is the standalone guide for `dracon-warden` (also rendered on
+crates.io). The canonical source is the `dracon-warden/` directory of the
+[`dracon-utilities`](https://github.com/DraconDev/dracon-utilities) monorepo
+on `main`; the standalone GitHub/GitLab repos are frozen mirrors.
+You can build and install this utility directly from either checkout.
 
 ## Quick start (standalone build)
 
@@ -44,8 +45,8 @@ scripts/verify-install.sh "$HOME/.local/bin/dracon-warden"
 
 | Boundary | Decision |
 |----------|----------|
-| Source code | This repository's `main` branch |
-| Source of truth | This standalone repository |
+| Source code | The `dracon-warden/` directory of the `dracon-utilities` monorepo (`main` branch) |
+| Source of truth | The `dracon-utilities` monorepo; the standalone repos are frozen mirrors |
 | Workspace integration | Included by the `dracon-utilities` meta workspace when checked out under `dracon-warden/` |
 | Shared libraries | Embedded `src/security` crate plus registry dependencies |
 | Operational policy | `~/.dracon/utilities/` TOML files |
@@ -60,7 +61,7 @@ audience/UX claims) is documented in
 
 ## Purpose
 
-Encrypts secret-shaped content at rest in git while preserving normal plaintext files in the working tree. Uses age encryption and git smudge/clean filters plus a pre-commit hook for plaintext-secret prevention.
+Encrypts secret-shaped content at rest in git while preserving normal plaintext files in the working tree. Uses age encryption and git smudge/clean filters, a pre-commit hook for plaintext-secret prevention, a pre-push secret scan, and a merge driver for encrypted files.
 
 ## Machine-local hygiene defaults
 
@@ -75,15 +76,23 @@ add broad `*.log` matching by default.
 ## Runtime
 
 - Binary: `dracon-warden`
-- Service: No systemd service; enforced through global git hooks.
-- Example policy: `dracon-warden/dracon-warden.example.toml`
-- Common commands: `dracon-warden status · dracon-warden keygen · dracon-warden setup-hooks --global · dracon-warden scrub-markers`
+- Service: No systemd service; enforced through global git hooks (`setup-hooks --global`).
+- Example policy: `dracon-warden.example.toml` in this repo
+  (`dracon-warden/dracon-warden.example.toml` from the `dracon-utilities` monorepo root);
+  the live config lives at `~/.dracon/utilities/warden/dracon-warden.toml`
+- Key management: `dracon-warden keygen` writes the machine age keypair and
+  never overwrites an existing key — back the key up; losing it means losing
+  every secret it encrypted.
+- Encryption scope: `protected_patterns` selects which globs get encrypted
+  (empty keeps the legacy scan-everything posture); `plaintext_patterns` is a
+  tight allowlisted escape hatch (see the example policy).
+- Common commands: `dracon-warden status · dracon-warden once <repo> · dracon-warden keygen · dracon-warden setup-hooks --global · dracon-warden scrub-markers`;
+  also `repair`, `resmudge`, `filter-clean`/`filter-smudge`, `merge` — full list at `dracon-warden --help`
 
 ## Maintenance
 
-Changes are made in this standalone repository. The `dracon-sync` daemon
-watches it and pushes configured remotes; the parent meta workspace does not
-mirror source files into it.
+Changes are made in the `dracon-utilities` monorepo (`dracon-warden/` on `main`).
+The standalone repos are frozen mirrors of that tree.
 
 ## License
 
