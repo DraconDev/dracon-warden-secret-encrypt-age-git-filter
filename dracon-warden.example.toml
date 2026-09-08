@@ -4,7 +4,8 @@
 # Controls secret encryption and repo discovery roots.
 #
 # Quick start:
-#   1. Install: ./install.sh (installs binary + hooks automatically)
+#   1. Install: ./install.sh at the dracon-utilities monorepo root
+#      (installs binary + hooks automatically; there is no per-utility installer)
 #   2. Or manually: dracon-warden setup-hooks --global
 #   3. Harden a repo: dracon-warden once <repo>
 #
@@ -37,7 +38,8 @@ protected_patterns = []
 
 # Glob patterns for files that must remain plaintext (excluded from encryption)
 # Use for files that need to be readable without decryption keys.
-# Example: ["*.md", "*.txt", "LICENSE*"]
+# Must use the validator allowlist (build artifacts, binaries, *.pub keys,
+# Cargo.lock, events jsonl) — e.g. ["Cargo.lock", "*.pub"].
 plaintext_patterns = []
 
 # Glob patterns for hygiene checks (files that should NOT exist in repo).

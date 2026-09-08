@@ -21,6 +21,7 @@ part of every workspace build.
    when used from the parent workspace or with `cargo test --locked` here.
 3. The daemon's history rules in the parent `AGENTS.md` apply to this repo:
    agent loops do not rewrite published history.
-4. Omitted `hygiene_patterns` use the narrow machine-local defaults documented
-   in the example policy; an explicit empty list remains an operator override,
-   and broad `*.log` matching is not a Warden default.
+4. Omitted `hygiene_patterns` use the narrow machine-local defaults; the shipped
+   example policy starts from those defaults and adds product-specific
+   regeneratable paths on top. An explicit empty list remains an operator
+   override, and broad `*.log` matching is not a Warden default.
