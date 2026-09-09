@@ -194,7 +194,7 @@ hygiene_patterns = ["**/.pi*", "**/chrometrace.log", "**/.cache/"]
 `discover_roots` resolve against the current `HOME` before missing roots are
 filtered out. Discovery recursively walks those roots, including nested
 checkouts and `.git` pointer-file repositories, while skipping `.git` metadata
-directories.
+directories and symlinked `.git` markers.
 
 ## Safety Defaults
 

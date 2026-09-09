@@ -1668,6 +1668,31 @@ watch_roots = ["/tmp/test"]
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn discover_git_repos_rejects_symlinked_git_marker() {
+        use std::os::unix::fs::symlink;
+
+        let td = TestDir::new("warden_discover_git_symlink");
+        let root = td.path().join("root");
+        let external_git = td.path().join("external-git");
+        let repo = root.join("symlinked");
+        fs::create_dir_all(&external_git).expect("external git directory");
+        fs::create_dir_all(&repo).expect("repo directory");
+        symlink(&external_git, repo.join(".git")).expect("symlink git marker");
+
+        let repos = discover_git_repos_local(&[root]);
+
+        assert!(
+            !repos.contains(&repo),
+            "a symlinked .git marker must not classify a repo"
+        );
+        assert!(
+            !has_git_marker(&repo),
+            "the shared git-marker guard must reject symlinks"
+        );
+    }
+
     #[test]
     fn filter_smudge_handles_empty_input() {
         let content = "let x = 1;\n";

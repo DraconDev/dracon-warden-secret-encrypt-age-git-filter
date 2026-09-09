@@ -135,6 +135,31 @@ pub fn resolve_policy_path(
     anyhow::bail!("{}", error_msg)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GitMarkerKind {
+    Directory,
+    PointerFile,
+}
+
+/// Return the kind of a checkout's `.git` marker without following symlinks.
+fn git_marker_kind(repo: &Path) -> Option<GitMarkerKind> {
+    let metadata = fs::symlink_metadata(repo.join(".git")).ok()?;
+    if metadata.file_type().is_symlink() {
+        return None;
+    }
+    if metadata.is_dir() {
+        Some(GitMarkerKind::Directory)
+    } else if metadata.is_file() {
+        Some(GitMarkerKind::PointerFile)
+    } else {
+        None
+    }
+}
+
+fn has_git_marker(repo: &Path) -> bool {
+    git_marker_kind(repo).is_some()
+}
+
 pub(crate) fn discover_git_repos(
     roots: &[PathBuf],
     excluded_dir_names: &BTreeSet<String>,
@@ -174,7 +199,7 @@ pub(crate) fn discover_git_repos(
                 continue;
             }
             let path = entry.path();
-            if path.join(".git").exists() {
+            if has_git_marker(path) {
                 repos.insert(path.to_path_buf());
             }
         }
@@ -1091,8 +1116,9 @@ fn ensure_repo_filter_config(repo: &Path) -> Result<bool> {
 /// silently disables checkout-race protection for exactly those paths.
 fn resolved_git_dir(repo: &Path) -> Option<PathBuf> {
     let dot_git = repo.join(".git");
-    if dot_git.is_dir() {
-        return Some(dot_git);
+    match git_marker_kind(repo)? {
+        GitMarkerKind::Directory => return Some(dot_git),
+        GitMarkerKind::PointerFile => {}
     }
 
     let content = fs::read_to_string(&dot_git).ok()?;
@@ -1287,7 +1313,7 @@ pub(crate) fn harden_repo(
     // Build gitignore block while preserving existing non-policy patterns
     let gitignore_changed = apply_overwrite_file(&gitignore_path, &merged_gitignore)?;
     let gitattributes_changed = apply_overwrite_file(&gitattributes_path, &merged_gitattributes)?;
-    let filter_cfg_changed = if repo.join(".git").exists() {
+    let filter_cfg_changed = if has_git_marker(repo) {
         ensure_repo_filter_config(repo)?
     } else {
         false
@@ -1540,7 +1566,7 @@ fn refuse_dedicated_master_overwrite(home: &Path) -> Result<()> {
 fn find_git_repo(path: &Path) -> Option<PathBuf> {
     let mut cur = path.to_path_buf();
     loop {
-        if cur.join(".git").exists() {
+        if has_git_marker(&cur) {
             return Some(cur);
         }
         if !cur.pop() {
@@ -1893,7 +1919,7 @@ pub(crate) fn scrub_markers(policy: &WardenPolicy, repos: &[PathBuf], apply: boo
     let mut rows: Vec<(String, String, String)> = Vec::new();
 
     for repo in repos {
-        if !repo.join(".git").exists() {
+        if !has_git_marker(repo) {
             continue;
         }
 
@@ -2766,10 +2792,9 @@ fn hook_dir(mode: HookMode, repo: Option<&Path>) -> Result<PathBuf> {
         }
         HookMode::Local => {
             let repo_path = repo.context("--local requires a repo path")?;
-            let git_dir = repo_path.join(".git");
-            if !git_dir.exists() {
+            if !has_git_marker(&repo_path) {
                 return Err(anyhow::anyhow!(
-                    "not a git repo: {} (no .git directory)",
+                    "not a git repo: {} (no valid .git marker)",
                     repo_path.display()
                 ));
             }
