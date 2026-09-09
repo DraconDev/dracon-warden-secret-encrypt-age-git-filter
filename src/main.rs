@@ -2219,7 +2219,10 @@ fn read_tracked_repair_file(path: &Path, max_bytes: Option<usize>) -> Result<Tra
             .metadata()
             .with_context(|| format!("failed to inspect opened repair path {}", path.display()))?;
         if !file_metadata.is_file() {
-            anyhow::bail!("refusing to read non-regular tracked path {}", path.display());
+            anyhow::bail!(
+                "refusing to read non-regular tracked path {}",
+                path.display()
+            );
         }
 
         if let Some(limit) = max_bytes {
