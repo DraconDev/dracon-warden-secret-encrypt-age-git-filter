@@ -2172,6 +2172,139 @@ fn git_ls_files(repo: &Path) -> Result<Vec<String>> {
     Ok(paths)
 }
 
+enum TrackedRepairFile {
+    Missing,
+    TooLarge(u64),
+    Contents(Vec<u8>),
+}
+
+/// Read a tracked repair path without following a repository-controlled
+/// symlink. The initial `symlink_metadata` check gives a useful diagnostic,
+/// while Unix `O_NOFOLLOW` closes the check/open race. Existing inputs are
+/// rejected on platforms without a no-follow file-open primitive rather than
+/// risking a read through a link.
+fn read_tracked_repair_file(path: &Path, max_bytes: Option<usize>) -> Result<TrackedRepairFile> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(TrackedRepairFile::Missing)
+        }
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("failed to inspect tracked repair path {}", path.display())
+            })
+        }
+    };
+
+    if metadata.file_type().is_symlink() {
+        anyhow::bail!("refusing to read tracked symlink {}", path.display());
+    }
+    if !metadata.is_file() {
+        anyhow::bail!("refusing to read non-regular tracked path {}", path.display());
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut options = fs::OpenOptions::new();
+        options.read(true).custom_flags(libc::O_NOFOLLOW);
+        let mut file = options
+            .open(path)
+            .with_context(|| format!("failed to read tracked repair path {}", path.display()))?;
+        let file_metadata = file.metadata().with_context(|| {
+            format!("failed to inspect opened repair path {}", path.display())
+        })?;
+        if !file_metadata.is_file() {
+            anyhow::bail!("refusing to read non-regular tracked path {}", path.display());
+        }
+
+        if let Some(limit) = max_bytes {
+            if file_metadata.len() > limit as u64 {
+                return Ok(TrackedRepairFile::TooLarge(file_metadata.len()));
+            }
+            let mut contents = Vec::new();
+            file.take(limit.saturating_add(1) as u64)
+                .read_to_end(&mut contents)
+                .with_context(|| format!("failed reading {}", path.display()))?;
+            if contents.len() > limit {
+                return Ok(TrackedRepairFile::TooLarge(contents.len() as u64));
+            }
+            return Ok(TrackedRepairFile::Contents(contents));
+        }
+
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents)
+            .with_context(|| format!("failed reading {}", path.display()))?;
+        Ok(TrackedRepairFile::Contents(contents))
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = max_bytes;
+        anyhow::bail!(
+            "refusing existing tracked repair path {}: no supported no-follow reader on this platform",
+            path.display()
+        );
+    }
+}
+
+/// Write an already-read tracked repair path without following a symlink.
+/// Opening the existing file with `O_NOFOLLOW` makes the write safe even if
+/// the checkout path is replaced after the read-side metadata check. Missing,
+/// non-regular, and non-Unix existing paths fail closed.
+fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("failed to inspect tracked repair path {}", path.display())
+            })
+        }
+    };
+
+    if metadata.file_type().is_symlink() {
+        anyhow::bail!("refusing to write tracked symlink {}", path.display());
+    }
+    if !metadata.is_file() {
+        anyhow::bail!("refusing to write non-regular tracked path {}", path.display());
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut options = fs::OpenOptions::new();
+        options
+            .write(true)
+            .truncate(true)
+            .custom_flags(libc::O_NOFOLLOW);
+        let mut file = options
+            .open(path)
+            .with_context(|| format!("failed to open tracked repair path {}", path.display()))?;
+        if !file
+            .metadata()
+            .with_context(|| format!("failed to inspect opened repair path {}", path.display()))?
+            .is_file()
+        {
+            anyhow::bail!("refusing to write non-regular tracked path {}", path.display());
+        }
+        file.write_all(contents)
+            .and_then(|_| file.flush())
+            .with_context(|| format!("failed writing {}", path.display()))?;
+        return Ok(());
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = contents;
+        anyhow::bail!(
+            "refusing existing tracked repair path {}: no supported no-follow writer on this platform",
+            path.display()
+        );
+    }
+}
+
 fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usize, usize)> {
     require_git_marker(repo)?;
     let protected = build_globset(&policy.protected_patterns)?;
@@ -2197,23 +2330,25 @@ fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usi
         }
 
         let full = repo.join(&rel);
-        if let Ok(meta) = fs::metadata(&full) {
-            // CHANGED 2026-09-09 (audit F51): this skip was silent —
-            // large ciphertext files stayed unrestored indefinitely with
-            // no hint why. Warn so the operator knows to handle them.
-            if meta.len() as usize > STREAM_IO_MAX_BYTES {
+        let bytes = match read_tracked_repair_file(&full, Some(STREAM_IO_MAX_BYTES)) {
+            Ok(TrackedRepairFile::Missing) => continue,
+            Ok(TrackedRepairFile::TooLarge(size)) => {
+                // CHANGED 2026-09-09 (audit F51): this skip was silent —
+                // large ciphertext files stayed unrestored indefinitely with
+                // no hint why. Warn so the operator knows to handle them.
                 eprintln!(
                     "⚠️ skipping resmudge of {} ({} > {}-byte streaming cap) — restore it manually",
                     full.display(),
-                    meta.len(),
+                    size,
                     STREAM_IO_MAX_BYTES
                 );
                 continue;
             }
-        }
-        let bytes = match fs::read(&full) {
-            Ok(b) => b,
-            Err(_) => continue,
+            Ok(TrackedRepairFile::Contents(bytes)) => bytes,
+            Err(error) => {
+                eprintln!("⚠️ skipping resmudge of {}: {}", full.display(), error);
+                continue;
+            }
         };
 
         if !is_marker_string(&String::from_utf8_lossy(&bytes)) {
@@ -2234,7 +2369,7 @@ fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usi
         match warden.smudge(&bytes, Some(&rel_norm)) {
             Ok(out) => {
                 if out != bytes {
-                    if let Err(e) = fs::write(&full, out) {
+                    if let Err(e) = write_tracked_repair_file(&full, &out) {
                         eprintln!("⚠️ resmudge write failed {}: {}", full.display(), e);
                         continue;
                     }
@@ -2319,9 +2454,14 @@ fn backfill_env_headers_repo(repo: &Path, apply: bool) -> Result<(usize, usize)>
         }
 
         let full = repo.join(&rel);
-        let bytes = match fs::read(&full) {
-            Ok(b) => b,
-            Err(_) => continue,
+        let bytes = match read_tracked_repair_file(&full, None) {
+            Ok(TrackedRepairFile::Missing) => continue,
+            Ok(TrackedRepairFile::TooLarge(_)) => unreachable!("backfill has no read size limit"),
+            Ok(TrackedRepairFile::Contents(bytes)) => bytes,
+            Err(error) => {
+                eprintln!("⚠️ skipping header backfill of {}: {}", full.display(), error);
+                continue;
+            }
         };
 
         let content = String::from_utf8_lossy(&bytes);
@@ -2355,7 +2495,7 @@ fn backfill_env_headers_repo(repo: &Path, apply: bool) -> Result<(usize, usize)>
         match warden.smudge(&bytes, Some(&rel_norm)) {
             Ok(out) => {
                 if out != bytes {
-                    if let Err(e) = fs::write(&full, &out) {
+                    if let Err(e) = write_tracked_repair_file(&full, &out) {
                         eprintln!("⚠️ backfill write failed {}: {}", full.display(), e);
                         continue;
                     }
