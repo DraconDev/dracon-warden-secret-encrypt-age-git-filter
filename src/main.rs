@@ -2792,12 +2792,12 @@ fn hook_dir(mode: HookMode, repo: Option<&Path>) -> Result<PathBuf> {
         }
         HookMode::Local => {
             let repo_path = repo.context("--local requires a repo path")?;
-            if !has_git_marker(&repo_path) {
-                return Err(anyhow::anyhow!(
+            let git_dir = resolved_git_dir(repo_path).ok_or_else(|| {
+                anyhow::anyhow!(
                     "not a git repo: {} (no valid .git marker)",
                     repo_path.display()
-                ));
-            }
+                )
+            })?;
             Ok(git_dir.join("hooks"))
         }
     }
