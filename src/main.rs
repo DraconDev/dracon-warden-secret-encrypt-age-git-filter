@@ -2036,7 +2036,18 @@ pub(crate) fn scrub_markers(policy: &WardenPolicy, repos: &[PathBuf], apply: boo
             }
 
             let path = repo.join(rel);
-            let Ok(content) = fs::read_to_string(&path) else {
+            let bytes = match read_tracked_repair_file(&path, None) {
+                Ok(TrackedRepairFile::Missing) => continue,
+                Ok(TrackedRepairFile::TooLarge(_)) => {
+                    unreachable!("scrub marker reads have no size limit")
+                }
+                Ok(TrackedRepairFile::Contents(bytes)) => bytes,
+                Err(error) => {
+                    eprintln!("⚠️ skipping marker scrub of {}: {}", path.display(), error);
+                    continue;
+                }
+            };
+            let Ok(content) = String::from_utf8(bytes) else {
                 continue;
             };
             if !is_marker_string(&content) {
@@ -2084,7 +2095,7 @@ pub(crate) fn scrub_markers(policy: &WardenPolicy, repos: &[PathBuf], apply: boo
             scrub_json_value(&mut v);
             let next = serde_json::to_string_pretty(&v)?;
             if next != content {
-                fs::write(&path, &next)
+                write_tracked_repair_file(&path, next.as_bytes())
                     .with_context(|| format!("failed writing {}", path.display()))?;
                 changed += 1;
                 let repo_name = repo
