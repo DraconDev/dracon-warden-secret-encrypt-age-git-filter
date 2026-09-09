@@ -1362,6 +1362,57 @@ mod tests {
     }
 
     #[test]
+    fn policy_roots_expand_tilde_before_existence_filtering() {
+        let td = TestDir::new("warden_tilde_roots");
+        let home = td.path().join("home");
+        let canonical = home.join("canonical");
+        let legacy = home.join("legacy");
+        let additional = home.join("additional");
+        fs::create_dir_all(&canonical).expect("canonical root");
+        fs::create_dir_all(&legacy).expect("legacy root");
+        fs::create_dir_all(&additional).expect("additional root");
+        let canonical_repo = canonical.join("canonical-repo");
+        let additional_repo = additional.join("additional-repo");
+        fs::create_dir_all(canonical_repo.join(".git")).expect("canonical repo");
+        fs::create_dir_all(additional_repo.join(".git")).expect("additional repo");
+
+        let _home = HomeGuard::new(home.to_str().expect("home path is UTF-8"));
+        assert_eq!(expand_tilde("~"), home);
+        assert_eq!(expand_tilde("~/canonical"), canonical);
+        assert_eq!(expand_tilde("~other"), std::path::PathBuf::from("~other"));
+
+        let canonical_policy = WardenPolicy {
+            repo_roots: vec!["~/canonical".into()],
+            discover_roots: vec![],
+            ..Default::default()
+        };
+        assert_eq!(
+            effective_repo_roots(&canonical_policy),
+            vec![canonical.clone()]
+        );
+
+        let legacy_policy = WardenPolicy {
+            repo_roots: vec![],
+            watch_roots: vec!["~/legacy".into()],
+            discover_roots: vec![],
+            ..Default::default()
+        };
+        assert_eq!(effective_repo_roots(&legacy_policy), vec![legacy]);
+
+        let discovery_policy = WardenPolicy {
+            repo_roots: vec!["~/canonical".into()],
+            discover_roots: vec!["~/additional".into()],
+            ..Default::default()
+        };
+        let roots = effective_discovery_roots(&discovery_policy);
+        assert!(roots.contains(&canonical));
+        assert!(roots.contains(&additional));
+        let repos = discover_git_repos_local(&roots);
+        assert!(repos.contains(&canonical_repo));
+        assert!(repos.contains(&additional_repo));
+    }
+
+    #[test]
     fn effective_repo_roots_merges_and_dedupes() {
         let td = TestDir::new("warden_effective_roots");
         let p1 = td.path().join("one");
