@@ -9,6 +9,10 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 const REPO_KEY_LEN: usize = 32;
 
+// CHANGED 2026-09-09 (audit F50): RepoKey holds 32-byte AES-GCM keys
+// with no zeroization while TeamKey had it — key material lingered in
+// memory after drop. Same derive as TeamKey.
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct RepoKey(pub Vec<u8>);
 
 impl RepoKey {

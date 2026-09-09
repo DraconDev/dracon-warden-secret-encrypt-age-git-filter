@@ -2074,7 +2074,16 @@ fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usi
 
         let full = repo.join(&rel);
         if let Ok(meta) = fs::metadata(&full) {
+            // CHANGED 2026-09-09 (audit F51): this skip was silent —
+            // large ciphertext files stayed unrestored indefinitely with
+            // no hint why. Warn so the operator knows to handle them.
             if meta.len() as usize > STREAM_IO_MAX_BYTES {
+                eprintln!(
+                    "⚠️ skipping resmudge of {} ({} > {}-byte streaming cap) — restore it manually",
+                    full.display(),
+                    meta.len(),
+                    STREAM_IO_MAX_BYTES
+                );
                 continue;
             }
         }
