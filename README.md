@@ -190,6 +190,10 @@ plaintext_patterns = []
 hygiene_patterns = ["**/.pi*", "**/chrometrace.log", "**/.cache/"]
 ```
 
+`~` and `~/...` in `repo_roots`, the deprecated `watch_roots` alias, and
+`discover_roots` resolve against the current `HOME` before missing roots are
+filtered out.
+
 ## Safety Defaults
 
 - `plaintext_patterns` is for files that must remain plaintext in git (lockfiles, public keys, etc).

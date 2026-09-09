@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (audit pass 2026-09-09)
 
+- **Policy discovery expands home-relative roots (F70):** `~` and `~/...`
+  entries in `repo_roots`, the deprecated `watch_roots`, and
+  `discover_roots` are expanded before existence filtering, so the shipped
+  example policy discovers repositories under the current HOME.
 - **Merge driver no longer commits plaintext (F49)**: re-encryption used
   git's `%A` temp path, so the protected-patterns gate missed and merged
   secrets were written back unencrypted whenever
