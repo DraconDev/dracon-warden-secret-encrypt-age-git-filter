@@ -319,6 +319,27 @@ fn default_hygiene_patterns() -> Vec<String> {
     ]
 }
 
+fn expand_tilde(raw: &str) -> PathBuf {
+    let Some(rest) = raw.strip_prefix('~') else {
+        return PathBuf::from(raw);
+    };
+    if !rest.is_empty() && !rest.starts_with('/') && !rest.starts_with('\\') {
+        return PathBuf::from(raw);
+    }
+    let Some(home) = dirs::home_dir() else {
+        return PathBuf::from(raw);
+    };
+    home.join(rest.trim_start_matches(|ch| ch == '/' || ch == '\\'))
+}
+
+fn existing_policy_paths(raw_paths: &[String]) -> Vec<PathBuf> {
+    raw_paths
+        .iter()
+        .map(|raw| expand_tilde(raw))
+        .filter(|path| path.exists())
+        .collect()
+}
+
 #[derive(Debug, Default, Deserialize, Clone)]
 pub(crate) struct WardenPolicy {
     #[serde(default)]
@@ -463,26 +484,18 @@ impl WardenPolicy {
     /// 2. `watch_roots` (deprecated alias) — only used when `repo_roots` is empty
     /// 3. `discover_roots` (separate field, used to extend the search set)
     ///
-    /// Non-existent paths are filtered out.
+    /// Non-existent paths are filtered out after `~` expansion.
     fn repo_root_paths(&self) -> Vec<PathBuf> {
         let chosen: &[String] = if !self.repo_roots.is_empty() {
             &self.repo_roots
         } else {
             &self.watch_roots
         };
-        chosen
-            .iter()
-            .map(PathBuf::from)
-            .filter(|p| p.exists())
-            .collect()
+        existing_policy_paths(chosen)
     }
 
     fn discover_root_paths(&self) -> Vec<PathBuf> {
-        self.discover_roots
-            .iter()
-            .map(PathBuf::from)
-            .filter(|p| p.exists())
-            .collect()
+        existing_policy_paths(&self.discover_roots)
     }
 
     /// Returns a deprecation message if the user is using the legacy
@@ -1555,10 +1568,8 @@ async fn main() -> Result<()> {
             // Explicit (user-set) discovery roots only — i.e. those that
             // extend the repo_roots set. Empty if user didn't set discover_roots.
             let explicit_discover: Vec<PathBuf> = policy
-                .discover_roots
-                .iter()
-                .map(PathBuf::from)
-                .filter(|p| p.exists())
+                .discover_root_paths()
+                .into_iter()
                 .filter(|p| !repo_roots.contains(p))
                 .collect();
             let pubkey = resolve_local_pubkey_path()
