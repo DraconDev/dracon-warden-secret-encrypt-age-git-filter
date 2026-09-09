@@ -1032,6 +1032,38 @@ impl WardenSecurity {
         }
     }
 
+    /// Merge-driver clean (ADDED 2026-09-09, audit F49): re-encrypt
+    /// merged plaintext WITHOUT consulting path-dependent gates.
+    ///
+    /// Git invokes merge drivers as `dracon-warden merge %O %A %B`
+    /// where all three are TEMP files — the repo-relative path is not
+    /// available. The old merge path called `clean` with the %A temp
+    /// path, so `path_is_protected` matched nothing (non-empty
+    /// `protected_patterns`) and the merged PLAINTEXT was written into
+    /// %A and committed — while `smudge` ignores paths entirely, so
+    /// decryption had worked fine. Asymmetric and secret-leaking.
+    ///
+    /// The driver only runs for files attributed `merge=dracon` in
+    /// .gitattributes, which IS the opt-in, so skipping the pattern
+    /// gate here is correct. Format fidelity comes from the ancestor
+    /// CIPHERTEXT (not a path): a whole-file-tagged ancestor stays
+    /// whole-file; anything else takes the normal inline scanner path
+    /// (which passes secret-free content through untouched). Non-UTF8
+    /// merged bytes with a non-whole-file ancestor are whole-file
+    /// encrypted rather than leaked raw.
+    pub fn smart_clean_for_merge(&self, plaintext: &[u8], ancestor_raw: &[u8]) -> Result<Vec<u8>> {
+        if self.decrypt_whole_file_tag(ancestor_raw).is_some() {
+            if self.decrypt_whole_file_tag(plaintext).is_some() {
+                return Ok(plaintext.to_vec());
+            }
+            return self.encrypt_v2_to_b64_tag(plaintext);
+        }
+        match std::str::from_utf8(plaintext) {
+            Ok(text) => Ok(self.smart_clean(text)?.into_bytes()),
+            Err(_) => self.encrypt_v2_to_b64_tag(plaintext),
+        }
+    }
+
     /// Smart Clean with Path Context:
     /// If the path is in a sensitive directory (e.g. .ssh, .aws) OR force_encrypt is true, encrypt the ENTIRE file.
     /// Otherwise, use regex-based in-situ encryption (if text).
@@ -1406,6 +1438,14 @@ impl DraconWarden {
         let security = WardenSecurity::get_or_init()?;
         let cleaned = security.smart_clean_with_path(bytes, path.unwrap_or(""))?;
         Ok(cleaned)
+    }
+
+    /// Merge-driver re-encryption (audit F49): path-independent —
+    /// git's %A is a temp file, so the protected-patterns gate cannot
+    /// apply. Format fidelity comes from the ancestor ciphertext.
+    pub fn clean_for_merge(&self, plaintext: &[u8], ancestor_raw: &[u8]) -> Result<Vec<u8>> {
+        let security = WardenSecurity::get_or_init()?;
+        security.smart_clean_for_merge(plaintext, ancestor_raw)
     }
 }
 
@@ -2894,6 +2934,80 @@ API_KEY=secret"#;
                 .any(|f| f.name == "High-Entropy Secret (Quoted)"),
             "should NOT detect alphanumeric string without context keyword, found: {:?}",
             found_without
+        );
+    }
+    /// ADDED 2026-09-09 (audit F49): the merge driver re-encrypted via
+    /// git's %A temp path, so the protected-patterns gate missed and
+    /// merged plaintext was committed. `smart_clean_for_merge` must
+    /// encrypt WITHOUT any path match — whole-file ancestors stay
+    /// whole-file, inline ancestors stay inline.
+    #[test]
+    fn test_merge_clean_whole_file_ancestor_stays_encrypted() {
+        let mut security = WardenSecurity::new(None)
+            .unwrap()
+            .with_managed_patterns(vec!["secrets/**".to_string()]);
+        let identity = age::x25519::Identity::generate();
+        security.add_memory_identity(identity);
+
+        let ancestor_pt = b"DB_PASSWORD=hunter2\nAPI_KEY=abcdef\n";
+        let ancestor_raw = security.encrypt_v2_to_b64_tag(ancestor_pt).unwrap();
+        assert!(
+            security.decrypt_whole_file_tag(&ancestor_raw).is_some(),
+            "fixture must be whole-file ciphertext"
+        );
+
+        // Temp-style %A content the old path gate would pass through.
+        let merged = b"DB_PASSWORD=hunter2\nAPI_KEY=changed\n";
+        let gated = security
+            .smart_clean_with_path(merged, "/tmp/.merge_file_abc123")
+            .unwrap();
+        assert_eq!(
+            gated, merged,
+            "precondition: path-gated clean passes temp paths through (the F49 hole)"
+        );
+
+        let out = security.smart_clean_for_merge(merged, &ancestor_raw).unwrap();
+        assert_ne!(out, merged, "merge clean must not emit plaintext");
+        let back = security
+            .decrypt_whole_file_tag(&out)
+            .expect("merge output must be whole-file ciphertext")
+            .expect("merge output must decrypt");
+        assert_eq!(back, merged, "whole-file roundtrip preserves merged bytes");
+    }
+
+    /// ADDED 2026-09-09 (audit F49): inline-tagged ancestors stay
+    /// inline through the merge clean, with no path allowlisting.
+    #[test]
+    fn test_merge_clean_inline_ancestor_stays_inline() {
+        let mut security = WardenSecurity::new(None)
+            .unwrap()
+            .with_managed_patterns(vec!["secrets/**".to_string()]);
+        let identity = age::x25519::Identity::generate();
+        security.add_memory_identity(identity);
+
+        let sk = "sk-abcdef0123456789abcdef0123456789";
+        let ancestor_pt = format!("line1\nline2\n{sk}\n");
+        let ancestor_raw = security.smart_clean(&ancestor_pt).unwrap().into_bytes();
+        assert!(
+            String::from_utf8_lossy(&ancestor_raw).contains("DRACON_SECRET"),
+            "fixture must carry inline tags"
+        );
+
+        let merged = format!("line1\nline2-changed\n{sk}\n");
+        let out = security
+            .smart_clean_for_merge(merged.as_bytes(), &ancestor_raw)
+            .unwrap();
+        let out_text = String::from_utf8(out).expect("inline output is text");
+        assert!(
+            out_text.contains("DRACON_SECRET"),
+            "merge output must stay encrypted, got: {}",
+            &out_text[..out_text.len().min(80)]
+        );
+        let back = security.smart_smudge(&out_text).unwrap();
+        assert!(
+            back.contains("line2-changed") && back.contains(sk),
+            "inline roundtrip preserves merged content: {}",
+            back
         );
     }
 }

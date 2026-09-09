@@ -2425,12 +2425,18 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
 /// filter. On success %A holds ciphertext and exit 0 is returned.
 fn run_merge(ancestor: &Path, current: &Path, other: &Path) -> Result<i32> {
     let warden = DraconWarden::new()?;
+    // CHANGED 2026-09-09 (audit F49): the encrypt closure used to call
+    // `warden.clean` with the %A TEMP path, so the protected-patterns
+    // gate missed and merged plaintext was committed. Re-encrypt via the
+    // path-independent merge clean instead; the ancestor ciphertext
+    // carries the whole-file-vs-inline format decision.
+    let ancestor_raw = std::fs::read(ancestor).unwrap_or_default();
     run_merge_impl(
         ancestor,
         current,
         other,
         |b, p| warden.smudge(b, p),
-        |b, p| warden.clean(b, p),
+        |b, _p| warden.clean_for_merge(b, &ancestor_raw),
     )
 }
 
@@ -2453,9 +2459,12 @@ where
         let path_str = p.to_string_lossy().to_string();
         decrypt(&bytes, Some(&path_str))
     };
-    // %A/%B are worktree files (already plaintext after checkout); %O is
-    // materialized by git as raw ciphertext. smudge handles both: tagged
-    // content decrypts, untagged passes through.
+    // CORRECTED 2026-09-09 (audit F49): %O/%A/%B are TEMP files
+    // materialized by git for the driver (NOT worktree files) — the old
+    // comment claimed %A/%B were worktree plaintext. %O arrives as raw
+    // ciphertext; smudge handles both (tagged decrypts, untagged passes
+    // through). Re-encryption must NOT depend on these temp paths (see
+    // `run_merge`: path-independent merge clean).
     let ancestor_pt = read_decrypted(ancestor)?;
     let current_pt = read_decrypted(current)?;
     let other_pt = read_decrypted(other)?;
