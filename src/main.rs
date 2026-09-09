@@ -164,10 +164,7 @@ fn require_git_marker(repo: &Path) -> Result<()> {
     if has_git_marker(repo) {
         Ok(())
     } else {
-        anyhow::bail!(
-            "not a git repo: {} (no valid .git marker)",
-            repo.display()
-        );
+        anyhow::bail!("not a git repo: {} (no valid .git marker)", repo.display());
     }
 }
 

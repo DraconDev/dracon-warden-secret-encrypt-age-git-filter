@@ -1691,6 +1691,20 @@ watch_roots = ["/tmp/test"]
             !has_git_marker(&repo),
             "the shared git-marker guard must reject symlinks"
         );
+
+        let policy = sample_policy();
+        assert!(
+            harden_repo(&repo, &policy, None, true).is_err(),
+            "explicit hardening must reject a symlinked .git marker"
+        );
+        assert!(
+            resmudge_repo(&repo, &policy, true).is_err(),
+            "explicit resmudge must reject a symlinked .git marker"
+        );
+        assert!(
+            backfill_env_headers_repo(&repo, true).is_err(),
+            "explicit backfill must reject a symlinked .git marker"
+        );
     }
 
     #[test]
