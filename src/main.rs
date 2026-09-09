@@ -2468,7 +2468,11 @@ fn backfill_env_headers_repo(repo: &Path, apply: bool) -> Result<(usize, usize)>
             Ok(TrackedRepairFile::TooLarge(_)) => unreachable!("backfill has no read size limit"),
             Ok(TrackedRepairFile::Contents(bytes)) => bytes,
             Err(error) => {
-                eprintln!("⚠️ skipping header backfill of {}: {}", full.display(), error);
+                eprintln!(
+                    "⚠️ skipping header backfill of {}: {}",
+                    full.display(),
+                    error
+                );
                 continue;
             }
         };
