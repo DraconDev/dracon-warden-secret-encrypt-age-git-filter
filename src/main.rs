@@ -1201,7 +1201,7 @@ fn read_publication_target(path: &Path) -> Result<Option<Vec<u8>>> {
 /// already-present link and the open flags close the check/open race.
 fn write_publication_target(path: &Path, contents: &[u8], existed: bool) -> Result<()> {
     let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
+        Ok(metadata) => Some(metadata),
         Err(error) if !existed && error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => {
             return Err(error).with_context(|| {
