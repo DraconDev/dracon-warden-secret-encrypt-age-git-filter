@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed (audit pass 2026-09-09)
+
+- **Merge driver no longer commits plaintext (F49)**: re-encryption used
+  git's `%A` temp path, so the protected-patterns gate missed and merged
+  secrets were written back unencrypted whenever
+  `protected_patterns` was non-empty. The driver now re-encrypts via a
+  path-independent clean; whole-file-vs-inline format is carried by the
+  ancestor ciphertext, not the temp path.
+- **`RepoKey` zeroized on drop (F50)**, matching `TeamKey`.
+- **Resmudge cap skips warn loudly (F51)**: files over the 10 MiB
+  streaming cap are named on stderr instead of silently skipped.
+
 ## [0.113.6] - 2026-09-01
 
 ## [0.113.5] - 2026-08-19
