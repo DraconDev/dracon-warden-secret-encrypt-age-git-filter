@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (audit pass 2026-09-09)
 
+- **Protected filter globs match Git attributes (F72):** the clean-filter
+  gate now evaluates `protected_patterns` with Git-compatible path-component
+  semantics, so generated `secrets/*` and `.ssh/*` rules protect direct
+  children without accidentally crossing directory boundaries. Matcher,
+  generated-attributes, and clean-filter regressions cover the parity.
 - **Repository discovery is recursive (F71):** `once`, `repair`, `scrub-markers`,
   and `resmudge` now find nested repositories and linked-worktree-style
   `.git` pointer files under configured roots without descending into `.git`
