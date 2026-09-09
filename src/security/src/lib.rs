@@ -1593,17 +1593,33 @@ mod tests {
     }
 
     #[test]
-    fn test_path_is_protected_substring_fallback() {
-        // `config/services.json` matches by substring as a last-resort
-        // fallback (rules 1-4 don't match a literal path component).
+    fn test_path_is_protected_path_patterns_are_repository_relative() {
+        // A pattern containing `/` is evaluated against the path relative
+        // to the repository root, just as it is in the generated root
+        // `.gitattributes` file. It must not become a substring match for
+        // an unrelated nested checkout path.
         let patterns: Vec<String> = vec!["config/services.json".to_string()];
         assert!(path_is_protected("config/services.json", &patterns));
-        assert!(path_is_protected(
+        assert!(!path_is_protected(
             "apps/web/config/services.json",
             &patterns
         ));
         // A different file under config/ is not protected.
         assert!(!path_is_protected("config/licenses.json", &patterns));
+    }
+
+    #[test]
+    fn test_path_is_protected_single_star_matches_one_component() {
+        // These are the patterns emitted by the policy's generated
+        // `.gitattributes`. A single `*` must not cross `/`; Git would leave
+        // the nested paths unspecified, so the clean gate must skip them too.
+        let patterns = vec!["secrets/*".to_string(), ".ssh/*".to_string()];
+
+        assert!(path_is_protected("secrets/api.key", &patterns));
+        assert!(!path_is_protected("secrets/team/api.key", &patterns));
+        assert!(path_is_protected(".ssh/id_ed25519", &patterns));
+        assert!(!path_is_protected(".ssh/work/id_ed25519", &patterns));
+        assert!(!path_is_protected("src/main.rs", &patterns));
     }
 
     #[test]
@@ -1680,6 +1696,36 @@ mod tests {
             result, openai_key,
             ".pem file should still scan and encrypt OpenAI key"
         );
+    }
+
+    #[test]
+    fn test_smart_clean_with_path_honors_single_star_attributes() {
+        // The generated `.gitattributes` assigns the filter to these direct
+        // children only. The clean gate must encrypt the same paths Git
+        // attributes would filter, while leaving deeper paths untouched.
+        let mut security = WardenSecurity::new(None)
+            .unwrap()
+            .with_managed_patterns(vec!["secrets/*".to_string(), ".ssh/*".to_string()]);
+        security.add_memory_identity(age::x25519::Identity::generate());
+        let secret = b"sk-abcdef0123456789abcdef0123456789";
+
+        for path in ["secrets/api.key", ".ssh/id_ed25519"] {
+            let cleaned = security
+                .smart_clean_with_path(secret, path)
+                .expect("protected direct child should clean");
+            assert_ne!(cleaned, secret, "Git-filtered path must not stay plaintext: {path}");
+            assert!(
+                String::from_utf8_lossy(&cleaned).contains("DRACON_SECRET"),
+                "protected direct child should contain an encrypted marker: {path}"
+            );
+        }
+
+        for path in ["secrets/team/api.key", ".ssh/work/id_ed25519"] {
+            let cleaned = security
+                .smart_clean_with_path(secret, path)
+                .expect("unmatched nested path should pass through");
+            assert_eq!(cleaned, secret, "single-star glob must not cross `/`: {path}");
+        }
     }
 
     #[test]
