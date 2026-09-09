@@ -16,7 +16,9 @@
 # Directories to scan for git repos when running `once`, `repair`, or
 # `setup-hooks`. These are NOT filesystem watchers (warden has no daemon
 # mode); they are the search roots for the recursive git-repo discovery.
-# Paths that do not exist on disk are silently filtered out.
+# Paths that do not exist on disk are silently filtered out. Discovery walks
+# recursively, including nested checkouts and .git pointer-file repositories,
+# but skips .git metadata directories.
 repo_roots = ["~/.dracon", "~/Dev"]
 
 # Directories to scan during discovery (once/repair commands) in addition

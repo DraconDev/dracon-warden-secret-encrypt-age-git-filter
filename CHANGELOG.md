@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (audit pass 2026-09-09)
 
+- **Repository discovery is recursive (F71):** `once`, `repair`, `scrub-markers`,
+  and `resmudge` now find nested repositories and linked-worktree-style
+  `.git` pointer files under configured roots without descending into `.git`
+  metadata directories.
 - **Policy discovery expands home-relative roots (F70):** `~` and `~/...`
   entries in `repo_roots`, the deprecated `watch_roots`, and
   `discover_roots` are expanded before existence filtering, so the shipped

@@ -192,7 +192,9 @@ hygiene_patterns = ["**/.pi*", "**/chrometrace.log", "**/.cache/"]
 
 `~` and `~/...` in `repo_roots`, the deprecated `watch_roots` alias, and
 `discover_roots` resolve against the current `HOME` before missing roots are
-filtered out.
+filtered out. Discovery recursively walks those roots, including nested
+checkouts and `.git` pointer-file repositories, while skipping `.git` metadata
+directories.
 
 ## Safety Defaults
 
