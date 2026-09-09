@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (audit pass 2026-09-09)
 
+- **Owner public-key publication rejects symlink targets (F75):** repository
+  output directories and existing target files are checked with symlink-aware
+  metadata, and Unix reads/writes use `O_NOFOLLOW` to close check/open races.
+  Publication fails closed without modifying external symlink targets.
 - **Repair loops reject tracked symlinks (F74):** `resmudge` and
   environment-header backfill now read and write tracked files with
   no-follow semantics, rejecting symlinks before they can disclose or

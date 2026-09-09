@@ -1065,6 +1065,77 @@ mod tests {
         assert_eq!(fs::read_to_string(out).expect("read out"), "age1xxx");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn publish_repo_pubkey_rejects_symlink_target_without_modifying_external() {
+        use std::os::unix::fs::symlink;
+
+        let td = TestDir::new("warden_publish_key_symlink");
+        let repo = td.path().join("repo");
+        let keys_dir = repo.join(".dracon/data/keys");
+        fs::create_dir_all(&keys_dir).expect("keys dir");
+
+        let key = td.path().join("owner_test.pub");
+        fs::write(&key, "age1xxx").expect("key");
+        let external = td.path().join("outside-pubkey");
+        let original = b"do-not-overwrite\n";
+        fs::write(&external, original).expect("external target");
+        let target = keys_dir.join("owner_test.pub");
+        symlink(&external, &target).expect("target symlink");
+
+        let error = publish_repo_pubkey(&repo, &key)
+            .expect_err("publication must reject a symlink target");
+        assert!(
+            error.to_string().contains("target symlink"),
+            "error should identify the rejected target symlink: {error:#}"
+        );
+        assert!(
+            fs::symlink_metadata(&target)
+                .expect("inspect target")
+                .file_type()
+                .is_symlink(),
+            "publication must leave the target symlink in place"
+        );
+        assert_eq!(
+            fs::read(&external).expect("read external target"),
+            original,
+            "publication must not modify the external symlink target"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publish_repo_pubkey_rejects_symlinked_target_directory() {
+        use std::os::unix::fs::symlink;
+
+        let td = TestDir::new("warden_publish_key_directory_symlink");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        let external_dir = td.path().join("outside-keys");
+        fs::create_dir_all(&external_dir).expect("external keys dir");
+        symlink(&external_dir, repo.join(".dracon")).expect("target directory symlink");
+
+        let key = td.path().join("owner_test.pub");
+        fs::write(&key, "age1xxx").expect("key");
+
+        let error = publish_repo_pubkey(&repo, &key)
+            .expect_err("publication must reject a symlinked target directory");
+        assert!(
+            error.to_string().contains("target directory symlink"),
+            "error should identify the rejected target directory: {error:#}"
+        );
+        assert!(
+            fs::symlink_metadata(repo.join(".dracon"))
+                .expect("inspect directory link")
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            !external_dir.join("data").exists(),
+            "publication must not create output below an external target directory"
+        );
+    }
+
     #[test]
     fn harden_repo_changes_files_and_writes_key() {
         let td = TestDir::new("warden_harden_repo");
