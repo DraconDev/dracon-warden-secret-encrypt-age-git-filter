@@ -861,7 +861,7 @@ fn read_existing_hardening_file(path: &Path) -> Result<String> {
         let mut content = String::new();
         file.read_to_string(&mut content)
             .with_context(|| format!("failed to read hardening input {}", path.display()))?;
-        return Ok(content);
+        Ok(content)
     }
 
     #[cfg(not(unix))]
