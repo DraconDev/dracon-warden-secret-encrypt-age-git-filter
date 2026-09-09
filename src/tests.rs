@@ -963,6 +963,56 @@ mod tests {
     }
 
     #[test]
+    fn generated_gitattributes_and_filter_gate_match_single_star_paths() {
+        let policy = WardenPolicy {
+            protected_patterns: vec!["secrets/*".into(), ".ssh/*".into()],
+            ..Default::default()
+        };
+        let block = build_gitattributes_block(&policy).expect("gitattributes block");
+        assert!(block.contains("secrets/* filter=dracon"));
+        assert!(block.contains(".ssh/* filter=dracon"));
+
+        let td = TestDir::new("warden_single_star_attributes");
+        let repo = td.path();
+        run_git_in(repo, &["init", "-q", "-b", "main"]);
+        fs::write(repo.join(".gitattributes"), &block).expect("write gitattributes");
+        for path in [
+            "secrets/api.key",
+            "secrets/team/api.key",
+            ".ssh/id_ed25519",
+            ".ssh/work/id_ed25519",
+        ] {
+            let file = repo.join(path);
+            if let Some(parent) = file.parent() {
+                fs::create_dir_all(parent).expect("create attribute fixture directory");
+            }
+            fs::write(&file, b"fixture").expect("write attribute fixture");
+        }
+
+        for (path, expected) in [
+            ("secrets/api.key", true),
+            ("secrets/team/api.key", false),
+            (".ssh/id_ed25519", true),
+            (".ssh/work/id_ed25519", false),
+        ] {
+            let git_output = git_in_output(repo, &["check-attr", "filter", "--", path]);
+            let git_filtered = git_output.trim_end() == format!("{path}: filter: dracon");
+            let gate = dracon_security_kit::modules::filter::path_is_protected(
+                path,
+                &policy.protected_patterns,
+            );
+            assert_eq!(
+                gate, git_filtered,
+                "filter gate must agree with generated .gitattributes for {path}"
+            );
+            assert_eq!(
+                git_filtered, expected,
+                "unexpected Git attribute result for {path}"
+            );
+        }
+    }
+
+    #[test]
     fn plaintext_cannot_overlap_protected_or_disable_env_encryption() {
         let policy = WardenPolicy {
             protected_patterns: vec!["config/envs/*.env".into(), "*.env".into()],

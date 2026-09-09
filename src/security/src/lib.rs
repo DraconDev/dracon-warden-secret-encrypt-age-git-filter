@@ -1713,7 +1713,10 @@ mod tests {
             let cleaned = security
                 .smart_clean_with_path(secret, path)
                 .expect("protected direct child should clean");
-            assert_ne!(cleaned, secret, "Git-filtered path must not stay plaintext: {path}");
+            assert_ne!(
+                cleaned, secret,
+                "Git-filtered path must not stay plaintext: {path}"
+            );
             assert!(
                 String::from_utf8_lossy(&cleaned).contains("DRACON_SECRET"),
                 "protected direct child should contain an encrypted marker: {path}"
@@ -1724,7 +1727,10 @@ mod tests {
             let cleaned = security
                 .smart_clean_with_path(secret, path)
                 .expect("unmatched nested path should pass through");
-            assert_eq!(cleaned, secret, "single-star glob must not cross `/`: {path}");
+            assert_eq!(
+                cleaned, secret,
+                "single-star glob must not cross `/`: {path}"
+            );
         }
     }
 
@@ -3012,7 +3018,9 @@ API_KEY=secret"#;
             "precondition: path-gated clean passes temp paths through (the F49 hole)"
         );
 
-        let out = security.smart_clean_for_merge(merged, &ancestor_raw).unwrap();
+        let out = security
+            .smart_clean_for_merge(merged, &ancestor_raw)
+            .unwrap();
         assert_ne!(out, merged, "merge clean must not emit plaintext");
         let back = security
             .decrypt_whole_file_tag(&out)
