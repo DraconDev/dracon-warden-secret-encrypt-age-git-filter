@@ -18,7 +18,7 @@
 # mode); they are the search roots for the recursive git-repo discovery.
 # Paths that do not exist on disk are silently filtered out. Discovery walks
 # recursively, including nested checkouts and .git pointer-file repositories,
-# but skips .git metadata directories.
+# but skips .git metadata directories and symlinked .git markers.
 repo_roots = ["~/.dracon", "~/Dev"]
 
 # Directories to scan during discovery (once/repair commands) in addition
