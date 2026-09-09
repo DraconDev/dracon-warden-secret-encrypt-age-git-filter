@@ -329,7 +329,7 @@ fn expand_tilde(raw: &str) -> PathBuf {
     let Some(home) = dirs::home_dir() else {
         return PathBuf::from(raw);
     };
-    home.join(rest.trim_start_matches(|ch| ch == '/' || ch == '\\'))
+    home.join(rest.trim_start_matches(['/', '\\']))
 }
 
 fn existing_policy_paths(raw_paths: &[String]) -> Vec<PathBuf> {
