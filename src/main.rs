@@ -160,6 +160,17 @@ fn has_git_marker(repo: &Path) -> bool {
     git_marker_kind(repo).is_some()
 }
 
+fn require_git_marker(repo: &Path) -> Result<()> {
+    if has_git_marker(repo) {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "not a git repo: {} (no valid .git marker)",
+            repo.display()
+        );
+    }
+}
+
 pub(crate) fn discover_git_repos(
     roots: &[PathBuf],
     excluded_dir_names: &BTreeSet<String>,
@@ -1255,6 +1266,7 @@ pub(crate) fn harden_repo(
     skip_checkout_check: bool,
 ) -> Result<(bool, bool, bool)> {
     policy.validate()?;
+    require_git_marker(repo)?;
 
     // Acquire git's index.lock before writing ANY working-tree files.
     // This is the same coordination protocol git uses internally — checkout,
@@ -2097,6 +2109,7 @@ fn git_ls_files(repo: &Path) -> Result<Vec<String>> {
 }
 
 fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usize, usize)> {
+    require_git_marker(repo)?;
     let protected = build_globset(&policy.protected_patterns)?;
     let files = git_ls_files(repo)?;
 
@@ -2228,6 +2241,7 @@ pub(crate) fn is_encrypted_env_content(content: &str) -> bool {
 }
 
 fn backfill_env_headers_repo(repo: &Path, apply: bool) -> Result<(usize, usize)> {
+    require_git_marker(repo)?;
     let files = git_ls_files(repo)?;
     let warden = DraconWarden::new()?;
 
