@@ -1089,6 +1089,51 @@ mod tests {
         assert!(repo.join(".dracon/data/keys/owner_test.pub").exists());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn harden_repo_rejects_symlinked_dotfiles_without_republishing_target() {
+        use std::os::unix::fs::symlink;
+
+        let td = TestDir::new("warden_harden_symlink_dotfiles");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        let status = ProcessCommand::new("git")
+            .arg("init")
+            .arg(&repo)
+            .status()
+            .expect("git init");
+        assert!(status.success(), "git init should succeed");
+
+        let external = td.path().join("outside-secret.txt");
+        let secret = "do-not-publish-this\n";
+        fs::write(&external, secret).expect("write external secret");
+
+        for name in [".gitignore", ".gitattributes"] {
+            let input = repo.join(name);
+            symlink(&external, &input).expect("create tracked-dotfile fixture symlink");
+
+            let error = harden_repo(&repo, &sample_policy(), None, true)
+                .expect_err("hardening must reject a symlinked dotfile");
+            assert!(
+                error.to_string().contains("symlink"),
+                "error should identify the symlink input: {error:#}"
+            );
+            assert!(
+                fs::symlink_metadata(&input)
+                    .expect("inspect symlink")
+                    .file_type()
+                    .is_symlink(),
+                "hardening must not replace the rejected symlink"
+            );
+            assert_eq!(
+                fs::read_to_string(&external).expect("read external secret"),
+                secret,
+                "external symlink target must not be republished or modified"
+            );
+            fs::remove_file(&input).expect("remove symlink fixture");
+        }
+    }
+
     #[test]
     fn linked_worktree_gitfile_uses_real_gitdir_for_checkout_lock() {
         // Submodules and linked worktrees expose `.git` as a file, not a

@@ -1361,7 +1361,7 @@ pub(crate) fn harden_repo(
     // Read existing dotfiles to preserve patterns added by other tools (e.g.,
     // dracon-sync). The helper rejects symlinks before following them, so a
     // tracked link cannot copy external content into the generated file.
-    let existing_gitignore = read_existing_hardening_file(&gitignore_path)?
+    let existing_gitignore = read_existing_hardening_file(&gitignore_path)?;
 
     // CHANGED 2026-07-21 (v0.112.32, audit H8/F4.1): surgical merge
     // — `build_gitignore_block_with_existing` returns ONLY the
