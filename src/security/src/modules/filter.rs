@@ -124,15 +124,12 @@ impl WardenSecurity {
         // function names or model IDs happen to match a scanner
         // pattern like `mistral-[A-Za-z0-9_-]{20,}`).
         //
-        // The matching is glob-based. Each entry in `protected_patterns`
-        // can be a literal filename (`master.age`), a directory
-        // prefix (`secrets/**`), an extension glob (`*.env`), or a
-        // path glob (`config/services.json`). For each pattern we try:
-        //   1. Exact filename match (e.g. `master.age`).
-        //   2. Suffix match on the basename (e.g. `*.env` matches
-        //      `.env` and `.env.local`).
-        //   3. Path-prefix or `**` glob match (e.g. `secrets/**`
-        //      matches any path starting with `secrets/`).
+        // The matching is Git-attribute-style glob matching. Each entry in
+        // `protected_patterns` can be a literal filename (`master.age`), a
+        // recursive directory glob (`secrets/**`), a basename glob
+        // (`*.env`), or a repository-relative path glob
+        // (`config/services.json`). Single-star path components do not cross
+        // `/`, matching the generated `.gitattributes` semantics.
         //
         // If NONE of the `protected_patterns` match `path_str`, the
         // file is passed through unchanged and the SecretScanner is
