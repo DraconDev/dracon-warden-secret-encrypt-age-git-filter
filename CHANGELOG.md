@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (audit pass 2026-09-09)
 
+- **Repair loops reject tracked symlinks (F74):** `resmudge` and
+  environment-header backfill now read and write tracked files with
+  no-follow semantics, rejecting symlinks before they can disclose or
+  modify external targets. Regression coverage exercises `repair --apply`
+  through both loops.
 - **Hardening rejects symlinked dotfiles (F73):** `once` and `repair` no
   longer read repository-controlled `.gitignore` or `.gitattributes`
   symlinks, preventing external content from being preserved into generated

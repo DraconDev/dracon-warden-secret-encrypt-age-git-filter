@@ -2793,6 +2793,80 @@ protected_patterns = ["secrets.json"]
         assert_eq!(changed, 0, "dry-run should not change anything");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn resmudge_rejects_tracked_symlink_without_modifying_target() {
+        use std::os::unix::fs::symlink;
+
+        let td = TestDir::new("warden_resmudge_tracked_symlink");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        run_git_in(&repo, &["init", "-q", "-b", "main"]);
+
+        let external = td.path().join("external-ciphertext");
+        let original = b"[DRACON_SECRET:untrusted-payload]\n";
+        fs::write(&external, original).expect("write external ciphertext");
+        symlink(&external, repo.join("secret.txt")).expect("create tracked symlink");
+        run_git_in(&repo, &["add", "--", "secret.txt"]);
+
+        let policy = WardenPolicy {
+            protected_patterns: vec!["secret.txt".to_string()],
+            ..Default::default()
+        };
+        let (found, changed) = resmudge_repos(&policy, std::slice::from_ref(&repo), true)
+            .expect("resmudge symlink fixture");
+
+        assert_eq!(found, 0, "tracked symlink must be rejected before reading");
+        assert_eq!(changed, 0, "tracked symlink must never be rewritten");
+        assert!(
+            fs::symlink_metadata(repo.join("secret.txt"))
+                .expect("inspect tracked path")
+                .file_type()
+                .is_symlink(),
+            "repair must leave the tracked symlink in place"
+        );
+        assert_eq!(
+            fs::read(&external).expect("read external target"),
+            original,
+            "repair must not modify the external symlink target"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backfill_rejects_tracked_symlink_without_modifying_target() {
+        use std::os::unix::fs::symlink;
+
+        let td = TestDir::new("warden_backfill_tracked_symlink");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        run_git_in(&repo, &["init", "-q", "-b", "main"]);
+
+        let external = td.path().join("external-env");
+        let original = b"API_KEY=[DRACON_SECRET:untrusted-payload]\n";
+        fs::write(&external, original).expect("write external env");
+        symlink(&external, repo.join(".env")).expect("create tracked symlink");
+        run_git_in(&repo, &["add", "-f", "--", ".env"]);
+
+        let (found, changed) = backfill_env_headers_repos(std::slice::from_ref(&repo), true)
+            .expect("backfill symlink fixture");
+
+        assert_eq!(found, 0, "tracked symlink must be rejected before reading");
+        assert_eq!(changed, 0, "tracked symlink must never be rewritten");
+        assert!(
+            fs::symlink_metadata(repo.join(".env"))
+                .expect("inspect tracked path")
+                .file_type()
+                .is_symlink(),
+            "repair must leave the tracked symlink in place"
+        );
+        assert_eq!(
+            fs::read(&external).expect("read external target"),
+            original,
+            "repair must not modify the external symlink target"
+        );
+    }
+
     // --- Behavioral tests for the pre-rebase + pre-commit hooks --------
     //
     // ADDED 2026-07-26 (audit H-10, H-11, M-15). Same pattern as the
