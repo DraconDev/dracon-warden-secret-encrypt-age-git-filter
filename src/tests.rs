@@ -1646,6 +1646,29 @@ watch_roots = ["/tmp/test"]
     }
 
     #[test]
+    fn discover_git_repos_local_finds_nested_repositories() {
+        let td = TestDir::new("warden_discover_nested");
+        let root = td.path().join("root");
+        let parent_repo = root.join("workspace").join("parent");
+        let nested_repo = parent_repo.join("web").join("games").join("nested");
+        let linked_repo = root.join("workspace").join("linked");
+        fs::create_dir_all(parent_repo.join(".git")).expect("parent repo");
+        fs::create_dir_all(nested_repo.join(".git")).expect("nested repo");
+        fs::create_dir_all(&linked_repo).expect("linked repo");
+        fs::write(linked_repo.join(".git"), "gitdir: ../.git/modules/linked\n")
+            .expect("linked repo git pointer");
+
+        let repos = discover_git_repos_local(&[root]);
+
+        assert!(repos.contains(&parent_repo), "parent repo should be found");
+        assert!(repos.contains(&nested_repo), "nested repo should be found");
+        assert!(
+            repos.contains(&linked_repo),
+            "linked-worktree-style repo should be found"
+        );
+    }
+
+    #[test]
     fn filter_smudge_handles_empty_input() {
         let content = "let x = 1;\n";
         let warden = DraconWarden::new().expect("create warden");

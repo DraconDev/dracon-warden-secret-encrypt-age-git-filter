@@ -21,6 +21,7 @@ use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
+use walkdir::WalkDir;
 use zeroize::Zeroizing;
 
 static ROLLING_LOG: std::sync::OnceLock<Mutex<Vec<String>>> = std::sync::OnceLock::new();
@@ -138,38 +139,47 @@ pub(crate) fn discover_git_repos(
     roots: &[PathBuf],
     excluded_dir_names: &BTreeSet<String>,
 ) -> Vec<PathBuf> {
-    let mut repos = Vec::new();
+    let mut repos = BTreeSet::new();
     for root in roots {
-        let entries = match std::fs::read_dir(root) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("⚠️ failed to read watch root {}: {}", root.display(), e);
-                continue;
-            }
-        };
-        for entry in entries {
+        let walker = WalkDir::new(root)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|entry| {
+                // A repository's .git directory can contain a very large object
+                // database. We still inspect the repository directory itself,
+                // and continue through its worktree for nested checkouts, but
+                // never recurse into that metadata directory.
+                if entry.depth() > 0 && entry.file_type().is_dir() {
+                    let name = entry.file_name().to_string_lossy();
+                    if name == ".git" || excluded_dir_names.contains(name.as_ref()) {
+                        return false;
+                    }
+                }
+                true
+            });
+
+        for entry in walker {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    eprintln!("⚠️ failed to read entry in {}: {}", root.display(), e);
+                    let path = e
+                        .path()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| root.display().to_string());
+                    eprintln!("⚠️ failed to read discovery path {path}: {e}");
                     continue;
                 }
             };
+            if !entry.file_type().is_dir() {
+                continue;
+            }
             let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let file_name = entry.file_name();
-            let name = file_name.to_string_lossy();
-            if excluded_dir_names.contains(name.as_ref()) {
-                continue;
-            }
             if path.join(".git").exists() {
-                repos.push(path);
+                repos.insert(path.to_path_buf());
             }
         }
     }
-    repos
+    repos.into_iter().collect()
 }
 
 pub(crate) const BLOCK_BEGIN: &str = "# --- BEGIN DRACON MANAGED BLOCK ---";
