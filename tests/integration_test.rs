@@ -252,25 +252,22 @@ repo_roots = []
         "repair must reject the header loop's symlink: {stderr}"
     );
 
-    assert!(
-        std::fs::symlink_metadata(repo.join("public.json"))
-            .unwrap()
-            .file_type()
-            .is_symlink()
+    assert!(std::fs::symlink_metadata(repo.join("public.json"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(std::fs::symlink_metadata(repo.join("secret.txt"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(std::fs::symlink_metadata(repo.join(".env"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        std::fs::read(&external_json).unwrap(),
+        external_json_contents
     );
-    assert!(
-        std::fs::symlink_metadata(repo.join("secret.txt"))
-            .unwrap()
-            .file_type()
-            .is_symlink()
-    );
-    assert!(
-        std::fs::symlink_metadata(repo.join(".env"))
-            .unwrap()
-            .file_type()
-            .is_symlink()
-    );
-    assert_eq!(std::fs::read(&external_json).unwrap(), external_json_contents);
     assert_eq!(
         std::fs::read(&external_ciphertext).unwrap(),
         external_ciphertext_contents
