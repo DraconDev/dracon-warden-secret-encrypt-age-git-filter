@@ -2304,7 +2304,7 @@ fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
         file.write_all(contents)
             .and_then(|_| file.flush())
             .with_context(|| format!("failed writing {}", path.display()))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(unix))]
