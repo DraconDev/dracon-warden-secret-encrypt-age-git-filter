@@ -812,8 +812,67 @@ pub(crate) fn apply_managed_file(path: &Path, block: &str) -> Result<bool> {
     Ok(false)
 }
 
+/// Read an existing hardening input without following a repository-controlled
+/// symlink. Missing files are treated as empty so the caller can create them;
+/// all other metadata/read failures are returned instead of silently
+/// publishing an external file's contents.
+fn read_existing_hardening_file(path: &Path) -> Result<String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()),
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("failed to inspect hardening input {}", path.display())
+            })
+        }
+    };
+
+    if metadata.file_type().is_symlink() {
+        anyhow::bail!(
+            "refusing to read symlinked hardening input {}",
+            path.display()
+        );
+    }
+    if !metadata.is_file() {
+        anyhow::bail!(
+            "refusing non-regular hardening input {}",
+            path.display()
+        );
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        // The metadata check gives a useful diagnostic for an already-present
+        // symlink. O_NOFOLLOW closes the check/open race if the checkout path
+        // is swapped while hardening is running.
+        let mut options = fs::OpenOptions::new();
+        options.read(true).custom_flags(libc::O_NOFOLLOW);
+        let mut file = options
+            .open(path)
+            .with_context(|| format!("failed to read hardening input {}", path.display()))?;
+        if !file.metadata()?.is_file() {
+            anyhow::bail!(
+                "refusing non-regular hardening input {}",
+                path.display()
+            );
+        }
+        let mut content = String::new();
+        file.read_to_string(&mut content)
+            .with_context(|| format!("failed to read hardening input {}", path.display()))?;
+        return Ok(content);
+    }
+
+    #[cfg(not(unix))]
+    {
+        fs::read_to_string(path)
+            .with_context(|| format!("failed to read hardening input {}", path.display()))
+    }
+}
+
 pub(crate) fn apply_overwrite_file(path: &Path, content: &str) -> Result<bool> {
-    let current = fs::read_to_string(path).unwrap_or_default();
+    let current = read_existing_hardening_file(path)?;
     let mut next = content.to_string();
     if !next.ends_with('\n') {
         next.push('\n');
@@ -1299,8 +1358,10 @@ pub(crate) fn harden_repo(
     let gitignore_path = repo.join(".gitignore");
     let gitattributes_path = repo.join(".gitattributes");
 
-    // Read existing .gitignore content to preserve patterns added by other tools (e.g., dracon-sync)
-    let existing_gitignore = fs::read_to_string(&gitignore_path).unwrap_or_default();
+    // Read existing dotfiles to preserve patterns added by other tools (e.g.,
+    // dracon-sync). The helper rejects symlinks before following them, so a
+    // tracked link cannot copy external content into the generated file.
+    let existing_gitignore = read_existing_hardening_file(&gitignore_path)?
 
     // CHANGED 2026-07-21 (v0.112.32, audit H8/F4.1): surgical merge
     // — `build_gitignore_block_with_existing` returns ONLY the
@@ -1311,7 +1372,7 @@ pub(crate) fn harden_repo(
     // outside it. `.gitattributes` gets the same treatment
     // (`build_gitattributes_block` never even looked at existing
     // content).
-    let existing_gitattributes = fs::read_to_string(&gitattributes_path).unwrap_or_default();
+    let existing_gitattributes = read_existing_hardening_file(&gitattributes_path)?;
     let merged_gitignore = replace_managed_block(
         &existing_gitignore,
         &build_gitignore_block_with_existing(policy, &existing_gitignore)?,
