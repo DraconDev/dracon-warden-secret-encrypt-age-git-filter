@@ -113,12 +113,10 @@ install -m 0755 target/release/dracon-warden "$tmp"
 mv -f -- "$tmp" "$HOME/.local/bin/dracon-warden"
 
 # Verify the installed binary, then install git hooks globally
-scripts/verify-install.sh "$HOME/.local/bin/dracon-warden"
+# (run from the monorepo root; from inside dracon-warden/ drop the prefix)
+dracon-warden/scripts/verify-install.sh "$HOME/.local/bin/dracon-warden"
 dracon-warden setup-hooks --global
 ```
-
-(`scripts/verify-install.sh` is that path from the monorepo root; from
-inside `dracon-warden/` it is `scripts/verify-install.sh` of the utility dir.)
 
 ## Usage
 
