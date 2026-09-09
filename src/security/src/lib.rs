@@ -1620,6 +1620,12 @@ mod tests {
         assert!(path_is_protected(".ssh/id_ed25519", &patterns));
         assert!(!path_is_protected(".ssh/work/id_ed25519", &patterns));
         assert!(!path_is_protected("src/main.rs", &patterns));
+
+        // A leading slash is a root anchor in `.gitattributes`; it must not
+        // be reduced to an unanchored basename pattern.
+        let root_pattern = vec!["/*.env".to_string()];
+        assert!(path_is_protected("top.env", &root_pattern));
+        assert!(!path_is_protected("nested/top.env", &root_pattern));
     }
 
     #[test]

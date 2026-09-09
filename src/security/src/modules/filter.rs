@@ -65,10 +65,11 @@ fn git_attribute_pattern_matches(pattern: &str, path_str: &str) -> bool {
     // Filter paths are repository-relative and use `/`. A leading slash in
     // an attribute pattern anchors it at the repository root; all patterns
     // passed to this function are already relative to that root, so remove
-    // the anchor before compiling.
+    // the anchor before compiling but retain its anchoring semantics.
+    let anchored = pattern.starts_with('/');
     let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
     let normalized_path = path_str.replace('\\', "/");
-    let candidate = if pattern.contains('/') {
+    let candidate = if anchored || pattern.contains('/') {
         normalized_path.as_str()
     } else {
         // Git attributes patterns without a slash match a basename in every
