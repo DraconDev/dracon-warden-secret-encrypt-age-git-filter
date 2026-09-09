@@ -1081,10 +1081,196 @@ fn resolve_local_pubkey_path() -> Option<PathBuf> {
     None
 }
 
+/// Ensure every component of a publication directory is a real directory.
+///
+/// `create_dir_all` follows an existing symlink in an intermediate component,
+/// so it is not safe for repository-controlled output paths. Check each
+/// component with `symlink_metadata` before creating missing directories and
+/// re-check a component if another process wins the create race.
+fn ensure_real_publication_directory(path: &Path) -> Result<()> {
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        current.push(component.as_os_str());
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    anyhow::bail!(
+                        "refusing owner pubkey target directory symlink {}",
+                        current.display()
+                    );
+                }
+                if !metadata.is_dir() {
+                    anyhow::bail!(
+                        "refusing non-directory owner pubkey target component {}",
+                        current.display()
+                    );
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                match fs::create_dir(&current) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                        let metadata = fs::symlink_metadata(&current).with_context(|| {
+                            format!("failed to inspect owner pubkey target {}", current.display())
+                        })?;
+                        if metadata.file_type().is_symlink() {
+                            anyhow::bail!(
+                                "refusing owner pubkey target directory symlink {}",
+                                current.display()
+                            );
+                        }
+                        if !metadata.is_dir() {
+                            anyhow::bail!(
+                                "refusing non-directory owner pubkey target component {}",
+                                current.display()
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        return Err(error).with_context(|| {
+                            format!("failed creating owner pubkey target directory {}", current.display())
+                        });
+                    }
+                }
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("failed to inspect owner pubkey target {}", current.display())
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Read an existing publication target without following a symlink.
+fn read_publication_target(path: &Path) -> Result<Option<Vec<u8>>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("failed to inspect owner pubkey target {}", path.display())
+            });
+        }
+    };
+
+    if metadata.file_type().is_symlink() {
+        anyhow::bail!("refusing owner pubkey target symlink {}", path.display());
+    }
+    if !metadata.is_file() {
+        anyhow::bail!("refusing non-regular owner pubkey target {}", path.display());
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut options = fs::OpenOptions::new();
+        options.read(true).custom_flags(libc::O_NOFOLLOW);
+        let mut file = options
+            .open(path)
+            .with_context(|| format!("failed reading owner pubkey target {}", path.display()))?;
+        if !file
+            .metadata()
+            .with_context(|| format!("failed to inspect owner pubkey target {}", path.display()))?
+            .is_file()
+        {
+            anyhow::bail!("refusing non-regular owner pubkey target {}", path.display());
+        }
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents)
+            .with_context(|| format!("failed reading owner pubkey target {}", path.display()))?;
+        Ok(Some(contents))
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        anyhow::bail!(
+            "refusing existing owner pubkey target {}: no supported no-follow reader on this platform",
+            path.display()
+        );
+    }
+}
+
+/// Write a publication target without following a symlink.
+///
+/// Missing targets use `create_new`, while existing targets are opened with
+/// `O_NOFOLLOW` on Unix. The metadata check supplies a useful error for an
+/// already-present link and the open flags close the check/open race.
+fn write_publication_target(path: &Path, contents: &[u8], existed: bool) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if !existed && error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("failed to inspect owner pubkey target {}", path.display())
+            });
+        }
+    };
+
+    if let Some(metadata) = &metadata {
+        if metadata.file_type().is_symlink() {
+            anyhow::bail!("refusing owner pubkey target symlink {}", path.display());
+        }
+        if !metadata.is_file() {
+            anyhow::bail!("refusing non-regular owner pubkey target {}", path.display());
+        }
+    } else if existed {
+        anyhow::bail!("owner pubkey target disappeared before write {}", path.display());
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut options = fs::OpenOptions::new();
+        options.write(true).custom_flags(libc::O_NOFOLLOW);
+        if metadata.is_some() {
+            options.truncate(true);
+        } else {
+            options.create_new(true);
+        }
+        let mut file = options
+            .open(path)
+            .with_context(|| format!("failed opening owner pubkey target {}", path.display()))?;
+        if !file
+            .metadata()
+            .with_context(|| format!("failed to inspect owner pubkey target {}", path.display()))?
+            .is_file()
+        {
+            anyhow::bail!("refusing non-regular owner pubkey target {}", path.display());
+        }
+        file.write_all(contents)
+            .and_then(|_| file.flush())
+            .with_context(|| format!("failed writing owner pubkey target {}", path.display()))?;
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    {
+        if metadata.is_some() {
+            anyhow::bail!(
+                "refusing existing owner pubkey target {}: no supported no-follow writer on this platform",
+                path.display()
+            );
+        }
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .with_context(|| format!("failed creating owner pubkey target {}", path.display()))?;
+        file.write_all(contents)
+            .and_then(|_| file.flush())
+            .with_context(|| format!("failed writing owner pubkey target {}", path.display()))?;
+        Ok(())
+    }
+}
+
 pub(crate) fn publish_repo_pubkey(repo: &Path, pubkey_path: &Path) -> Result<bool> {
     let target_dir = repo.join(".dracon/data/keys");
-    fs::create_dir_all(&target_dir)
-        .with_context(|| format!("failed creating {}", target_dir.display()))?;
+    ensure_real_publication_directory(&target_dir)?;
 
     let name = pubkey_path
         .file_name()
@@ -1095,7 +1281,7 @@ pub(crate) fn publish_repo_pubkey(repo: &Path, pubkey_path: &Path) -> Result<boo
     let source_bytes = fs::read(pubkey_path)
         .with_context(|| format!("failed reading pubkey {}", pubkey_path.display()))?;
     validate_owner_age_pubkey_bytes(pubkey_path, &source_bytes)?;
-    let current_bytes = fs::read(&target).ok();
+    let current_bytes = read_publication_target(&target)?;
     if current_bytes.as_deref() == Some(source_bytes.as_slice()) {
         return Ok(false);
     }
@@ -1111,8 +1297,7 @@ pub(crate) fn publish_repo_pubkey(repo: &Path, pubkey_path: &Path) -> Result<boo
         }
     }
 
-    fs::write(&target, source_bytes)
-        .with_context(|| format!("failed writing {}", target.display()))?;
+    write_publication_target(&target, &source_bytes, current_bytes.is_some())?;
     Ok(true)
 }
 
