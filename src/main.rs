@@ -866,8 +866,14 @@ fn read_existing_hardening_file(path: &Path) -> Result<String> {
 
     #[cfg(not(unix))]
     {
-        fs::read_to_string(path)
-            .with_context(|| format!("failed to read hardening input {}", path.display()))
+        // Do not fall back to fs::read_to_string here: on supported
+        // non-Unix targets it may follow symlinks/reparse points. Missing
+        // files were handled above, so rejecting an existing input is
+        // fail-closed and prevents external content disclosure.
+        anyhow::bail!(
+            "refusing existing hardening input {}: no supported no-follow reader on this platform",
+            path.display()
+        );
     }
 }
 

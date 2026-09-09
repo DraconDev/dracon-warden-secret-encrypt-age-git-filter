@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hardening rejects symlinked dotfiles (F73):** `once` and `repair` no
   longer read repository-controlled `.gitignore` or `.gitattributes`
   symlinks, preventing external content from being preserved into generated
-  files. Reads use no-follow semantics and regression coverage verifies that
+  files. Unix reads use no-follow semantics; other platforms reject existing
+  inputs rather than risk following links. Regression coverage verifies that
   symlink targets are neither published nor modified.
 - **Protected filter globs match Git attributes (F72):** the clean-filter
   gate now evaluates `protected_patterns` with Git-compatible path-component

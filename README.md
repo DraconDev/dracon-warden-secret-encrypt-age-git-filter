@@ -100,6 +100,13 @@ This will:
 
 The per-utility directories do not contain standalone installers; use the root `install.sh` for all utilities.
 
+### Platform Safety
+
+Hardening reads existing `.gitignore` and `.gitattributes` files without
+following symlinks. Unix builds use an atomic no-follow open; non-Unix builds
+fail closed for existing inputs rather than risk reading through a symlink.
+Missing files may still be created normally.
+
 ### Manual Install
 
 ```bash
