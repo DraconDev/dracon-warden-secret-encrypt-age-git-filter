@@ -1083,8 +1083,8 @@ mod tests {
         let target = keys_dir.join("owner_test.pub");
         symlink(&external, &target).expect("target symlink");
 
-        let error = publish_repo_pubkey(&repo, &key)
-            .expect_err("publication must reject a symlink target");
+        let error =
+            publish_repo_pubkey(&repo, &key).expect_err("publication must reject a symlink target");
         assert!(
             error.to_string().contains("target symlink"),
             "error should identify the rejected target symlink: {error:#}"
@@ -1124,12 +1124,10 @@ mod tests {
             error.to_string().contains("target directory symlink"),
             "error should identify the rejected target directory: {error:#}"
         );
-        assert!(
-            fs::symlink_metadata(repo.join(".dracon"))
-                .expect("inspect directory link")
-                .file_type()
-                .is_symlink()
-        );
+        assert!(fs::symlink_metadata(repo.join(".dracon"))
+            .expect("inspect directory link")
+            .file_type()
+            .is_symlink());
         assert!(
             !external_dir.join("data").exists(),
             "publication must not create output below an external target directory"

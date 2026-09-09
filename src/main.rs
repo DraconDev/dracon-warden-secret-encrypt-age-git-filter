@@ -1111,7 +1111,10 @@ fn ensure_real_publication_directory(path: &Path) -> Result<()> {
                     Ok(()) => {}
                     Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                         let metadata = fs::symlink_metadata(&current).with_context(|| {
-                            format!("failed to inspect owner pubkey target {}", current.display())
+                            format!(
+                                "failed to inspect owner pubkey target {}",
+                                current.display()
+                            )
                         })?;
                         if metadata.file_type().is_symlink() {
                             anyhow::bail!(
@@ -1128,14 +1131,20 @@ fn ensure_real_publication_directory(path: &Path) -> Result<()> {
                     }
                     Err(error) => {
                         return Err(error).with_context(|| {
-                            format!("failed creating owner pubkey target directory {}", current.display())
+                            format!(
+                                "failed creating owner pubkey target directory {}",
+                                current.display()
+                            )
                         });
                     }
                 }
             }
             Err(error) => {
                 return Err(error).with_context(|| {
-                    format!("failed to inspect owner pubkey target {}", current.display())
+                    format!(
+                        "failed to inspect owner pubkey target {}",
+                        current.display()
+                    )
                 });
             }
         }
@@ -1159,7 +1168,10 @@ fn read_publication_target(path: &Path) -> Result<Option<Vec<u8>>> {
         anyhow::bail!("refusing owner pubkey target symlink {}", path.display());
     }
     if !metadata.is_file() {
-        anyhow::bail!("refusing non-regular owner pubkey target {}", path.display());
+        anyhow::bail!(
+            "refusing non-regular owner pubkey target {}",
+            path.display()
+        );
     }
 
     #[cfg(unix)]
@@ -1176,7 +1188,10 @@ fn read_publication_target(path: &Path) -> Result<Option<Vec<u8>>> {
             .with_context(|| format!("failed to inspect owner pubkey target {}", path.display()))?
             .is_file()
         {
-            anyhow::bail!("refusing non-regular owner pubkey target {}", path.display());
+            anyhow::bail!(
+                "refusing non-regular owner pubkey target {}",
+                path.display()
+            );
         }
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)
@@ -1215,10 +1230,16 @@ fn write_publication_target(path: &Path, contents: &[u8], existed: bool) -> Resu
             anyhow::bail!("refusing owner pubkey target symlink {}", path.display());
         }
         if !metadata.is_file() {
-            anyhow::bail!("refusing non-regular owner pubkey target {}", path.display());
+            anyhow::bail!(
+                "refusing non-regular owner pubkey target {}",
+                path.display()
+            );
         }
     } else if existed {
-        anyhow::bail!("owner pubkey target disappeared before write {}", path.display());
+        anyhow::bail!(
+            "owner pubkey target disappeared before write {}",
+            path.display()
+        );
     }
 
     #[cfg(unix)]
@@ -1240,7 +1261,10 @@ fn write_publication_target(path: &Path, contents: &[u8], existed: bool) -> Resu
             .with_context(|| format!("failed to inspect owner pubkey target {}", path.display()))?
             .is_file()
         {
-            anyhow::bail!("refusing non-regular owner pubkey target {}", path.display());
+            anyhow::bail!(
+                "refusing non-regular owner pubkey target {}",
+                path.display()
+            );
         }
         file.write_all(contents)
             .and_then(|_| file.flush())
