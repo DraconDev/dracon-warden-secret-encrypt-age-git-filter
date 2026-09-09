@@ -2200,7 +2200,10 @@ fn read_tracked_repair_file(path: &Path, max_bytes: Option<usize>) -> Result<Tra
         anyhow::bail!("refusing to read tracked symlink {}", path.display());
     }
     if !metadata.is_file() {
-        anyhow::bail!("refusing to read non-regular tracked path {}", path.display());
+        anyhow::bail!(
+            "refusing to read non-regular tracked path {}",
+            path.display()
+        );
     }
 
     #[cfg(unix)]
@@ -2212,9 +2215,9 @@ fn read_tracked_repair_file(path: &Path, max_bytes: Option<usize>) -> Result<Tra
         let mut file = options
             .open(path)
             .with_context(|| format!("failed to read tracked repair path {}", path.display()))?;
-        let file_metadata = file.metadata().with_context(|| {
-            format!("failed to inspect opened repair path {}", path.display())
-        })?;
+        let file_metadata = file
+            .metadata()
+            .with_context(|| format!("failed to inspect opened repair path {}", path.display()))?;
         if !file_metadata.is_file() {
             anyhow::bail!("refusing to read non-regular tracked path {}", path.display());
         }
@@ -2267,7 +2270,10 @@ fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
         anyhow::bail!("refusing to write tracked symlink {}", path.display());
     }
     if !metadata.is_file() {
-        anyhow::bail!("refusing to write non-regular tracked path {}", path.display());
+        anyhow::bail!(
+            "refusing to write non-regular tracked path {}",
+            path.display()
+        );
     }
 
     #[cfg(unix)]
@@ -2287,7 +2293,10 @@ fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
             .with_context(|| format!("failed to inspect opened repair path {}", path.display()))?
             .is_file()
         {
-            anyhow::bail!("refusing to write non-regular tracked path {}", path.display());
+            anyhow::bail!(
+                "refusing to write non-regular tracked path {}",
+                path.display()
+            );
         }
         file.write_all(contents)
             .and_then(|_| file.flush())
