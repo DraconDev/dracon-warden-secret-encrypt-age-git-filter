@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed (audit pass 2026-09-09)
+### Fixed (audit pass 2026-09-10)
+
+- **Pointer-file checkouts install and chain hooks (F76):** local setup now
+  writes to the resolved Git gitdir, and generated wrappers resolve Git's
+  common gitdir before chaining foreign local hooks. Linked worktrees and
+  nested submodules no longer lose their local hook behavior because `.git`
+  is a pointer file.
 
 - **Owner public-key publication rejects symlink targets (F75):** repository
   output directories and existing target files are checked with symlink-aware

@@ -343,7 +343,8 @@ enum Command {
         /// Install hooks globally (default). Sets core.hooksPath in global git config.
         #[arg(long, conflicts_with = "local")]
         global: bool,
-        /// Install hooks locally into a specific repo's .git/hooks/ directory.
+        /// Install hooks locally into a repo's resolved gitdir/hooks directory.
+        /// Pointer-file checkouts (worktrees and submodules) are supported.
         #[arg(long, conflicts_with = "global")]
         local: bool,
         /// Repo path for --local mode. Defaults to current directory.
@@ -3403,7 +3404,7 @@ REPO=$(git rev-parse --show-toplevel)
 # FIXED 2026-07-26 (audit H-10), two prongs:
 # (1) Global core.hooksPath shadows .git/hooks for every repo, which
 #     silently disabled husky/pre-commit-framework hooks fleet-wide.
-#     Chain to the repo-local hook when one exists and is NOT a
+#     Chain to the repository's common-gitdir hook when one exists and is NOT a
 #     warden-seeded copy (the header guard prevents infinite
 #     recursion through install_hooks_for_repo's seed).
 GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 1
@@ -3530,8 +3531,8 @@ SECRET_RE='(A{1}KIA[A-Z0-9]{16}|-----BEGIN [A-Z]+ PRIVATE KEY|password\s*=\s*["'
 # ── Repo-local hook chaining (FIXED 2026-08-11, audit MEDIUM — H-10
 #    follow-up) ──────────────────────────────────────────────────────
 # Global core.hooksPath shadows .git/hooks for every repo; the H-10
-# fix chained repo-local hooks for pre-commit only, leaving THIS hook
-# silently shadowing any repo-local pre-push. Chain first, like
+# fix chained repository-local hooks for pre-commit only, leaving THIS hook
+# silently shadowing any repository-local pre-push. Chain first, like
 # pre-commit: git feeds the push refs on stdin exactly once, so
 # buffer them, hand the buffer to the local hook, and reuse it for
 # warden's own scan below — a local hook that consumes stdin cannot
@@ -3743,7 +3744,7 @@ if [ -n "$DRACON_ALLOW_REWRITE" ]; then exit 0; fi
 # FIXED 2026-08-11 (audit MEDIUM — H-10 follow-up): global
 # core.hooksPath shadows .git/hooks for every repo; pre-commit got
 # chaining in H-10 but pre-push and pre-rebase silently shadowed any
-# repo-local hook. Chain the repo-local pre-rebase when one exists
+# repository-local hook. Chain the common-gitdir pre-rebase when one exists
 # (the "Dracon Warden" grep skips our own seeded copies — no
 # recursion). Placed after the bypass so DRACON_ALLOW_REWRITE=1
 # disables hook interference entirely, matching the hook's
