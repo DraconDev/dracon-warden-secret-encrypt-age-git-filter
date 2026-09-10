@@ -3345,10 +3345,7 @@ fn install_hook_set(dir: &Path) -> Result<Vec<PathBuf>> {
             if plan.target.exists() && !is_warden_hook(&plan.target) {
                 if let Some(backup) = plan.foreign_backup.as_ref() {
                     fs::rename(&plan.target, backup).with_context(|| {
-                        format!(
-                            "failed to preserve foreign hook {}",
-                            plan.target.display()
-                        )
+                        format!("failed to preserve foreign hook {}", plan.target.display())
                     })?;
                     plan.moved_foreign = true;
                 }

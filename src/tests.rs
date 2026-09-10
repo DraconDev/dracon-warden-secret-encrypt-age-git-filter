@@ -595,17 +595,18 @@ mod tests {
         run_setup_hooks(HookMode::Local, Some(&worktree))
             .expect("setup-hooks --local must resolve a gitfile");
 
-        let configured_hooks = git_in_output(
-            &worktree,
-            &["config", "--local", "--get", "core.hooksPath"],
-        );
+        let configured_hooks =
+            git_in_output(&worktree, &["config", "--local", "--get", "core.hooksPath"]);
         assert_eq!(
             std::path::PathBuf::from(configured_hooks.trim()),
             git_dir.join("hooks"),
             "local setup must configure the resolved gitdir hooks path"
         );
         let installed = git_dir.join("hooks/pre-commit");
-        assert!(installed.is_file(), "hook must be installed in the real gitdir");
+        assert!(
+            installed.is_file(),
+            "hook must be installed in the real gitdir"
+        );
 
         fs::write(worktree.join("next.txt"), "next\n").expect("next file");
         run_git_in(&worktree, &["add", "next.txt"]);
@@ -667,10 +668,16 @@ mod tests {
             String::from_utf8_lossy(&submodule_add.stderr)
         );
         run_git_in(&super_repo, &["add", ".gitmodules", "nested"]);
-        run_git_in(&super_repo, &["commit", "--no-verify", "-q", "-m", "add submodule"]);
+        run_git_in(
+            &super_repo,
+            &["commit", "--no-verify", "-q", "-m", "add submodule"],
+        );
         run_git_in(&nested, &["config", "user.email", "test@test.local"]);
         run_git_in(&nested, &["config", "user.name", "test"]);
-        assert!(nested.join(".git").is_file(), "submodule must use a gitfile");
+        assert!(
+            nested.join(".git").is_file(),
+            "submodule must use a gitfile"
+        );
 
         let git_dir = resolved_git_dir(&nested).expect("resolve submodule gitdir");
         let hooks_dir = git_dir.join("hooks");
@@ -694,10 +701,8 @@ mod tests {
 
         run_setup_hooks(HookMode::Local, Some(&nested))
             .expect("setup-hooks --local must resolve the submodule gitfile");
-        let configured_hooks = git_in_output(
-            &nested,
-            &["config", "--local", "--get", "core.hooksPath"],
-        );
+        let configured_hooks =
+            git_in_output(&nested, &["config", "--local", "--get", "core.hooksPath"]);
         assert_eq!(
             fs::canonicalize(configured_hooks.trim()).expect("canonical configured hooks"),
             fs::canonicalize(&hooks_dir).expect("canonical submodule hooks"),
@@ -710,7 +715,10 @@ mod tests {
         let push_result = run_hook_input(&nested, &hooks_dir.join("pre-push"), "");
         assert!(push_result.0.success(), "generated pre-push hook failed");
         let rebase_result = run_hook_input(&nested, &hooks_dir.join("pre-rebase"), "");
-        assert!(rebase_result.0.success(), "generated pre-rebase hook failed");
+        assert!(
+            rebase_result.0.success(),
+            "generated pre-rebase hook failed"
+        );
         assert_eq!(
             fs::read_to_string(&marker).expect("submodule foreign hook marker"),
             "pre-commit\npre-push\npre-rebase\n",
