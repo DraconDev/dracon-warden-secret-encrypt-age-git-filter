@@ -186,6 +186,37 @@ mod tests {
         String::from_utf8(out.stdout).expect("utf8 stdout")
     }
 
+    /// Return a path to `target` relative to the test process directory.
+    ///
+    /// F76 specifically needs coverage for callers that pass a relative repo
+    /// argument, while the regular fixtures live below `/tmp` to avoid
+    /// touching the checkout containing the tests.
+    fn relative_path_from_current_dir(target: &std::path::Path) -> std::path::PathBuf {
+        let current = fs::canonicalize(std::env::current_dir().expect("current directory"))
+            .expect("canonical current directory");
+        let target = fs::canonicalize(target).expect("canonical relative-path target");
+        let current_components: Vec<_> = current.components().collect();
+        let target_components: Vec<_> = target.components().collect();
+        let common = current_components
+            .iter()
+            .zip(&target_components)
+            .take_while(|(left, right)| left == right)
+            .count();
+        assert!(common > 0, "test paths must share a filesystem root");
+
+        let mut relative = std::path::PathBuf::new();
+        for _ in common..current_components.len() {
+            relative.push("..");
+        }
+        for component in target_components.iter().skip(common) {
+            relative.push(component.as_os_str());
+        }
+        if relative.as_os_str().is_empty() {
+            relative.push(".");
+        }
+        relative
+    }
+
     /// Invoke the pre-push hook with a caller-provided ref stream.
     /// Returns the exit status and captured stderr.
     fn run_hook_input(
@@ -607,8 +638,13 @@ mod tests {
             }
         }
 
-        run_setup_hooks(HookMode::Local, Some(&worktree))
-            .expect("setup-hooks --local must resolve a gitfile");
+        let relative_worktree = relative_path_from_current_dir(&worktree);
+        assert!(
+            !relative_worktree.is_absolute(),
+            "linked-worktree fixture must be passed as a relative path"
+        );
+        run_setup_hooks(HookMode::Local, Some(&relative_worktree))
+            .expect("setup-hooks --local must resolve a relative gitfile path");
 
         let configured_hooks =
             git_in_output(&worktree, &["config", "--local", "--get", "core.hooksPath"]);
@@ -714,8 +750,13 @@ mod tests {
                 .expect("submodule foreign hook permissions");
         }
 
-        run_setup_hooks(HookMode::Local, Some(&nested))
-            .expect("setup-hooks --local must resolve the submodule gitfile");
+        let relative_nested = relative_path_from_current_dir(&nested);
+        assert!(
+            !relative_nested.is_absolute(),
+            "submodule fixture must be passed as a relative path"
+        );
+        run_setup_hooks(HookMode::Local, Some(&relative_nested))
+            .expect("setup-hooks --local must resolve a relative submodule gitfile path");
         let configured_hooks =
             git_in_output(&nested, &["config", "--local", "--get", "core.hooksPath"]);
         assert_eq!(
