@@ -98,6 +98,7 @@ mod tests {
         run_git_in(repo, &["config", "user.email", "test@test.local"]);
         run_git_in(repo, &["config", "user.name", "test"]);
         run_git_in(repo, &["config", "commit.gpgsign", "false"]);
+        remove_ambient_local_hooks(repo);
 
         // The user may have global/template hooks (warden's pre-commit +
         // pre-push). For this test repo we want ONLY our pre-push hook
@@ -138,6 +139,20 @@ mod tests {
             fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o755)).expect("chmod hook");
         }
         (td, hook_path)
+    }
+
+    /// Remove hooks copied into the temporary repo by the operator's Git
+    /// template. The hook under test intentionally chains `.git/hooks`, so
+    /// ambient Warden hooks there would otherwise be mistaken for fixtures.
+    fn remove_ambient_local_hooks(repo: &std::path::Path) {
+        for name in ["pre-commit", "pre-push", "pre-rebase"] {
+            let path = repo.join(".git/hooks").join(name);
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => panic!("remove ambient hook {}: {}", path.display(), error),
+            }
+        }
     }
 
     fn run_git_in(repo: &std::path::Path, args: &[&str]) {
@@ -3205,6 +3220,7 @@ protected_patterns = ["secrets.json"]
         run_git_in(repo, &["config", "user.email", "test@test.local"]);
         run_git_in(repo, &["config", "user.name", "test"]);
         run_git_in(repo, &["config", "commit.gpgsign", "false"]);
+        remove_ambient_local_hooks(repo);
 
         let hooks_dir = repo.join("test-hooks");
         fs::create_dir_all(&hooks_dir).expect("hooks dir");
