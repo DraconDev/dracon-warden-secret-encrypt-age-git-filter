@@ -569,18 +569,21 @@ mod tests {
 
         let marker = td.path().join("foreign-hook-ran");
         let common_hooks = repo.join(".git/hooks");
-        let foreign = common_hooks.join("pre-commit");
-        fs::write(
-            &foreign,
-            format!(
-                "#!/bin/sh\nprintf '%s\\n' foreign >> {}\n",
-                shell_single_quote(&marker)
-            ),
-        )
-        .expect("foreign local hook");
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&foreign, fs::Permissions::from_mode(0o755))
-            .expect("foreign hook permissions");
+        for name in ["pre-commit", "pre-push", "pre-rebase"] {
+            let foreign = common_hooks.join(name);
+            fs::write(
+                &foreign,
+                format!(
+                    "#!/bin/sh\nprintf '%s\\n' {} >> {}\n",
+                    shell_single_quote(std::path::Path::new(name)),
+                    shell_single_quote(&marker)
+                ),
+            )
+            .expect("foreign local hook");
+            fs::set_permissions(&foreign, fs::Permissions::from_mode(0o755))
+                .expect("foreign hook permissions");
+        }
 
         let git_dir = resolved_git_dir(&worktree).expect("resolve linked worktree gitdir");
         assert_ne!(git_dir, worktree.join(".git"));
@@ -602,10 +605,23 @@ mod tests {
         fs::write(worktree.join("next.txt"), "next\n").expect("next file");
         run_git_in(&worktree, &["add", "next.txt"]);
         run_git_in(&worktree, &["commit", "-q", "-m", "linked hook test"]);
+
+        let push_result = run_hook_input(&worktree, &git_dir.join("hooks/pre-push"), "");
+        assert!(
+            push_result.0.success(),
+            "generated pre-push hook failed: {}",
+            push_result.1
+        );
+        let rebase_result = run_hook_input(&worktree, &git_dir.join("hooks/pre-rebase"), "");
+        assert!(
+            rebase_result.0.success(),
+            "generated pre-rebase hook failed: {}",
+            rebase_result.1
+        );
         assert_eq!(
             fs::read_to_string(&marker).expect("foreign hook marker"),
-            "foreign\n",
-            "the generated hook must chain the shared-gitdir foreign hook"
+            "pre-commit\npre-push\npre-rebase\n",
+            "generated hooks must chain the shared-gitdir foreign hooks"
         );
     }
 
