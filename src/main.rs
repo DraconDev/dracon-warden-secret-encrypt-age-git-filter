@@ -3406,7 +3406,12 @@ REPO=$(git rev-parse --show-toplevel)
 #     Chain to the repo-local hook when one exists and is NOT a
 #     warden-seeded copy (the header guard prevents infinite
 #     recursion through install_hooks_for_repo's seed).
-LOCAL_HOOK="$REPO/.git/hooks/pre-commit"
+GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 1
+case "$GIT_COMMON_DIR" in
+    /*) ;;
+    *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
+esac
+LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-commit"
 if [ -x "$LOCAL_HOOK" ] && ! grep -q "Dracon Warden" "$LOCAL_HOOK" 2>/dev/null; then
     "$LOCAL_HOOK" "$@" || exit $?
 fi
@@ -3548,7 +3553,12 @@ if [ -n "$DRACON_FOREIGN_HOOK" ] && [ -x "$DRACON_FOREIGN_HOOK" ]; then
 fi
 
 REPO=$(git rev-parse --show-toplevel)
-LOCAL_HOOK="$REPO/.git/hooks/pre-push"
+GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 1
+case "$GIT_COMMON_DIR" in
+    /*) ;;
+    *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
+esac
+LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-push"
 if [ -x "$LOCAL_HOOK" ] && ! grep -q "Dracon Warden" "$LOCAL_HOOK" 2>/dev/null; then
     "$LOCAL_HOOK" "$@" < "$REFS_FILE" || exit $?
 fi
@@ -3739,7 +3749,12 @@ if [ -n "$DRACON_ALLOW_REWRITE" ]; then exit 0; fi
 # disables hook interference entirely, matching the hook's
 # documented escape hatch.
 REPO=$(git rev-parse --show-toplevel)
-LOCAL_HOOK="$REPO/.git/hooks/pre-rebase"
+GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 1
+case "$GIT_COMMON_DIR" in
+    /*) ;;
+    *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
+esac
+LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-rebase"
 if [ -x "$LOCAL_HOOK" ] && ! grep -q "Dracon Warden" "$LOCAL_HOOK" 2>/dev/null; then
     "$LOCAL_HOOK" "$@" || exit $?
 fi
