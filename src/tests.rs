@@ -778,6 +778,62 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn repeated_local_hook_install_keeps_collision_suffixed_foreign_hook() {
+        let td = TestDir::new("repeated_local_hook_collision");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        run_git_in(&repo, &["init", "-q", "-b", "main"]);
+
+        let hooks_dir = repo.join(".git/hooks");
+        let base_backup = hooks_dir.join("pre-commit.dracon-foreign");
+        fs::write(&base_backup, "unrelated backup\n").expect("base backup");
+        let marker = td.path().join("foreign-hook-ran");
+        let foreign = hooks_dir.join("pre-commit");
+        let foreign_content = format!(
+            "#!/bin/sh\nprintf '%s\\n' foreign >> {}\n",
+            shell_single_quote(&marker)
+        );
+        fs::write(&foreign, &foreign_content).expect("foreign hook");
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&foreign, fs::Permissions::from_mode(0o755))
+            .expect("foreign hook permissions");
+
+        run_setup_hooks(HookMode::Local, Some(&repo)).expect("first local hook setup");
+        let mut suffixed_backups = fs::read_dir(&hooks_dir)
+            .expect("read hooks")
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with("pre-commit.dracon-foreign."))
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(suffixed_backups.len(), 1, "a collision must use one suffix");
+        let suffixed_backup = suffixed_backups.pop().expect("suffixed backup");
+        assert_eq!(
+            fs::read_to_string(&suffixed_backup).expect("read suffixed backup"),
+            foreign_content,
+            "the original foreign hook must be moved to the suffixed backup"
+        );
+
+        run_setup_hooks(HookMode::Local, Some(&repo)).expect("repeat local hook setup");
+        let result = run_hook_input(&repo, &hooks_dir.join("pre-commit"), "");
+        assert!(result.0.success(), "reinstalled hook failed: {}", result.1);
+        assert_eq!(
+            fs::read_to_string(&marker).expect("foreign hook marker"),
+            "foreign\n",
+            "repeat setup must retain the exact collision-suffixed hook"
+        );
+        assert_eq!(
+            fs::read_to_string(&base_backup).expect("base backup"),
+            "unrelated backup\n",
+            "an unrelated unsuffixed backup must not be selected"
+        );
+    }
+
     /// ADDED 2026-07-21 (v0.112.32, audit M31/F4.5): the clean
     /// direction must FAIL CLOSED for oversized inputs and refused
     /// paths (passthrough would commit the file UNENCRYPTED), while
