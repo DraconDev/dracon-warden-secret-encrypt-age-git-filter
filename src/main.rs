@@ -1196,11 +1196,10 @@ fn open_publication_directory(repo: &Path, target_dir: &Path) -> Result<fs::File
     for component in [".dracon", "data", "keys"] {
         let component_path = target_dir.join(component);
         let name = std::ffi::CString::new(component).expect("static component has no NUL");
-        let flags = libc::O_RDONLY
-            | libc::O_DIRECTORY
-            | libc::O_NOFOLLOW
-            | libc::O_CLOEXEC
-            | libc::O_NONBLOCK;
+        // O_NOFOLLOW is enough to reject a symlink here; omitting
+        // O_DIRECTORY lets us distinguish a real non-directory component
+        // after opening it instead of Linux reporting ENOTDIR for a link.
+        let flags = libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK;
         let fd = unsafe { libc::openat(current.as_raw_fd(), name.as_ptr(), flags) };
         let next = if fd >= 0 {
             // SAFETY: openat returned a new owned descriptor.
@@ -1419,18 +1418,24 @@ fn write_publication_target_path(path: &Path, contents: &[u8], existed: bool) ->
 
 pub(crate) fn publish_repo_pubkey(repo: &Path, pubkey_path: &Path) -> Result<bool> {
     let target_dir = repo.join(".dracon/data/keys");
+    #[cfg(unix)]
+    let target_directory = open_publication_directory(repo, &target_dir)?;
+    #[cfg(not(unix))]
     ensure_real_publication_directory(&target_dir)?;
 
     let name = pubkey_path
         .file_name()
         .map(|n| n.to_owned())
         .unwrap_or_else(|| "owner.pub".into());
-    let target = target_dir.join(name);
+    let target = target_dir.join(&name);
 
     let source_bytes = fs::read(pubkey_path)
         .with_context(|| format!("failed reading pubkey {}", pubkey_path.display()))?;
     validate_owner_age_pubkey_bytes(pubkey_path, &source_bytes)?;
-    let current_bytes = read_publication_target(&target)?;
+    #[cfg(unix)]
+    let current_bytes = read_publication_target_at(&target_directory, &name, &target)?;
+    #[cfg(not(unix))]
+    let current_bytes = read_publication_target_path(&target)?;
     if current_bytes.as_deref() == Some(source_bytes.as_slice()) {
         return Ok(false);
     }
@@ -1446,7 +1451,16 @@ pub(crate) fn publish_repo_pubkey(repo: &Path, pubkey_path: &Path) -> Result<boo
         }
     }
 
-    write_publication_target(&target, &source_bytes, current_bytes.is_some())?;
+    #[cfg(unix)]
+    write_publication_target_at(
+        &target_directory,
+        &name,
+        &target,
+        &source_bytes,
+        current_bytes.is_some(),
+    )?;
+    #[cfg(not(unix))]
+    write_publication_target_path(&target, &source_bytes, current_bytes.is_some())?;
     Ok(true)
 }
 
