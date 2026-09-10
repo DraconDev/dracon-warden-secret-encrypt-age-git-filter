@@ -630,6 +630,94 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn setup_hooks_local_resolves_submodule_gitdir_and_preserves_hooks() {
+        // A submodule also exposes `.git` as a pointer file, but unlike a
+        // linked worktree its resolved gitdir is its own common hooks
+        // directory. Local setup must preserve and chain hooks there.
+        let td = TestDir::new("setup_hooks_submodule");
+        let source = td.path().join("source");
+        let super_repo = td.path().join("super");
+        let nested = super_repo.join("nested");
+        for repo in [&source, &super_repo] {
+            fs::create_dir_all(repo).expect("repo");
+            run_git_in(repo, &["init", "-q", "-b", "main"]);
+            run_git_in(repo, &["config", "user.email", "test@test.local"]);
+            run_git_in(repo, &["config", "user.name", "test"]);
+        }
+        fs::write(source.join("source.txt"), "source\n").expect("source file");
+        run_git_in(&source, &["add", "source.txt"]);
+        run_git_in(&source, &["commit", "--no-verify", "-q", "-m", "source"]);
+        fs::write(super_repo.join("README"), "super\n").expect("super file");
+        run_git_in(&super_repo, &["add", "README"]);
+        run_git_in(&super_repo, &["commit", "--no-verify", "-q", "-m", "super"]);
+
+        let submodule_add = ProcessCommand::new("git")
+            .arg("-C")
+            .arg(&super_repo)
+            .args(["-c", "protocol.file.allow=always", "submodule", "add", "-q"])
+            .arg(&source)
+            .arg("nested")
+            .output()
+            .expect("git submodule add");
+        assert!(
+            submodule_add.status.success(),
+            "git submodule add failed: {}",
+            String::from_utf8_lossy(&submodule_add.stderr)
+        );
+        run_git_in(&super_repo, &["add", ".gitmodules", "nested"]);
+        run_git_in(&super_repo, &["commit", "--no-verify", "-q", "-m", "add submodule"]);
+        run_git_in(&nested, &["config", "user.email", "test@test.local"]);
+        run_git_in(&nested, &["config", "user.name", "test"]);
+        assert!(nested.join(".git").is_file(), "submodule must use a gitfile");
+
+        let git_dir = resolved_git_dir(&nested).expect("resolve submodule gitdir");
+        let hooks_dir = git_dir.join("hooks");
+        fs::create_dir_all(&hooks_dir).expect("submodule hooks");
+        let marker = td.path().join("submodule-foreign-hook-ran");
+        use std::os::unix::fs::PermissionsExt;
+        for name in ["pre-commit", "pre-push", "pre-rebase"] {
+            let foreign = hooks_dir.join(name);
+            fs::write(
+                &foreign,
+                format!(
+                    "#!/bin/sh\nprintf '%s\\n' {} >> {}\n",
+                    shell_single_quote(std::path::Path::new(name)),
+                    shell_single_quote(&marker)
+                ),
+            )
+            .expect("submodule foreign hook");
+            fs::set_permissions(&foreign, fs::Permissions::from_mode(0o755))
+                .expect("submodule foreign hook permissions");
+        }
+
+        run_setup_hooks(HookMode::Local, Some(&nested))
+            .expect("setup-hooks --local must resolve the submodule gitfile");
+        let configured_hooks = git_in_output(
+            &nested,
+            &["config", "--local", "--get", "core.hooksPath"],
+        );
+        assert_eq!(
+            fs::canonicalize(configured_hooks.trim()).expect("canonical configured hooks"),
+            fs::canonicalize(&hooks_dir).expect("canonical submodule hooks"),
+            "local setup must configure the submodule's real gitdir"
+        );
+
+        fs::write(nested.join("next.txt"), "next\n").expect("next file");
+        run_git_in(&nested, &["add", "next.txt"]);
+        run_git_in(&nested, &["commit", "-q", "-m", "submodule hook test"]);
+        let push_result = run_hook_input(&nested, &hooks_dir.join("pre-push"), "");
+        assert!(push_result.0.success(), "generated pre-push hook failed");
+        let rebase_result = run_hook_input(&nested, &hooks_dir.join("pre-rebase"), "");
+        assert!(rebase_result.0.success(), "generated pre-rebase hook failed");
+        assert_eq!(
+            fs::read_to_string(&marker).expect("submodule foreign hook marker"),
+            "pre-commit\npre-push\npre-rebase\n",
+            "submodule setup must preserve and chain every foreign hook"
+        );
+    }
+
     #[test]
     fn hook_replacement_is_atomic_and_executable() {
         let td = TestDir::new("atomic_hook_replace");
