@@ -3158,6 +3158,10 @@ enum HookMode {
     Local,
 }
 
+/// Marker embedded in every generated hook so foreign hooks that merely
+/// mention "Dracon Warden" are not mistaken for managed wrappers.
+const WARDEN_HOOK_MARKER: &str = "# dracon-warden-managed-hook-v1";
+
 /// Marker replaced with the absolute path of a preserved foreign hook.
 ///
 /// The empty string is used when no same-name foreign hook was present.
@@ -3180,7 +3184,7 @@ fn render_hook(content: &str, foreign_hook: Option<&Path>) -> String {
 /// Return true when `path` is a hook written by Warden.
 fn is_warden_hook(path: &Path) -> bool {
     fs::read_to_string(path)
-        .map(|content| content.contains("Dracon Warden"))
+        .map(|content| content.lines().any(|line| line.trim() == WARDEN_HOOK_MARKER))
         .unwrap_or(false)
 }
 
@@ -3419,6 +3423,7 @@ fn hook_dir(mode: HookMode, repo: Option<&Path>) -> Result<PathBuf> {
 }
 
 const PRE_COMMIT_HOOK: &str = r#"#!/bin/sh
+# dracon-warden-managed-hook-v1
 # Dracon Warden — pre-commit hook
 # Validates that the warden encryption filter is configured before committing.
 # Installed by: dracon-warden setup-hooks
@@ -3437,7 +3442,7 @@ case "$GIT_COMMON_DIR" in
     *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
 esac
 LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-commit"
-if [ -x "$LOCAL_HOOK" ] && ! grep -q "Dracon Warden" "$LOCAL_HOOK" 2>/dev/null; then
+if [ -x "$LOCAL_HOOK" ] && ! grep -q "dracon-warden-managed-hook-v1" "$LOCAL_HOOK" 2>/dev/null; then
     "$LOCAL_HOOK" "$@" || exit $?
 fi
 
@@ -3494,6 +3499,7 @@ fi
 "#;
 
 const PRE_PUSH_HOOK: &str = r##"#!/bin/sh
+# dracon-warden-managed-hook-v1
 # Dracon Warden — pre-push hook
 # Defense-in-depth: scans push for plaintext secrets.
 # Catches --no-verify bypass of pre-commit hook.
@@ -3584,7 +3590,7 @@ case "$GIT_COMMON_DIR" in
     *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
 esac
 LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-push"
-if [ -x "$LOCAL_HOOK" ] && ! grep -q "Dracon Warden" "$LOCAL_HOOK" 2>/dev/null; then
+if [ -x "$LOCAL_HOOK" ] && ! grep -q "dracon-warden-managed-hook-v1" "$LOCAL_HOOK" 2>/dev/null; then
     "$LOCAL_HOOK" "$@" < "$REFS_FILE" || exit $?
 fi
 
@@ -3759,6 +3765,7 @@ done < "$REFS_FILE"
 /// work (including `git pull --rebase` of commits not yet pushed)
 /// is unaffected. Escape hatch: DRACON_ALLOW_REWRITE=1.
 const PRE_REBASE_HOOK: &str = r#"#!/bin/sh
+# dracon-warden-managed-hook-v1
 # Dracon Warden — pre-rebase hook
 # Refuse rebases that rewrite already-published history.
 # Installed by: dracon-warden setup-hooks
@@ -3780,7 +3787,7 @@ case "$GIT_COMMON_DIR" in
     *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
 esac
 LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-rebase"
-if [ -x "$LOCAL_HOOK" ] && ! grep -q "Dracon Warden" "$LOCAL_HOOK" 2>/dev/null; then
+if [ -x "$LOCAL_HOOK" ] && ! grep -q "dracon-warden-managed-hook-v1" "$LOCAL_HOOK" 2>/dev/null; then
     "$LOCAL_HOOK" "$@" || exit $?
 fi
 
