@@ -1083,10 +1083,12 @@ fn resolve_local_pubkey_path() -> Option<PathBuf> {
 
 /// Ensure every component of a publication directory is a real directory.
 ///
-/// `create_dir_all` follows an existing symlink in an intermediate component,
-/// so it is not safe for repository-controlled output paths. Check each
-/// component with `symlink_metadata` before creating missing directories and
-/// re-check a component if another process wins the create race.
+/// This fallback is only used on platforms without the Unix directory-FD
+/// primitives below. Existing symlinks are rejected before any directory is
+/// created; missing targets use exclusive creation rather than a following
+/// write. Existing files fail closed because no portable no-follow open API is
+/// available here.
+#[cfg(not(unix))]
 fn ensure_real_publication_directory(path: &Path) -> Result<()> {
     let mut current = PathBuf::new();
     for component in path.components() {
