@@ -1550,11 +1550,19 @@ fn resolved_git_dir(repo: &Path) -> Option<PathBuf> {
     }
 
     let path = Path::new(raw);
-    Some(if path.is_absolute() {
+    let resolved = if path.is_absolute() {
         path.to_path_buf()
     } else {
         repo.join(path)
-    })
+    };
+
+    // Callers use this path both from the current process and from generated
+    // hooks.  A relative `repo` argument would otherwise leave the gitdir
+    // relative to whichever directory each caller happens to use (notably
+    // Git's worktree root when dispatching a hook).  Canonicalize once so all
+    // subsequent lock, hooksPath, and foreign-hook paths are absolute and
+    // stable.
+    fs::canonicalize(resolved).ok()
 }
 
 /// RAII guard that acquires `.git/index.lock` using the same protocol git uses.
