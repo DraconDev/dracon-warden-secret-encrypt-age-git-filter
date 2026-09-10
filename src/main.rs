@@ -3158,10 +3158,9 @@ enum HookMode {
     Local,
 }
 
-/// Marker replaced with the absolute path of a preserved foreign global hook.
+/// Marker replaced with the absolute path of a preserved foreign hook.
 ///
-/// The empty string is used for repository-local hooks, which must not invoke
-/// a machine-global hook a second time.
+/// The empty string is used when no same-name foreign hook was present.
 const FOREIGN_HOOK_PLACEHOLDER: &str = "__DRACON_FOREIGN_HOOK__";
 
 /// Quote a value for use as one POSIX shell word.
@@ -3271,7 +3270,7 @@ fn write_hook_atomically(path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 
-/// One staged global hook replacement.
+/// One staged hook replacement.
 struct HookInstallPlan {
     target: PathBuf,
     original: Option<Vec<u8>>,
@@ -3280,9 +3279,9 @@ struct HookInstallPlan {
     temp: Option<tempfile::NamedTempFile>,
 }
 
-/// Install all global hooks as one staged operation while preserving foreign
-/// hooks under `.dracon-foreign` siblings for explicit chaining.
-fn install_global_hooks(dir: &Path) -> Result<Vec<PathBuf>> {
+/// Install all Warden hooks as one staged operation while preserving same-name
+/// foreign hooks under `.dracon-foreign` siblings for explicit chaining.
+fn install_hook_set(dir: &Path) -> Result<Vec<PathBuf>> {
     let specs = [
         ("pre-commit", PRE_COMMIT_HOOK),
         ("pre-push", PRE_PUSH_HOOK),
@@ -3301,12 +3300,14 @@ fn install_global_hooks(dir: &Path) -> Result<Vec<PathBuf>> {
         } else {
             None
         };
-        let foreign_backup = if target.exists() && !is_warden_hook(&target) {
+        let target_is_warden = target.exists() && is_warden_hook(&target);
+        let foreign_backup = if target.exists() && !target_is_warden {
             Some(next_foreign_hook_backup(&target)?)
-        } else if !target.exists() {
-            existing_foreign_hook_backup(&target)
         } else {
-            None
+            // Keep chaining the stable base backup when setup is repeated over
+            // an already-installed Warden wrapper. Without this branch a
+            // second setup would silently discard the first foreign hook.
+            existing_foreign_hook_backup(&target)
         };
         let rendered = render_hook(content, foreign_backup.as_deref());
         let temp = prepare_hook(&target, rendered.as_bytes())?;
@@ -3325,7 +3326,7 @@ fn install_global_hooks(dir: &Path) -> Result<Vec<PathBuf>> {
                 if let Some(backup) = plan.foreign_backup.as_ref() {
                     fs::rename(&plan.target, backup).with_context(|| {
                         format!(
-                            "failed to preserve foreign global hook {}",
+                            "failed to preserve foreign hook {}",
                             plan.target.display()
                         )
                     })?;
@@ -3341,7 +3342,7 @@ fn install_global_hooks(dir: &Path) -> Result<Vec<PathBuf>> {
                 .expect("every global hook was staged before installation");
             temp.persist(&plan.target).map_err(|error| {
                 anyhow::anyhow!(
-                    "failed to atomically install global hook {}: {}",
+                    "failed to atomically install hook {}: {}",
                     plan.target.display(),
                     error.error
                 )
@@ -3365,7 +3366,7 @@ fn install_global_hooks(dir: &Path) -> Result<Vec<PathBuf>> {
                 let _ = fs::remove_file(&plan.target);
             }
         }
-        return Err(error.context("global hook installation rolled back"));
+        return Err(error.context("hook installation rolled back"));
     }
 
     Ok(plans
@@ -3373,6 +3374,12 @@ fn install_global_hooks(dir: &Path) -> Result<Vec<PathBuf>> {
         .filter_map(|plan| plan.moved_foreign.then_some(plan.foreign_backup))
         .flatten()
         .collect())
+}
+
+/// Install the global hook set. Kept as a named wrapper because the global
+/// setup path reports the preserved files separately from local setup.
+fn install_global_hooks(dir: &Path) -> Result<Vec<PathBuf>> {
+    install_hook_set(dir)
 }
 
 fn hook_dir(mode: HookMode, repo: Option<&Path>) -> Result<PathBuf> {
