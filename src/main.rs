@@ -1176,12 +1176,9 @@ fn open_publication_directory(repo: &Path, target_dir: &Path) -> Result<fs::File
     use std::os::unix::fs::OpenOptionsExt;
 
     let mut root_options = fs::OpenOptions::new();
-    root_options.read(true).custom_flags(
-        libc::O_DIRECTORY
-            | libc::O_NOFOLLOW
-            | libc::O_CLOEXEC
-            | libc::O_NONBLOCK,
-    );
+    root_options
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
     let mut current = root_options
         .open(repo)
         .with_context(|| format!("failed opening repository directory {}", repo.display()))?;
@@ -1221,9 +1218,8 @@ fn open_publication_directory(repo: &Path, target_dir: &Path) -> Result<fs::File
                 });
             }
 
-            let created = unsafe {
-                libc::mkdirat(current.as_raw_fd(), name.as_ptr(), 0o755 as libc::mode_t)
-            };
+            let created =
+                unsafe { libc::mkdirat(current.as_raw_fd(), name.as_ptr(), 0o755 as libc::mode_t) };
             if created < 0 {
                 let create_error = std::io::Error::last_os_error();
                 if create_error.raw_os_error() != Some(libc::EEXIST) {
@@ -1291,9 +1287,8 @@ fn read_publication_target_at(
         if error.raw_os_error() == Some(libc::ELOOP) {
             anyhow::bail!("refusing owner pubkey target symlink {}", path.display());
         }
-        return Err(error).with_context(|| {
-            format!("failed reading owner pubkey target {}", path.display())
-        });
+        return Err(error)
+            .with_context(|| format!("failed reading owner pubkey target {}", path.display()));
     }
 
     // SAFETY: openat returned a new owned descriptor.
@@ -1345,11 +1340,13 @@ fn write_publication_target_at(
             anyhow::bail!("refusing owner pubkey target symlink {}", path.display());
         }
         if !existed && error.raw_os_error() == Some(libc::EEXIST) {
-            anyhow::bail!("owner pubkey target appeared before create {}", path.display());
+            anyhow::bail!(
+                "owner pubkey target appeared before create {}",
+                path.display()
+            );
         }
-        return Err(error).with_context(|| {
-            format!("failed opening owner pubkey target {}", path.display())
-        });
+        return Err(error)
+            .with_context(|| format!("failed opening owner pubkey target {}", path.display()));
     }
 
     // SAFETY: openat returned a new owned descriptor.
