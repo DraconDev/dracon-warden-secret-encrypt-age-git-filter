@@ -532,6 +532,83 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn setup_hooks_local_resolves_linked_gitdir_and_chains_common_hook() {
+        // A linked worktree exposes `.git` as a pointer file. Local setup
+        // must write to that worktree's real gitdir, while the default Git
+        // hook location for the worktree remains the shared gitdir/hooks.
+        let td = TestDir::new("setup_hooks_linked_worktree");
+        let repo = td.path().join("repo");
+        let worktree = td.path().join("linked");
+        fs::create_dir_all(&repo).expect("repo");
+        run_git_in(&repo, &["init", "-q", "-b", "main"]);
+        run_git_in(&repo, &["config", "user.email", "test@test.local"]);
+        run_git_in(&repo, &["config", "user.name", "test"]);
+        fs::write(repo.join("tracked.txt"), "content\n").expect("tracked file");
+        run_git_in(&repo, &["add", "tracked.txt"]);
+        run_git_in(&repo, &["commit", "--no-verify", "-q", "-m", "init"]);
+
+        let worktree_add = ProcessCommand::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["worktree", "add", "--detach", "-q"])
+            .arg(&worktree)
+            .arg("HEAD")
+            .output()
+            .expect("git worktree add");
+        assert!(
+            worktree_add.status.success(),
+            "git worktree add failed: {}",
+            String::from_utf8_lossy(&worktree_add.stderr)
+        );
+        assert!(
+            worktree.join(".git").is_file(),
+            "linked worktree fixture must use a git pointer file"
+        );
+
+        let marker = td.path().join("foreign-hook-ran");
+        let common_hooks = repo.join(".git/hooks");
+        let foreign = common_hooks.join("pre-commit");
+        fs::write(
+            &foreign,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' foreign >> {}\n",
+                shell_single_quote(&marker)
+            ),
+        )
+        .expect("foreign local hook");
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&foreign, fs::Permissions::from_mode(0o755))
+            .expect("foreign hook permissions");
+
+        let git_dir = resolved_git_dir(&worktree).expect("resolve linked worktree gitdir");
+        assert_ne!(git_dir, worktree.join(".git"));
+        run_setup_hooks(HookMode::Local, Some(&worktree))
+            .expect("setup-hooks --local must resolve a gitfile");
+
+        let configured_hooks = git_in_output(
+            &worktree,
+            &["config", "--local", "--get", "core.hooksPath"],
+        );
+        assert_eq!(
+            std::path::PathBuf::from(configured_hooks.trim()),
+            git_dir.join("hooks"),
+            "local setup must configure the resolved gitdir hooks path"
+        );
+        let installed = git_dir.join("hooks/pre-commit");
+        assert!(installed.is_file(), "hook must be installed in the real gitdir");
+
+        fs::write(worktree.join("next.txt"), "next\n").expect("next file");
+        run_git_in(&worktree, &["add", "next.txt"]);
+        run_git_in(&worktree, &["commit", "-q", "-m", "linked hook test"]);
+        assert_eq!(
+            fs::read_to_string(&marker).expect("foreign hook marker"),
+            "foreign\n",
+            "the generated hook must chain the shared-gitdir foreign hook"
+        );
+    }
+
     #[test]
     fn hook_replacement_is_atomic_and_executable() {
         let td = TestDir::new("atomic_hook_replace");
