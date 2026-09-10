@@ -3216,6 +3216,23 @@ fn existing_foreign_hook_backup(path: &Path) -> Option<PathBuf> {
     base.is_file().then_some(base)
 }
 
+/// Recover the exact foreign-hook path from a previously-rendered wrapper.
+///
+/// A collision can force `next_foreign_hook_backup` to use a PID/index
+/// suffix. Looking only for the unsuffixed sibling on a repeat installation
+/// could then silently replace the real backup with an unrelated file.
+fn rendered_foreign_hook(path: &Path) -> Option<PathBuf> {
+    let content = fs::read_to_string(path).ok()?;
+    let value = content
+        .lines()
+        .find_map(|line| line.strip_prefix("DRACON_FOREIGN_HOOK="))?;
+    let quoted = value.strip_prefix('\'')?.strip_suffix('\'')?;
+    if quoted.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(quoted.replace("'\\''", "'")))
+}
+
 /// Prepare an executable hook in a same-directory temporary file.
 fn prepare_hook(path: &Path, content: &[u8]) -> Result<tempfile::NamedTempFile> {
     let parent = path
@@ -3300,13 +3317,16 @@ fn install_hook_set(dir: &Path) -> Result<Vec<PathBuf>> {
         } else {
             None
         };
-        let target_is_warden = target.exists() && is_warden_hook(&target);
-        let foreign_backup = if target.exists() && !target_is_warden {
+        let target_exists = target.exists();
+        let target_is_warden = target_exists && is_warden_hook(&target);
+        let foreign_backup = if target_exists && !target_is_warden {
             Some(next_foreign_hook_backup(&target)?)
+        } else if target_is_warden {
+            // Keep chaining the exact backup recorded in the existing wrapper
+            // when setup is repeated. This also handles the PID/index suffix
+            // chosen by `next_foreign_hook_backup` after a name collision.
+            rendered_foreign_hook(&target).or_else(|| existing_foreign_hook_backup(&target))
         } else {
-            // Keep chaining the stable base backup when setup is repeated over
-            // an already-installed Warden wrapper. Without this branch a
-            // second setup would silently discard the first foreign hook.
             existing_foreign_hook_backup(&target)
         };
         let rendered = render_hook(content, foreign_backup.as_deref());
