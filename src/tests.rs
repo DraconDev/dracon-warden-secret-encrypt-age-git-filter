@@ -569,24 +569,29 @@ mod tests {
 
         let marker = td.path().join("foreign-hook-ran");
         let common_hooks = repo.join(".git/hooks");
-        use std::os::unix::fs::PermissionsExt;
-        for name in ["pre-commit", "pre-push", "pre-rebase"] {
-            let foreign = common_hooks.join(name);
-            fs::write(
-                &foreign,
-                format!(
-                    "#!/bin/sh\nprintf '%s\\n' {} >> {}\n",
-                    shell_single_quote(std::path::Path::new(name)),
-                    shell_single_quote(&marker)
-                ),
-            )
-            .expect("foreign local hook");
-            fs::set_permissions(&foreign, fs::Permissions::from_mode(0o755))
-                .expect("foreign hook permissions");
-        }
-
         let git_dir = resolved_git_dir(&worktree).expect("resolve linked worktree gitdir");
         assert_ne!(git_dir, worktree.join(".git"));
+        let local_hooks = git_dir.join("hooks");
+        fs::create_dir_all(&local_hooks).expect("linked worktree hooks");
+        use std::os::unix::fs::PermissionsExt;
+        for (hooks_dir, scope) in [(&common_hooks, "common"), (&local_hooks, "local")] {
+            for name in ["pre-commit", "pre-push", "pre-rebase"] {
+                let foreign = hooks_dir.join(name);
+                let label = format!("{scope}-{name}");
+                fs::write(
+                    &foreign,
+                    format!(
+                        "#!/bin/sh\nprintf '%s\\n' {} >> {}\n",
+                        shell_single_quote(std::path::Path::new(&label)),
+                        shell_single_quote(&marker)
+                    ),
+                )
+                .expect("foreign local hook");
+                fs::set_permissions(&foreign, fs::Permissions::from_mode(0o755))
+                    .expect("foreign hook permissions");
+            }
+        }
+
         run_setup_hooks(HookMode::Local, Some(&worktree))
             .expect("setup-hooks --local must resolve a gitfile");
 
@@ -620,8 +625,8 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(&marker).expect("foreign hook marker"),
-            "pre-commit\npre-push\npre-rebase\n",
-            "generated hooks must chain the shared-gitdir foreign hooks"
+            "common-pre-commit\nlocal-pre-commit\nlocal-pre-push\ncommon-pre-push\ncommon-pre-rebase\nlocal-pre-rebase\n",
+            "generated hooks must chain common-gitdir and preserved local hooks"
         );
     }
 
