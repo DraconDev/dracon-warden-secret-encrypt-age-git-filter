@@ -581,7 +581,7 @@ mod tests {
                 fs::write(
                     &foreign,
                     format!(
-                        "#!/bin/sh\n# Dracon Warden appears in this foreign hook\nprintf '%s\\n' {} >> {}\n",
+                        "#!/bin/sh\n# Dracon Warden and dracon-warden-managed-hook-v1 appear in this foreign hook\nprintf '%s\\n' {} >> {}\n",
                         shell_single_quote(std::path::Path::new(&label)),
                         shell_single_quote(&marker)
                     ),
@@ -689,7 +689,7 @@ mod tests {
             fs::write(
                 &foreign,
                 format!(
-                    "#!/bin/sh\n# Dracon Warden appears in this foreign hook\nprintf '%s\\n' {} >> {}\n",
+                    "#!/bin/sh\n# Dracon Warden and dracon-warden-managed-hook-v1 appear in this foreign hook\nprintf '%s\\n' {} >> {}\n",
                     shell_single_quote(std::path::Path::new(name)),
                     shell_single_quote(&marker)
                 ),
@@ -800,7 +800,7 @@ mod tests {
         let marker = td.path().join("foreign-hook-ran");
         let foreign = hooks_dir.join("pre-commit");
         let foreign_content = format!(
-            "#!/bin/sh\n# Dracon Warden appears in this foreign hook\nprintf '%s\\n' foreign >> {}\n",
+            "#!/bin/sh\n# Dracon Warden and dracon-warden-managed-hook-v1 appear in this foreign hook\nprintf '%s\\n' foreign >> {}\n",
             shell_single_quote(&marker)
         );
         fs::write(&foreign, &foreign_content).expect("foreign hook");

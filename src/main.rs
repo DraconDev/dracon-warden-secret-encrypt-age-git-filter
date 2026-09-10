@@ -3442,7 +3442,7 @@ case "$GIT_COMMON_DIR" in
     *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
 esac
 LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-commit"
-if [ -x "$LOCAL_HOOK" ] && ! grep -q "dracon-warden-managed-hook-v1" "$LOCAL_HOOK" 2>/dev/null; then
+if [ -x "$LOCAL_HOOK" ] && ! grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null; then
     "$LOCAL_HOOK" "$@" || exit $?
 fi
 
@@ -3590,7 +3590,7 @@ case "$GIT_COMMON_DIR" in
     *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
 esac
 LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-push"
-if [ -x "$LOCAL_HOOK" ] && ! grep -q "dracon-warden-managed-hook-v1" "$LOCAL_HOOK" 2>/dev/null; then
+if [ -x "$LOCAL_HOOK" ] && ! grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null; then
     "$LOCAL_HOOK" "$@" < "$REFS_FILE" || exit $?
 fi
 
@@ -3787,7 +3787,7 @@ case "$GIT_COMMON_DIR" in
     *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
 esac
 LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-rebase"
-if [ -x "$LOCAL_HOOK" ] && ! grep -q "dracon-warden-managed-hook-v1" "$LOCAL_HOOK" 2>/dev/null; then
+if [ -x "$LOCAL_HOOK" ] && ! grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null; then
     "$LOCAL_HOOK" "$@" || exit $?
 fi
 
