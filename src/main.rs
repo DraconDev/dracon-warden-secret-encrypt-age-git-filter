@@ -3810,17 +3810,11 @@ fn run_setup_hooks(mode: HookMode, repo: Option<&Path>) -> Result<()> {
     let preserved_foreign_hooks = match mode {
         HookMode::Global => install_global_hooks(&dir)?,
         HookMode::Local => {
-            let pre_commit_path = dir.join("pre-commit");
-            let pre_push_path = dir.join("pre-push");
-            let pre_rebase_path = dir.join("pre-rebase");
-            write_hook_atomically(&pre_commit_path, &render_hook(PRE_COMMIT_HOOK, None))?;
-            write_hook_atomically(&pre_push_path, &render_hook(PRE_PUSH_HOOK, None))?;
-            // ADDED 2026-07-25 (v0.113.0): the history-rewrite guard's
-            // rebase side. Also clean up stale chaining artifacts from the
-            // brief dracon-sync per-repo hook experiment (`.pre-dracon`
-            // siblings) — warden owns this directory.
-            write_hook_atomically(&pre_rebase_path, &render_hook(PRE_REBASE_HOOK, None))?;
-            Vec::new()
+            // Use the same staged installer as global setup. Local setup must
+            // preserve a pre-existing hook too: for a submodule the resolved
+            // gitdir is also the common hooks directory, so overwriting it
+            // would otherwise make the foreign hook impossible to chain.
+            install_hook_set(&dir)?
         }
     };
 
@@ -3846,7 +3840,11 @@ fn run_setup_hooks(mode: HookMode, repo: Option<&Path>) -> Result<()> {
     }
 
     for path in &preserved_foreign_hooks {
-        println!("   preserved foreign global hook = {}", path.display());
+        let scope = match mode {
+            HookMode::Global => "global",
+            HookMode::Local => "local",
+        };
+        println!("   preserved foreign {scope} hook = {}", path.display());
     }
 
     // Set executable permissions
