@@ -1535,25 +1535,25 @@ fn ensure_repo_filter_config(repo: &Path) -> Result<bool> {
 /// silently disables checkout-race protection for exactly those paths.
 fn resolved_git_dir(repo: &Path) -> Option<PathBuf> {
     let dot_git = repo.join(".git");
-    match git_marker_kind(repo)? {
-        GitMarkerKind::Directory => return Some(dot_git),
-        GitMarkerKind::PointerFile => {}
-    }
+    let resolved = match git_marker_kind(repo)? {
+        GitMarkerKind::Directory => dot_git,
+        GitMarkerKind::PointerFile => {
+            let content = fs::read_to_string(&dot_git).ok()?;
+            let raw = content
+                .lines()
+                .find_map(|line| line.trim().strip_prefix("gitdir:"))?
+                .trim();
+            if raw.is_empty() {
+                return None;
+            }
 
-    let content = fs::read_to_string(&dot_git).ok()?;
-    let raw = content
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("gitdir:"))?
-        .trim();
-    if raw.is_empty() {
-        return None;
-    }
-
-    let path = Path::new(raw);
-    let resolved = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        repo.join(path)
+            let path = Path::new(raw);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                repo.join(path)
+            }
+        }
     };
 
     // Callers use this path both from the current process and from generated
