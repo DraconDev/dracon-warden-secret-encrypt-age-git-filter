@@ -3693,7 +3693,7 @@ protected_patterns = ["secrets.json"]
         let local_hook = repo.join(".git/hooks/pre-commit");
         fs::write(
             &local_hook,
-            "#!/bin/sh\n# Dracon Warden — seeded copy\ntouch \"$(git rev-parse --show-toplevel)/should-not-exist\"\nexit 0\n",
+            "#!/bin/sh\n# dracon-warden-managed-hook-v1\n# Dracon Warden — seeded copy\ntouch \"$(git rev-parse --show-toplevel)/should-not-exist\"\nexit 0\n",
         )
         .unwrap();
         #[cfg(unix)]

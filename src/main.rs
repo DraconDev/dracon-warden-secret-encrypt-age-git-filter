@@ -3184,7 +3184,7 @@ fn render_hook(content: &str, foreign_hook: Option<&Path>) -> String {
 /// Return true when `path` is a hook written by Warden.
 fn is_warden_hook(path: &Path) -> bool {
     fs::read_to_string(path)
-        .map(|content| content.lines().any(|line| line.trim() == WARDEN_HOOK_MARKER))
+        .map(|content| content.lines().any(|line| line == WARDEN_HOOK_MARKER))
         .unwrap_or(false)
 }
 
