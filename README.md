@@ -2,12 +2,14 @@
 
 **Git filter + repo hardening tool.** Secret, encrypt, age, git-filter — repository hardening and smudge/clean encryption. Encrypts secrets at rest in git while keeping plaintext in your working tree. Uses git hooks (not a daemon) as the primary enforcement layer.
 
-![`dracon-warden` commands](https://raw.githubusercontent.com/DraconDev/dracon-utilities/main/dracon-warden/docs/status-output.png)
+![`dracon-warden` commands](https://raw.githubusercontent.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter/main/docs/status-output.png)
 
 This page is the user guide for `dracon-warden` (also rendered on
-crates.io). The canonical source is the `dracon-warden/` directory of the
-[`dracon-utilities`](https://github.com/DraconDev/dracon-utilities) monorepo
-on `main`; the standalone GitHub/GitLab repos are frozen mirrors.
+crates.io). This repo is the canonical, live source on `main`
+(mirrored to GitLab and Codeberg). For workspace builds it is also
+checked out as a nested standalone repo under `dracon-warden/` in the
+[`dracon-utilities`](https://github.com/DraconDev/dracon-utilities)
+parent repo — a regular nested repo, not a submodule.
 
 ## Install
 
@@ -16,11 +18,11 @@ cargo install dracon-warden
 ```
 
 The binary lands at `~/.cargo/bin/dracon-warden` (version 0.113.6 on
-crates.io). Or build the locked source artifact from the monorepo:
+crates.io). Or build the locked source artifact from a checkout:
 
 ```bash
-git clone https://github.com/DraconDev/dracon-utilities.git
-cd dracon-utilities/dracon-warden
+git clone https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter.git
+cd dracon-warden-secret-encrypt-age-git-filter
 cargo build --release --locked
 ```
 
@@ -120,8 +122,8 @@ install -m 0755 target/release/dracon-warden "$tmp"
 mv -f -- "$tmp" "$HOME/.local/bin/dracon-warden"
 
 # Verify the installed binary, then install git hooks globally
-# (run from the monorepo root; from inside dracon-warden/ drop the prefix)
-dracon-warden/scripts/verify-install.sh "$HOME/.local/bin/dracon-warden"
+# (run from the repo root; from a dracon-utilities checkout add the dracon-warden/ prefix)
+scripts/verify-install.sh "$HOME/.local/bin/dracon-warden"
 dracon-warden setup-hooks --global
 ```
 
@@ -351,16 +353,16 @@ dracon-warden repair --strict
 - `dracon-warden.example.toml` — example config
 - `scripts/` — install-verification tooling
 - `LICENSE`, `SECURITY.md`, `.gitignore`, `.github/` — repo metadata
-- Architecture + invariants: [`docs/SOURCE_OF_TRUTH.md`](https://github.com/DraconDev/dracon-utilities/blob/main/dracon-warden/docs/SOURCE_OF_TRUTH.md)
-- Design notes: [`BLUEPRINT.md`](https://github.com/DraconDev/dracon-utilities/blob/main/dracon-warden/BLUEPRINT.md)
+- Architecture + invariants: [`docs/SOURCE_OF_TRUTH.md`](https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter/blob/main/docs/SOURCE_OF_TRUTH.md)
+- Design notes: [`BLUEPRINT.md`](https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter/blob/main/BLUEPRINT.md)
 
 ## Relationship to the Monorepo
 
 | Boundary | Decision |
 |----------|----------|
-| Source code | The `dracon-warden/` directory of the `dracon-utilities` monorepo (`main` branch) |
-| Source of truth | The `dracon-utilities` monorepo; the standalone repos are frozen mirrors |
-| Workspace integration | Included by the `dracon-utilities` meta workspace when checked out under `dracon-warden/` |
+| Source code | This repo (`main` branch) |
+| Source of truth | This repo; mirrored to GitLab and Codeberg; nested checkout under `dracon-warden/` in the `dracon-utilities` parent |
+| Workspace integration | Builds standalone, or as a `dracon-utilities` workspace member when nested under `dracon-warden/` |
 | Shared libraries | Embedded `src/security` crate plus registry dependencies |
 | Operational policy | `~/.dracon/utilities/` TOML files |
 
@@ -391,7 +393,7 @@ add broad `*.log` matching by default.
 - Binary: `dracon-warden`
 - Service: No systemd service; enforced through global git hooks (`setup-hooks --global`).
 - Example policy: `dracon-warden.example.toml` in this repo
-  (`dracon-warden/dracon-warden.example.toml` from the `dracon-utilities` monorepo root);
+  (`dracon-warden.example.toml` at the repo root; `dracon-warden/dracon-warden.example.toml` from a `dracon-utilities` checkout);
   the live config lives at `~/.dracon/utilities/warden/dracon-warden.toml`
 - Key management: `dracon-warden keygen` writes the machine age keypair and
   never overwrites an existing key — back the key up; losing it means losing
@@ -404,8 +406,8 @@ add broad `*.log` matching by default.
 
 ## Maintenance
 
-Changes are made in the `dracon-utilities` monorepo (`dracon-warden/` on `main`).
-The standalone repos are frozen mirrors of that tree.
+Changes are made here, on `main`. The GitLab/Codeberg mirrors follow
+automatically, as does the nested checkout in the `dracon-utilities` parent.
 
 ## Version
 
