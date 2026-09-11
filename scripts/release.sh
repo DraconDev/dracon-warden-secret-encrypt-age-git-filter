@@ -417,8 +417,8 @@ fi
 
 # ----- step 7: commit, tag, push, gh release ------------------------------
 log "step 7/${TOTAL_STEPS}: commit + tag + push + gh release"
-# The utility directory is parent-gitignored by design; force staging is
-# scoped to the exact release surfaces and never uses `git add .`.
+# Force staging is scoped to the exact release surfaces (also covers
+# ignored release-note paths) and never uses `git add .`.
 run git add -f -- "${RELPFX}Cargo.toml" "Cargo.lock" "${RELPFX}CHANGELOG.md" "$NOTES_REL"
 # Idempotent re-run path (ported from dracon-sync v0.113.11, audit MEDIUM
 # 2026-08-09): skip the commit when there is nothing to commit, skip the
