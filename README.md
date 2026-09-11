@@ -2,7 +2,7 @@
 
 **Git filter + repo hardening tool.** Secret, encrypt, age, git-filter — repository hardening and smudge/clean encryption. Encrypts secrets at rest in git while keeping plaintext in your working tree. Uses git hooks (not a daemon) as the primary enforcement layer.
 
-![`dracon-warden status` output](https://raw.githubusercontent.com/DraconDev/dracon-utilities/main/dracon-warden/docs/status-output.png)
+![`dracon-warden` commands](https://raw.githubusercontent.com/DraconDev/dracon-utilities/main/dracon-warden/docs/status-output.png)
 
 This page is the user guide for `dracon-warden` (also rendered on
 crates.io). The canonical source is the `dracon-warden/` directory of the
