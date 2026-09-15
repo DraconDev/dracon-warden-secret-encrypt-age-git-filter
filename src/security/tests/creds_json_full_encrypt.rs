@@ -17,7 +17,7 @@ const CREDS_JSON: &str = r#"{
     "url": "mongodb+srv://warden:D3m0DbP@ssw0rd%21@cluster.example.net/warden?ssl=true"
   },
   "api_keys": {
-    "stripe": "sk_live_4eC39HqLyjWDarwQaBcDeFgHiJkLmN"
+    "stripe": "sk_live_1111222233334444"
   }
 }"#;
 
@@ -43,7 +43,7 @@ fn creds_json_gets_whole_file_encryption() -> Result<()> {
     );
     for leaked in [
         "D3m0DbP@ssw0rd!",
-        "sk_live_4eC39HqLyjWDarwQaBcDeFgHiJkLmN",
+        "sk_live_1111222233334444",
         "cluster.example.net",
     ] {
         assert!(

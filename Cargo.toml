@@ -39,7 +39,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "ti
 # standalone dracon-warden repo (src/security is tracked inside it).
 # Keep `version` so a future crates.io publish can revert to the
 # registry form by dropping `path`.
-dracon-security-kit = { package = "dracon-security", version = "0.3.1", path = "src/security" }
+dracon-security-kit = { package = "dracon-security", version = "0.3.2", path = "src/security" }
 
 tempfile = "3"
 
