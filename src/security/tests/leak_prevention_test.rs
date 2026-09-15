@@ -117,6 +117,7 @@ proptest! {
         if !is_binary && !has_secret {
              let filename = std::path::Path::new(&path).file_name().and_then(|s| s.to_str()).unwrap_or("");
              let always_full_encrypt = filename == "credentials"
+                 || filename == "creds.json"
                  || filename.starts_with(".env")
                  || filename.starts_with(".bash_history")
                  || filename.starts_with(".zsh_history")

@@ -241,6 +241,13 @@ impl WardenSecurity {
                 let is_full_encrypt = is_sensitive_location
                     && (filename.starts_with(".env")
                         || filename == "credentials"
+                        // ADDED 2026-09-15 (warden-showcase probe): a credentials
+                        // JSON whose secrets sit under scanner floors (short values,
+                        // non-keyword key names like "stripe"/"url") passed through
+                        // inline scanning untouched. A file literally named
+                        // creds.json declares credentials content, so it gets the
+                        // same whole-file treatment as "credentials".
+                        || filename == "creds.json"
                         || filename.starts_with(".bash_history")
                         || filename.starts_with(".zsh_history")
                         || filename.starts_with(".sh_history")
