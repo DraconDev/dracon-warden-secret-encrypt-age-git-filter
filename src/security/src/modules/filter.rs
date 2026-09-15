@@ -238,20 +238,24 @@ impl WardenSecurity {
         match std::str::from_utf8(content) {
             Ok(text_content) => {
                 // Full encryption for sensitive files that shouldn't leak structure
-                let is_full_encrypt = is_sensitive_location
+                let is_full_encrypt = (is_sensitive_location
                     && (filename.starts_with(".env")
                         || filename == "credentials"
-                        // ADDED 2026-09-15 (warden-showcase probe): a credentials
-                        // JSON whose secrets sit under scanner floors (short values,
-                        // non-keyword key names like "stripe"/"url") passed through
-                        // inline scanning untouched. A file literally named
-                        // creds.json declares credentials content, so it gets the
-                        // same whole-file treatment as "credentials".
-                        || filename == "creds.json"
                         || filename.starts_with(".bash_history")
                         || filename.starts_with(".zsh_history")
                         || filename.starts_with(".sh_history")
-                        || filename == "vault.yml");
+                        || filename == "vault.yml"))
+                    // ADDED 2026-09-15 (warden-showcase probe): a credentials
+                    // JSON whose secrets sit under scanner floors (short values,
+                    // non-keyword key names like "stripe"/"url") passed through
+                    // inline scanning untouched. A file literally named creds.json
+                    // declares credentials content, so it gets the same whole-file
+                    // treatment as "credentials". This arm stands outside the
+                    // is_sensitive_location conjunction because that heuristic's
+                    // naive substring check does not understand `**` globs at
+                    // depth; reaching this line already proves the path cleared
+                    // the protected-patterns gate above.
+                    || filename == "creds.json";
                 if is_full_encrypt {
                     // Don't double-encrypt
                     if content.starts_with(HEADER_V2_MAGIC)

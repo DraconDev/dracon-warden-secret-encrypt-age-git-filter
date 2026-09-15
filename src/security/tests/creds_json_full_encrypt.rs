@@ -34,8 +34,7 @@ fn test_security() -> Result<WardenSecurity> {
 #[test]
 fn creds_json_gets_whole_file_encryption() -> Result<()> {
     let security = test_security()?;
-    let cleaned =
-        security.smart_clean_with_path(CREDS_JSON.as_bytes(), "config/creds.json")?;
+    let cleaned = security.smart_clean_with_path(CREDS_JSON.as_bytes(), "config/creds.json")?;
     let cleaned = String::from_utf8(cleaned).expect("clean output is UTF-8");
     assert!(
         cleaned.starts_with("[DRACON_SECRET:"),
@@ -59,8 +58,7 @@ fn creds_json_gets_whole_file_encryption() -> Result<()> {
 #[test]
 fn creds_json_round_trips_through_smudge() -> Result<()> {
     let security = test_security()?;
-    let cleaned =
-        security.smart_clean_with_path(CREDS_JSON.as_bytes(), "config/creds.json")?;
+    let cleaned = security.smart_clean_with_path(CREDS_JSON.as_bytes(), "config/creds.json")?;
     let cleaned_str = String::from_utf8(cleaned).expect("clean output is UTF-8");
     let restored = security.smart_smudge(&cleaned_str)?;
     assert_eq!(
@@ -73,10 +71,8 @@ fn creds_json_round_trips_through_smudge() -> Result<()> {
 #[test]
 fn creds_json_at_any_depth_gets_whole_file_encryption() -> Result<()> {
     let security = test_security()?;
-    let cleaned = security.smart_clean_with_path(
-        CREDS_JSON.as_bytes(),
-        "some/nested/dir/creds.json",
-    )?;
+    let cleaned =
+        security.smart_clean_with_path(CREDS_JSON.as_bytes(), "some/nested/dir/creds.json")?;
     let cleaned = String::from_utf8(cleaned).expect("clean output is UTF-8");
     assert!(
         cleaned.starts_with("[DRACON_SECRET:"),

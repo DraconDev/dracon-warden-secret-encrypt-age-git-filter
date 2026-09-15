@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (warden-showcase probe 2026-09-15)
+
+- **`creds.json` gets whole-file encryption:** a credentials JSON whose
+  secrets sit under every inline-scanner floor (short values, non-keyword
+  key names, JSON colon form) passed through untouched even in a hardened
+  repo. Files literally named `creds.json` now get whole-file age
+  encryption like `credentials`, at any depth (`config/creds.json` +
+  `**/creds.json` added to `protected_patterns`). New
+  `creds_json_full_encrypt` test suite (encrypt, smudge round-trip,
+  nested depth).
+
 ### Fixed (audit pass 2026-09-10)
 
 - **Pointer-file checkouts install and chain hooks (F76):** local setup now
