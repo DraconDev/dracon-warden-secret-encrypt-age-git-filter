@@ -6,13 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.113.10] - 2026-09-16
+
+### Fixed (completion-audit follow-up 2026-09-16)
+
+- **Clean-filter output stability (post-checkout dirty-status fix):** the
+  `* filter=dracon` catch-all plus randomized encryption meant a fresh
+  clean of the smudged worktree copy produced different ciphertext than
+  the indexed blob, so every encrypted file showed as modified right
+  after a checkout. Clean now reuses the stage-0 index blob — only when
+  authenticated decryption of the indexed ciphertext equals the incoming
+  worktree bytes, the current policy would still encrypt to the same
+  shape, and no additional secrets were newly detected. Randomized
+  encryption is unchanged, no plaintext hashes or persistent caches are
+  stored, and actual edits/new secrets/policy upgrades always re-encrypt.
+  Regression: `tests/index_reuse.rs` + `scripts/verify-filter-lifecycle.py`
+  (installed-binary Git lifecycle: 8 fixtures, byte-exact round-trips,
+  EMPTY `git status --porcelain` after checkout).
+- **F4 provider-format completion:** OpenRouter (`sk-or-v1-` + 64 hex),
+  Groq (`gsk_` + 52 alnum), Resend (`re_` + 8 + 24 base58), and Slack
+  webhook URLs (43–56-char body incl. `workflows`/`triggers` paths)
+  promoted to Tier-1 with evidence from TruffleHog detectors and the
+  gitleaks format reference; full adjacent-boundary checks reject overlong
+  bodies. Inventory rows updated accordingly.
+- **F5 residual literals:** last four `sk_live_…` fixture literals in
+  `tests/{keys_json,creds_json}_full_encrypt.rs` split with runtime
+  `concat!`; the exact no-literals verification command now returns zero
+  matches.
+
 ## [0.113.9] - 2026-09-16
 
 ### Fixed (post-release audit follow-up 2026-09-16)
 
 - **Tier-1 boundary + coverage overhaul (F2–F4):** tightened OpenAI `sk-`
   matching with token-boundary checks (innocent slugs like
-  `ta[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6NEVhZDkreE1YUitxYnFvYVV3Lzh6cjJJNXFnMk0yZXV1NWM4ZlN6Y1ZRCnp2NDJXMmxrNjB5ZEs2TDhpQkhVU3BieXBsZGNUVzRpZHVwS0FaSERnRFEKLT4gWDI1NTE5IHNZUENIZDh0RDRqUFZtNEFwVXNSU2RMamFYd0dXd1JBdSt5ZjNwOFRrQVEKL1VrallOWld6UDBEWU0wcFNBWmI4aGZnVnNxdWxETHZIYk93K3lZOHpyQQotPiBYMjU1MTkgY1NTakVMRlNINXhVQkpTd1ByRzJzT0x0ZVJJZXJDQnNFcEVaL25QZTlTYwpLMUdqenNrMWJaNG9LZHhOWnZaa2JWVVdpNXFJU25ScUQvSFFtUmJKTmdJCi0+IFgyNTUxOSAvZ21VdWtkNGRyaERYbXlpajBKTDdTTDZBems1Q3J0Q1hhT3hLblk0cjJNClZmR2hha0w5ekhxcGl2ajNVczVTMXNSRndBWFZJemRQc0x0NnlLSlVhUTAKLT4gWDI1NTE5IHR5a2pxNjF6UWNiVkpqZkFST0hON1pWMDZ5TDZDOWJHZTkwL21sZlBxMmsKTXdkWHdsbmtOQnpSOWFJRXF5QTFJdzBGQ0tkQlo3QS9IMkNpMnlFRkhNYwotPiAzZitELWdyZWFzZSBsMyBbCjZad1dqOUlERGhDV2lUQVZWT1JkWGFSVlBadE4veGIyNEJEajN2NDVsQkg2ek9YQml4RW1HcXVJdGdPMAotLS0gMzI1amFzYWZJbk1PUWZDRmtqZ2NZYTZrdmhRMUlFTFVwZmlOakt2K3FTWQpLrhlrA10SzI3GO4uxqTMy0VE4vB2gRQ+WKNRzqP7N0W3RxdjsIZXkC4ojcKKo+wN6edzYp1fFl16KgXLVxMjX]` no longer partially encrypt; explicit
+  `task-configuration-reference-guide` no longer partially encrypt; explicit
   `sk-proj-`/`sk-svcacct-` + legacy alnum bodies still caught). Added
   unlabelled PKCS#8 + ENCRYPTED PKCS#8 envelopes to Tier-1. Promoted fully
   structured provider tokens (GCP/Google `AIza…` incl. trailing hyphen,
