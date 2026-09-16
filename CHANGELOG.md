@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed
+
+- Align inline smudge with clean's UTF-8 classification: NUL-containing
+  UTF-8 can decrypt inline tags, while invalid UTF-8 passes through without
+  lossy conversion. Whole-file binary decryption still runs first.
+  Two regression tests failed before the fix; both now pass, alongside
+  a 32-case Unicode/NUL/CRLF round-trip property test.
+- Post-release audit findings and remaining scanner limitations are recorded
+  in `audit/eager-encryption-2026-09-16.md`. This fix is not in the published
+  0.113.8 artifact.
+
 ## [0.113.8] - 2026-09-16
 
 ### Added (eager source encryption 2026-09-16)
