@@ -609,8 +609,9 @@ impl SecretScanner {
         })
     }
 
-    /// Regex word boundaries are not token boundaries: '-' is valid in
-    /// several provider bodies. Check the surrounding bytes without
+    /// Regex word boundaries are not token boundaries: '-', '_', '+', and
+    /// '/' are valid inside several provider bodies (Slack webhook URLs use
+    /// base64-style '+/' segments). Check the surrounding bytes without
     /// consuming delimiters (which would skip adjacent keys).
     fn has_token_boundaries(name: &str, content: &str, start: usize, end: usize) -> bool {
         if !matches!(
@@ -633,7 +634,8 @@ impl SecretScanner {
         ) {
             return true;
         }
-        let token_byte = |b: &u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-');
+        let token_byte =
+            |b: &u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'+' | b'/');
         !start
             .checked_sub(1)
             .and_then(|i| content.as_bytes().get(i))

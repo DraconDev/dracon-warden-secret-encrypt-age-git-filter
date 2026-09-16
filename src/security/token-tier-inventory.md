@@ -62,7 +62,7 @@ compatibility; this task does not silently drop detectors.
 | GCP OAuth Access Token | 2 | Stays: current bounded heuristic may truncate variable-length OAuth tokens; do not broaden rollout without a supported length contract. |
 | Azure Shared Access Signature | 2 | Stays: query syntax and parameter ordering, not rigid standalone token. |
 | Azure Storage Account Key | 2 | Stays: generic base64, no provider prefix. |
-| Alibaba Access Key ID | 2 | Stays: identifier, short shared prefix; length/version coverage requires validation. |
+| Alibaba Access Key ID | 2 | Stays: reviewed against the gitleaks alibaba-access-key-id rule and TruffleHog's `LTAI[a-zA-Z0-9]{17,21}` detector — both treat it as an identifier paired with a separate secret; the ID alone is not authentication, and the warden Tier-2 detector covers the same shape inside protected paths. |
 | Google Client ID | 2 | Stays: public OAuth identifier rather than secret. |
 | Google Service Account | 2 | Stays: metadata declaration, not private key span. |
 | Firebase Database URL | 2 | Stays: public endpoint can be ordinary application configuration. |
@@ -101,13 +101,13 @@ compatibility; this task does not silently drop detectors.
 | PayPal Client ID | 2 | Stays: public identifier plus context. |
 | HashiCorp Terraform Token | 2 | Stays: contextual multi-segment heuristic, not explicit provider prefix. |
 | Age Secret Key | 2 | Stays: identity-bootstrap exclusions must be preserved; global promotion would bypass the identity-file special case. |
-| NVIDIA API Key | 2 | Stays: current 20-character floor unverified, insufficient for promotion. |
+| NVIDIA API Key | 2 | Stays Tier-2 by format audit: the `nvapi-` prefix is provider-specific, but public docs/model cards (build.nvidia.com keys, provider quickstarts) do not publish a fixed body length — bodies vary in length and charset, and a 20-char floor is invented. The Tier-2 form stays protected-path-only until NVIDIA documents a rigid format. |
 | OpenRouter API Key | 1 | Moved: `sk-or-v1-` plus exactly 64 lowercase hex characters; TruffleHog openrouter detector, corroborated by authenticated `/api/v1/auth/key` verifier. Full adjacent boundaries required. |
-| MiniMax API Key | 2 | Stays: broad low-floor pattern requires supported format evidence. |
-| Modal API Key | 2 | Stays: broad low-floor pattern requires supported format evidence. |
+| MiniMax API Key | 2 | Stays Tier-2 with current Tier-2 body constraints unchanged: no official fixed-length format is published for `sk-cp-` keys (provider quickstart shows only redacted placeholders). Tier-1's fixed-prefix + rigid-body bar is not met; inside protected paths the detector still runs. |
+| Modal API Key | 2 | Stays: Modal publishes no rigid token format (`modal.com` docs show bearer-token usage with no length contract; TruffleHog has no Modal detector). Tier-1 requires fixed-prefix + rigid-body; Modal meets neither. |
 | Resend API Key | 1 | Moved: `re_` plus 8 base58 characters, underscore, 24 base58 characters; TruffleHog resend detector and provider API-key creation docs. Segments and boundaries prevent ordinary identifier matches. |
 | Slack Webhook | 1 | Moved: `hooks.slack.com` plus `services`/`workflows`/`triggers` path and 43-56-character body; gitleaks slack-webhook-url rule. Length floor closes the short-body gap of the old detector. |
-| Together AI API Key | 2 | Stays: prefix/length assumptions need provider evidence. |
+| Together AI API Key | 2 | Stays: Together does not publish a fixed token length or charset (docs show opaque bearer strings); the existing `tly_` low-floor pattern predates a verifiable spec. Not promotable without inventing format constraints. |
 | Groq API Key | 1 | Moved: `gsk_` plus exactly 52 alphanumeric characters; TruffleHog groq detector and `/openai/v1/models` verifier. Full adjacent boundaries required. |
 | DeepSeek API Key | 2 | Stays: generic shared prefix; explicit alphanumeric shapes also overlap Tier-1. |
 | Mistral API Key | 2 | Stays: known model-ID false-positive class. |
@@ -115,7 +115,7 @@ compatibility; this task does not silently drop detectors.
 | Cloudflare R2 Access Key | 2 | Stays: generic hex plus variable-name context. |
 | Cloudflare R2 Secret Key | 2 | Stays: generic hex plus variable-name context. |
 | Backblaze B2 Key ID | 2 | Stays: numeric identifier prefix, not strong secret evidence. |
-| Backblaze B2 Application Key | 2 | Stays: broad short-prefix pattern needs verified complete format. |
+| Backblaze B2 Application Key | 2 | Stays: B2 app keys are 100-char base62 per provider docs, but the current detector's `{20,}` floor cannot be tightened without an authoritative charset/length contract (TruffleHog has none); the key-ID companion detector is separately documented. |
 | Hex Secret (Quoted) | 2 | Stays: generic quoted hex plus keyword. |
 | High-Entropy Secret (Quoted) | 2 | Stays: generic quoted alphanumeric plus keyword, not measured entropy. |
 | Generic API Key | 2 | Stays: assignment-context heuristic. |

@@ -64,6 +64,16 @@ fn promoted_provider_tokens_replace_completely() {
             "Slack Webhook Overlong-Short",
             format!("https://hooks.slack.com/services/{}", "A".repeat(42)),
         ),
+        // Overlong bodies ending in base64-style '+' or '/' must not
+        // partially encrypt (boundary check treats '+/' as body bytes).
+        (
+            "Slack Webhook Overlong-Plus",
+            format!("https://hooks.slack.com/services/{}", "A".repeat(56) + "+A"),
+        ),
+        (
+            "Slack Webhook Overlong-Slash",
+            format!("https://hooks.slack.com/services/{}", "A".repeat(56) + "/A"),
+        ),
         (
             "Google Client Secret",
             format!("{}{}", "GOCSPX-", "A1_".repeat(10) + "-"),
@@ -96,7 +106,7 @@ fn promoted_provider_tokens_replace_completely() {
     ];
     for (name, token) in cases {
         let input = format!("\"{token}\",\"{token}\"");
-        if name.ends_with("Overlong") || name.ends_with("Overlong-Short") {
+        if name.contains("Overlong") {
             assert!(scanner.scan(&input).is_empty(), "{name} must not match");
             assert_eq!(
                 scanner.scan_and_replace(&input, |_, _| "BAD".to_string()),
