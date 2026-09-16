@@ -50,10 +50,13 @@ fn promoted_provider_tokens_replace_completely() {
         ),
         (
             "Slack Webhook",
-            format!("https://hooks.slack.com/services/{}", "Aa09+/".repeat(7) + "Aa"),
+            format!(
+                "https://hooks.slack.com/services/{}",
+                "Aa09+/".repeat(7) + "Aa"
+            ),
         ),
         (
-            "Slack Webhook Workflows",
+            "Slack Webhook",
             format!("https://hooks.slack.com/workflows/{}", "b1+/".repeat(14)),
         ),
         // Sub-43-char bodies must not match.
@@ -104,6 +107,10 @@ fn promoted_provider_tokens_replace_completely() {
         }
         let replaced = scanner.scan_and_replace(&input, |found_name, found| {
             assert_eq!(found_name, name);
+            assert_eq!(
+                found, token,
+                "full token must be matched, not a partial span"
+            );
             "REPLACED".to_string()
         });
         assert_eq!(replaced, "\"REPLACED\",\"REPLACED\"", "{name}");
