@@ -388,6 +388,9 @@ fn existing_policy_paths(raw_paths: &[String]) -> Vec<PathBuf> {
 pub(crate) struct WardenPolicy {
     #[serde(default)]
     protected_patterns: Vec<String>,
+    /// Optional bounded filter input limit. Omitted preserves the 10 MiB default.
+    #[serde(default)]
+    filter_max_bytes: Option<usize>,
     #[serde(default)]
     plaintext_patterns: Vec<String>,
     #[serde(default = "default_hygiene_patterns")]
@@ -425,7 +428,18 @@ impl WardenPolicy {
         Ok(policy)
     }
 
+    fn filter_limit(&self) -> Result<usize> {
+        let limit = self.filter_max_bytes.unwrap_or(STREAM_IO_MAX_BYTES);
+        anyhow::ensure!(
+            (STREAM_IO_MAX_BYTES..=FILTER_IO_HARD_MAX_BYTES).contains(&limit),
+            "filter_max_bytes must be between {} and {} bytes",
+            STREAM_IO_MAX_BYTES, FILTER_IO_HARD_MAX_BYTES
+        );
+        Ok(limit)
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
+        self.filter_limit()?;
         fn is_allowed_plaintext_pattern(p: &str) -> bool {
             // Keep this tight. Plaintext patterns are an explicit escape hatch that disables
             // encryption in git history.
@@ -2925,7 +2939,23 @@ fn backfill_env_headers_repos(repos: &[PathBuf], apply: bool) -> Result<(usize, 
     Ok((total_found, total_changed))
 }
 
-const STREAM_IO_MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MiB
+const STREAM_IO_MAX_BYTES: usize = 10 * 1024 * 1024; // Backwards-compatible default.
+const FILTER_IO_HARD_MAX_BYTES: usize = 64 * 1024 * 1024; // Absolute allocation bound.
+
+fn configured_filter_limit() -> Result<usize> {
+    match resolve_policy_path_local() {
+        Ok(path) => WardenPolicy::load(&path)?.filter_limit(),
+        // Preserve legacy scan-everything behavior without an installed policy.
+        Err(_) => Ok(STREAM_IO_MAX_BYTES),
+    }
+}
+
+fn read_filter_input(reader: impl Read, limit: usize) -> Result<Vec<u8>> {
+    let mut input = Vec::new();
+    // Read one sentinel byte beyond the bound, never unbounded stdin.
+    reader.take((limit + 1) as u64).read_to_end(&mut input)?;
+    Ok(input)
+}
 
 /// Run the filter with a wall-clock timeout, preventing indefinite hangs.
 ///
@@ -2971,19 +3001,29 @@ async fn run_filter_with_timeout(is_clean: bool, label: &str, path: Option<Strin
 /// those cases must fail closed. In the SMUDGE direction passthrough
 /// is correct (keeps ciphertext as-is), so this always returns None.
 /// Returns the refusal reason for logging/erroring.
+#[cfg(test)]
 fn filter_clean_refusal_reason(
     is_clean: bool,
     input_len: usize,
     path: Option<&str>,
 ) -> Option<String> {
+    filter_clean_refusal_with_limit(is_clean, input_len, path, STREAM_IO_MAX_BYTES)
+}
+
+fn filter_clean_refusal_with_limit(
+    is_clean: bool,
+    input_len: usize,
+    path: Option<&str>,
+    limit: usize,
+) -> Option<String> {
     if !is_clean {
         return None;
     }
-    if input_len > STREAM_IO_MAX_BYTES {
+    if input_len > limit {
         return Some(format!(
             "dracon-warden: refusing to clean {} bytes (limit {} bytes): the file would be committed UNENCRYPTED. Encrypt it out-of-band (dracon-warden encrypt-file) or .gitignore it.",
             input_len,
-            STREAM_IO_MAX_BYTES
+            limit
         ));
     }
     if let Some(p) = path {
@@ -3019,21 +3059,24 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
     // daemon (junk-runner, 2026-08-09). See
     // docs/design/warden-filter-protected-patterns-wiring-2026-08-09.md.
     wire_managed_patterns_from_policy();
-    let mut input = Vec::new();
-    std::io::stdin().read_to_end(&mut input)?;
+    let limit = configured_filter_limit()?;
+    let mut stdin = std::io::stdin().lock();
+    let input = read_filter_input(&mut stdin, limit)?;
     // CHANGED 2026-07-21 (v0.112.32, audit M31/F4.5): all three
     // guards (oversized, absolute path, `..` path) now fail closed
     // in the clean direction via the shared predicate. Previously
     // each guard wrote the input back to stdout and exited 0 —
     // committing the file UNENCRYPTED with no warning.
-    if let Some(reason) = filter_clean_refusal_reason(is_clean, input.len(), path) {
+    if let Some(reason) = filter_clean_refusal_with_limit(is_clean, input.len(), path, limit) {
         eprintln!("{}", reason);
         return Err(anyhow::anyhow!("{}", reason));
     }
-    if input.len() > STREAM_IO_MAX_BYTES {
-        // Smudge-only passthrough (the predicate returns None for
-        // smudge): keeps ciphertext as-is.
-        std::io::stdout().write_all(&input)?;
+    if input.len() > limit {
+        // Smudge-only passthrough: preserve the full ciphertext without
+        // allocating the unbounded remainder. Clean never reaches this path.
+        let mut stdout = std::io::stdout().lock();
+        stdout.write_all(&input)?;
+        std::io::copy(&mut stdin, &mut stdout)?;
         return Ok(());
     }
     if let Some(p) = path {
