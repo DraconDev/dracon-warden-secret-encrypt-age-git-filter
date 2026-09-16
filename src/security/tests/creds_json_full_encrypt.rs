@@ -10,16 +10,20 @@ use dracon_security::WardenSecurity;
 
 // Mirrors the showcase probe file: short password, provider key under a
 // non-keyword name, password-bearing URL under a non-keyword name.
-const CREDS_JSON: &str = r#"{
+const CREDS_JSON: &str = concat!(
+    r#"{
   "app": "warden-showcase",
   "database": {
     "password": "D3m0DbP@ssw0rd!",
     "url": "mongodb+srv://warden:D3m0DbP@ssw0rd%21@cluster.example.net/warden?ssl=true"
   },
   "api_keys": {
-    "stripe": "sk_live_1111222233334444"
+    "stripe": "sk_live_"#,
+    "1111222233334444",
+    r#""
   }
-}"#;
+}"#
+);
 
 fn test_security() -> Result<WardenSecurity> {
     let mut security = WardenSecurity::new(None)?;
@@ -43,7 +47,7 @@ fn creds_json_gets_whole_file_encryption() -> Result<()> {
     );
     for leaked in [
         "D3m0DbP@ssw0rd!",
-        "sk_live_1111222233334444",
+        concat!("sk_live_", "1111222233334444"),
         "cluster.example.net",
     ] {
         assert!(

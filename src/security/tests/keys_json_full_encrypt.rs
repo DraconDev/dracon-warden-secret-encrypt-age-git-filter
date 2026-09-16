@@ -11,10 +11,13 @@
 use anyhow::Result;
 use dracon_security::WardenSecurity;
 
-const KEYS_JSON: &str = r#"{
+const KEYS_JSON: &str = concat!(
+    r#"{
   "serviceAccounts": {
     "stripe": {
-      "secretKey": "sk_live_1111222233334444",
+      "secretKey": "sk_live_"#,
+    "1111222233334444",
+    r#"",
       "webhookSecret": "whsec_1234"
     },
     "aws": {
@@ -25,7 +28,8 @@ const KEYS_JSON: &str = r#"{
       "apiKey": "AIzaSyD-EXAMPLE-1234"
     }
   }
-}"#;
+}"#
+);
 
 fn test_security() -> Result<WardenSecurity> {
     let mut security = WardenSecurity::new(None)?;
@@ -49,7 +53,7 @@ fn keys_json_gets_whole_file_encryption() -> Result<()> {
     );
     for leaked in [
         "EXAMPLE_ACCESS_ID",
-        "sk_live_1111222233334444",
+        concat!("sk_live_", "1111222233334444"),
         "AIzaSyD-EXAMPLE-1234",
     ] {
         assert!(

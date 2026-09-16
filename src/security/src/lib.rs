@@ -1380,6 +1380,34 @@ impl WardenSecurity {
     }
 }
 
+impl WardenSecurity {
+    /// Reuse authenticated indexed ciphertext, never an unchecked plaintext blob.
+    pub fn clean_reusing_index(
+        &self,
+        bytes: &[u8],
+        path: &str,
+        indexed: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
+        let fresh = self.smart_clean_with_path(bytes, path)?;
+        if fresh == bytes {
+            return Ok(fresh);
+        }
+        if let Some(old) = indexed {
+            // Match encryption granularity as well as plaintext: a newly
+            // whole-file-protected path must not retain an old inline blob.
+            let whole = self.decrypt_whole_file_tag(&fresh).is_some();
+            if whole == self.decrypt_whole_file_tag(old).is_some()
+                && old != bytes
+                && smudge_with_security(self, old)? == bytes
+                && self.smart_clean_with_path(old, path)? == old
+            {
+                return Ok(old.to_vec());
+            }
+        }
+        Ok(fresh)
+    }
+}
+
 /// ADDED 2026-07-26 (audit H-9): shared smudge path for both entry
 /// points. The whole-file tag MUST be tried FIRST and returned as RAW
 /// BYTES — the pre-fix code fell through to `String::from_utf8_lossy`
@@ -1445,6 +1473,19 @@ impl DraconWarden {
         let security = WardenSecurity::get_or_init()?;
         let cleaned = security.smart_clean_with_path(bytes, path.unwrap_or(""))?;
         Ok(cleaned)
+    }
+
+    /// Preserve the indexed representation when it still satisfies current policy
+    /// and decrypts to exactly the incoming worktree bytes. Randomized encryption
+    /// remains unchanged; no plaintext hashes or persistent cache are stored.
+    pub fn clean_with_index(
+        &self,
+        bytes: &[u8],
+        path: Option<&str>,
+        indexed: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
+        let security = WardenSecurity::get_or_init()?;
+        security.clean_reusing_index(bytes, path.unwrap_or(""), indexed)
     }
 
     /// Merge-driver re-encryption (audit F49): path-independent —

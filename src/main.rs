@@ -3047,6 +3047,46 @@ fn filter_clean_refusal_with_limit(
     None
 }
 
+/// Read stage zero without invoking filters, writing the index, or falling back
+/// to HEAD (which can differ from the staged content). Missing/unmerged entries
+/// and Git failures simply disable reuse. Bound both time and captured bytes.
+fn indexed_filter_blob(path: &str, limit: usize) -> Option<Vec<u8>> {
+    use std::process::Stdio;
+    let capture = tempfile::NamedTempFile::new().ok()?;
+    let mut child = ProcessCommand::new("git")
+        .args(["cat-file", "blob", &format!(":0:{path}")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(capture.reopen().ok()?))
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let start = std::time::Instant::now();
+    let success = loop {
+        if start.elapsed() >= Duration::from_secs(2)
+            || capture.as_file().metadata().map(|m| m.len()).unwrap_or(u64::MAX)
+                > limit as u64
+        {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None) => std::thread::sleep(Duration::from_millis(5)),
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    if !success {
+        return None;
+    }
+    let bytes = read_filter_input(capture.reopen().ok()?, limit).ok()?;
+    (bytes.len() <= limit).then_some(bytes)
+}
+
 fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
     // Wire the policy's `protected_patterns` into the filter process
     // (FIX 2026-08-09, warden v0.113.3): the clean-filter gate in
@@ -3102,7 +3142,8 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
 
     let warden = DraconWarden::new()?;
     let output = if is_clean {
-        warden.clean(&input, path)?
+        let indexed = path.and_then(|p| indexed_filter_blob(p, limit));
+        warden.clean_with_index(&input, path, indexed.as_deref())?
     } else {
         warden.smudge(&input, path)?
     };
