@@ -50,11 +50,16 @@ impl SecretScanner {
     pub fn tier1_patterns() -> Vec<(&'static str, &'static str)> {
         vec![
             ("AWS Access Key ID", concat!("AK", "IA[0-9A-Z]{16}")),
-            ("GitHub Token (ghp)", concat!("gh", "p_[A-Za-z0-9_]{30,40}")),
-            ("GitHub Token (gho)", concat!("gh", "o_[A-Za-z0-9_]{30,40}")),
-            ("GitHub Token (ghu)", concat!("gh", "u_[A-Za-z0-9_]{30,40}")),
-            ("GitHub Token (ghs)", concat!("gh", "s_[A-Za-z0-9_]{30,40}")),
-            ("GitHub Token (ghr)", concat!("gh", "r_[A-Za-z0-9_]{30,40}")),
+            // GitHub's 2021 format: 30 base62 random bytes + 6 checksum
+            // characters after the prefix. The maintained github/v2 detector
+            // supports 36..255 body characters, including newer token variants.
+            // See token-tier-inventory.md#format-review-sources.
+            ("GitHub Token (ghp)", concat!(r"\bgh", "p_[A-Za-z0-9_]{36,255}")),
+            ("GitHub Token (gho)", concat!(r"\bgh", "o_[A-Za-z0-9_]{36,255}")),
+            ("GitHub Token (ghu)", concat!(r"\bgh", "u_[A-Za-z0-9_]{36,255}")),
+            ("GitHub Token (ghs)", concat!(r"\bgh", "s_[A-Za-z0-9_]{36,255}")),
+            ("GitHub Token (ghr)", concat!(r"\bgh", "r_[A-Za-z0-9_]{36,255}")),
+            ("GitHub Fine-grained PAT", r"\bgithub_pat_[A-Za-z0-9_]{36,255}"),
             ("GitLab Token", concat!("gl", "pat-[A-Za-z0-9\\-_]{20,}")),
             ("GitLab Runner Token", r"GR1348941[A-Za-z0-9\-_]{20,}"),
             (
@@ -617,6 +622,12 @@ impl SecretScanner {
         if !matches!(
             name,
             "OpenAI API Key"
+                | "GitHub Token (ghp)"
+                | "GitHub Token (gho)"
+                | "GitHub Token (ghu)"
+                | "GitHub Token (ghs)"
+                | "GitHub Token (ghr)"
+                | "GitHub Fine-grained PAT"
                 | "GCP API Key"
                 | "Google API Key"
                 | "Google Client Secret"

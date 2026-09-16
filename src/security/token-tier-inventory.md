@@ -18,11 +18,12 @@ compatibility; this task does not silently drop detectors.
 | Family | Tier | Decision / limitation |
 |---|---|---|
 | AWS Access Key ID | 1 | Keep established fixed prefix and 16-character ID; ID alone is not the signing secret. |
-| GitHub Token (ghp) | 1 | Keep distinctive provider prefix; legacy length heuristic. |
-| GitHub Token (gho) | 1 | Keep distinctive provider prefix; legacy length heuristic. |
-| GitHub Token (ghu) | 1 | Keep distinctive provider prefix; legacy length heuristic. |
-| GitHub Token (ghs) | 1 | Keep distinctive provider prefix; legacy length heuristic. |
-| GitHub Token (ghr) | 1 | Keep distinctive provider prefix; legacy length heuristic. |
+| GitHub Token (ghp) | 1 | Classic PAT: G1 specifies prefix + 30 base62 random + 6 checksum characters. G2 recognizes 36–255 alnum/underscore body characters. Replace our 30–40 floor/ceiling with G2's range and complete-token boundaries; checksum is not validated. |
+| GitHub Token (gho) | 1 | OAuth access token: G1 assigns this prefix; G2 recognizes 36–255 alnum/underscore body characters. Same range and boundary correction as ghp, rather than assuming all generations are 40 characters total. |
+| GitHub Token (ghu) | 1 | App user-to-server token: prefix confirmed by G1/G2; G2 range 36–255 replaces our truncating 40-body ceiling. No claim that each length in that range is issued. |
+| GitHub Token (ghs) | 1 | App installation token: prefix confirmed by G1/G2; G2 range 36–255 replaces our truncating 40-body ceiling. Recognizes syntax without checking validity or revocation. |
+| GitHub Token (ghr) | 1 | App refresh token: prefix confirmed by G1/G2; G2 range 36–255 replaces our truncating 40-body ceiling. Long variants now encrypt in full. |
+| GitHub Fine-grained PAT | 1 | Added missing github_pat_ family from G2. Supports its 36–255 alnum/underscore body range, not a new provider-length claim. Boundary and full replacement tests cover each of the six prefixes. |
 | GitLab Token | 1 | Keep provider prefix and body; custom server prefixes are not inferred. |
 | GitLab Runner Token | 1 | Keep established runner prefix; newer formats require separate evidence. |
 | Stripe Live Secret Key | 1 | Keep provider prefix and body. |
@@ -104,7 +105,7 @@ compatibility; this task does not silently drop detectors.
 | NVIDIA API Key | 2 | Stays Tier-2 by format audit: the `nvapi-` prefix is provider-specific, but public docs/model cards (build.nvidia.com keys, provider quickstarts) do not publish a fixed body length — bodies vary in length and charset, and a 20-char floor is invented. The Tier-2 form stays protected-path-only until NVIDIA documents a rigid format. |
 | OpenRouter API Key | 1 | Moved: `sk-or-v1-` plus exactly 64 lowercase hex characters; TruffleHog openrouter detector, corroborated by authenticated `/api/v1/auth/key` verifier. Full adjacent boundaries required. |
 | MiniMax API Key | 2 | Stays Tier-2 with current Tier-2 body constraints unchanged: no official fixed-length format is published for `sk-cp-` keys (provider quickstart shows only redacted placeholders). Tier-1's fixed-prefix + rigid-body bar is not met; inside protected paths the detector still runs. |
-| Modal API Key | 2 | Stays: Modal publishes no rigid token format (`modal.com` docs show bearer-token usage with no length contract; TruffleHog has no Modal detector). Tier-1 requires fixed-prefix + rigid-body; Modal meets neither. |
+| Modal API Key | 2 | Current scanner supports only modalresearch_ plus 20+ alnum/underscore/hyphen characters. The prior webhook-URL page review did not establish this as a Modal-issued credential shape; absence of a TruffleHog detector proves nothing about provider formats. Retain as a protected-path heuristic, not a verified provider specification. |
 | Resend API Key | 1 | Moved: `re_` plus 8 base58 characters, underscore, 24 base58 characters; TruffleHog resend detector and provider API-key creation docs. Segments and boundaries prevent ordinary identifier matches. |
 | Slack Webhook | 1 | Moved: `hooks.slack.com` plus `services`/`workflows`/`triggers` path and 43-56-character body; gitleaks slack-webhook-url rule. Length floor closes the short-body gap of the old detector. |
 | Together AI API Key | 2 | Stays: Together does not publish a fixed token length or charset (docs show opaque bearer strings); the existing `tly_` low-floor pattern predates a verifiable spec. Not promotable without inventing format constraints. |
@@ -115,7 +116,7 @@ compatibility; this task does not silently drop detectors.
 | Cloudflare R2 Access Key | 2 | Stays: generic hex plus variable-name context. |
 | Cloudflare R2 Secret Key | 2 | Stays: generic hex plus variable-name context. |
 | Backblaze B2 Key ID | 2 | Stays: numeric identifier prefix, not strong secret evidence. |
-| Backblaze B2 Application Key | 2 | Stays: B2 app keys are 100-char base62 per provider docs, but the current detector's `{20,}` floor cannot be tightened without an authoritative charset/length contract (TruffleHog has none); the key-ID companion detector is separately documented. |
+| Backblaze B2 Application Key | 2 | B1's authorize_account treats application_key as an opaque string paired with application_key_id in HTTP Basic auth, with no length/charset validation. Our actual supported subset is K005 followed by 20+ alphanumeric characters; B1 does not justify that prefix or floor as a production specification. Retain this legacy heuristic only behind the protected-path gate, not as an exhaustive B2 detector. The previous 100-character/base62 assertion is withdrawn as unsupported. |
 | Hex Secret (Quoted) | 2 | Stays: generic quoted hex plus keyword. |
 | High-Entropy Secret (Quoted) | 2 | Stays: generic quoted alphanumeric plus keyword, not measured entropy. |
 | Generic API Key | 2 | Stays: assignment-context heuristic. |
