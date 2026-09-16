@@ -33,6 +33,10 @@ with tempfile.TemporaryDirectory(prefix="warden-lifecycle-") as directory:
         "pkcs8.rs": (begin + 'PRIVATE KEY-----\nQUJDRA==\n' + end + 'PRIVATE KEY-----').encode(),
         "encrypted-pkcs8.rs": (begin + 'ENCRYPTED PRIVATE KEY-----\nQUJDRA==\n' + end + 'ENCRYPTED PRIVATE KEY-----').encode(),
         "nul.rs": b'\x00' + ('sk_live_' + 'D' * 24).encode() + b'\x00',
+        # Slack webhook: valid body encrypts, overlong body ending in
+        # base64-style '+' stays plaintext (round-2 boundary fix).
+        "slack-valid.rs": ('https://hooks.slack.com/services/' + 'Aa09+/' * 8 + 'Aa').encode(),
+        "slack-overlong-plus.rs": ('https://hooks.slack.com/services/' + 'A' * 56 + '+A').encode(),
         "slug.rs": b'task-configuration-reference-guide',
         "invalid.rs": b'\xff literal _SECRET: marker',
     }
@@ -42,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="warden-lifecycle-") as directory:
     run("git", "commit", "-qm", "Synthetic filter lifecycle regression")
     for name, content in fixtures.items():
         blob = run("git", "show", f"HEAD:{name}")
-        if name in ("slug.rs", "invalid.rs"):
+        if name in ("slug.rs", "invalid.rs", "slack-overlong-plus.rs"):
             assert blob == content, name
         else:
             assert b'[DRACON_SECRET:' in blob and content not in blob, name
@@ -59,6 +63,6 @@ with tempfile.TemporaryDirectory(prefix="warden-lifecycle-") as directory:
     assert b'[DRACON_SECRET:' in run("git", "show", ":stripe.rs")
     run("git", "checkout", "HEAD", "--", "stripe.rs")
     assert not run("git", "status", "--porcelain")
-    print(json.dumps({"binary": binary, "fixtures": len(fixtures), "encrypted_blobs": 6,
+    print(json.dumps({"binary": binary, "fixtures": len(fixtures), "encrypted_blobs": 7,
                       "roundtrips": "byte-exact", "post_checkout_status": "clean",
                       "real_edit": "detected and encrypted"}))
