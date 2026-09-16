@@ -151,6 +151,35 @@ fn tier1_source_file_clean_and_roundtrip() {
 }
 
 #[test]
+fn tier1_square_requires_exact_body_length() {
+    let scanner = SecretScanner::new_tier1().unwrap();
+    let prefix = concat!("sq", "0atp-");
+    let valid = format!("{prefix}{}", "A".repeat(22));
+    let overlong = format!("{prefix}{}", "A".repeat(30));
+    let short = format!("{prefix}{}", "A".repeat(21));
+
+    for invalid in [&overlong, &short] {
+        assert!(scanner.scan(invalid).is_empty());
+        assert_eq!(
+            scanner.scan_and_replace(invalid, |_, _| "REPLACED".to_string()),
+            *invalid,
+            "invalid lengths must not be partially encrypted"
+        );
+    }
+    let findings = scanner.scan(&valid);
+    assert!(findings.iter().any(|f| f.name == "Square Access Token"));
+    let surrounding = format!("value = \"{valid}\";\n");
+    assert_eq!(
+        scanner.scan_and_replace(&surrounding, |name, matched| {
+            assert_eq!(name, "Square Access Token");
+            assert_eq!(matched, valid);
+            "REPLACED".to_string()
+        }),
+        "value = \"REPLACED\";\n"
+    );
+}
+
+#[test]
 fn tier1_binary_passthrough_unprotected() {
     // Non-UTF8 content in a non-protected location is never encrypted.
     let security = tier1_security();
