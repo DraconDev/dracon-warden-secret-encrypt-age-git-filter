@@ -82,7 +82,7 @@ fn clean_encrypts_normally_without_plaintext_sibling() {
     // Without the hatch, the secret content must NOT appear verbatim.
     let cleaned_str = String::from_utf8_lossy(&cleaned);
     assert!(
-        !cleaned_str.contains("[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBtc1N1Mm1aZDhEdUVPbUtVRVJadmhoalhvV0hmcjB1L0FtQzMyU2V0Q3hjClUxdWZ4K1dUNFlNcytUZHB0RDh4R1JFNWpiNWttNDEvVjRIK2pRd1dGZXcKLT4gSmF3NUUtZ3JlYXNlCmZlYzVnS21xeFpKS2hnSithdzJTN1BXNkR1aHhWcTVacmNST0Zwc2lsQzkreWhlc2hLSHM5R3BOMDF6djdvYmMKVUVkWWJTNitTaE51T1kvTHpuQQotLS0gNEJwcWtTUHorUEJtR3VPYmJwQTQvWEhQRUFLQ3hDTXdOVnd3K2VDQ2JPTQrQwg3gLl7Y74pib2WgRPbzTP0Y8FoD/6fPt1OFsoAd1NBksnqkm5oRsjibSpGPXWOQlJt/]"),
+        !cleaned_str.contains(secret),
         "secret leaked through clean filter without hatch: {}",
         cleaned_str
     );
@@ -157,7 +157,7 @@ fn clean_with_empty_sibling_path_is_a_noop() {
     // The cleaned output should NOT contain the plaintext secret.
     let s = String::from_utf8_lossy(&cleaned);
     assert!(
-        !s.contains("[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBwZitKWGRoR1MzOWNVZU83OFhOYk9vanJYdWlHa2d5QkFWc0FyREg5Z0hBCllrUmVuaUkrbkROSE1QUlhydWw1REhHMFBpMnhseVhSNzF6TDIwTXZYWWMKLT4gX3csLWdyZWFzZSAwYSAkNiN8U352VAp3R2oyOVYzdG8xbXhMQTZZS3RTNU80MHBQQ3BtSHFHcCsyUGdmTm4ydGU1OEQ0ZmhGUDJ6RUcwCi0tLSBVTFdrM3h4WURqN0FrMXlXc3hxVXh0a2poa1ZLVEJPTEhHYnYxTkpiTkdNCkjFjE0M9rk1VxZHosxxKGoKbX5eStsE9Gn9h5Dz4wJtd6P2aiSHz43J5culknH8zym9DSE=]"),
+        !s.contains(secret),
         "empty path leaked plaintext: {}",
         s
     );
