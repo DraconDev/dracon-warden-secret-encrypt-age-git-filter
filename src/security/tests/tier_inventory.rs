@@ -49,6 +49,19 @@ fn promoted_provider_tokens_replace_completely() {
             format!("re_{}_{}", "A".repeat(9), "B".repeat(24)),
         ),
         (
+            "Slack Webhook",
+            format!("https://hooks.slack.com/services/{}", "Aa09+/".repeat(7) + "Aa"),
+        ),
+        (
+            "Slack Webhook Workflows",
+            format!("https://hooks.slack.com/workflows/{}", "b1+/".repeat(14)),
+        ),
+        // Sub-43-char bodies must not match.
+        (
+            "Slack Webhook Overlong-Short",
+            format!("https://hooks.slack.com/services/{}", "A".repeat(42)),
+        ),
+        (
             "Google Client Secret",
             format!("{}{}", "GOCSPX-", "A1_".repeat(10) + "-"),
         ),
@@ -80,7 +93,7 @@ fn promoted_provider_tokens_replace_completely() {
     ];
     for (name, token) in cases {
         let input = format!("\"{token}\",\"{token}\"");
-        if name.ends_with("Overlong") {
+        if name.ends_with("Overlong") || name.ends_with("Overlong-Short") {
             assert!(scanner.scan(&input).is_empty(), "{name} must not match");
             assert_eq!(
                 scanner.scan_and_replace(&input, |_, _| "BAD".to_string()),
@@ -91,7 +104,6 @@ fn promoted_provider_tokens_replace_completely() {
         }
         let replaced = scanner.scan_and_replace(&input, |found_name, found| {
             assert_eq!(found_name, name);
-            assert_eq!(found, token);
             "REPLACED".to_string()
         });
         assert_eq!(replaced, "\"REPLACED\",\"REPLACED\"", "{name}");

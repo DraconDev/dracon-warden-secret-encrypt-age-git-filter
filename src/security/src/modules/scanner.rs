@@ -188,6 +188,10 @@ impl SecretScanner {
                 "AWS MWS Key",
                 r"\bamzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
             ),
+            (
+                "Slack Webhook",
+                r"https://hooks\.slack\.com/(?:services|workflows|triggers)/[A-Za-z0-9+/]{43,56}",
+            ),
         ]
     }
 
@@ -306,10 +310,14 @@ impl SecretScanner {
             // ============================================================
             // Slack
             // ============================================================
-            // (broad xox* token is Tier-1)
+            // (broad xox* token is Tier-1); the rigid hooks.slack.com URL
+            // format moved to Tier-1 below, this detector accepted short bodies.
             (
                 "Slack Webhook",
-                r"https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+",
+                concat!(
+                    r"https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/",
+                    r"[A-Za-z0-9]+"
+                ),
             ),
             // (xoxb bot tokens are Tier-1)
             // ============================================================
@@ -621,6 +629,7 @@ impl SecretScanner {
                 | "OpenRouter API Key"
                 | "Groq API Key"
                 | "Resend API Key"
+                | "Slack Webhook"
         ) {
             return true;
         }

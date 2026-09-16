@@ -78,7 +78,7 @@ compatibility; this task does not silently drop detectors.
 | Microsoft Client Secret | 2 | Stays: contextual secret heuristic. |
 | GitHub App Token | 2 | Stays: contextual legacy heuristic, unlike explicit token prefixes. |
 | Bitbucket Token | 2 | Stays: generic body with context. |
-| Slack Webhook | 2 | Stays: current URL detector accepts arbitrarily short components; needs validated segment constraints before promotion. |
+
 | Discord Token | 2 | Stays: weak leading character and broad segmented body, no fixed provider prefix. |
 | Discord Webhook | 2 | Stays: current URL detector has no credential-length floor. |
 | Telegram Bot Token | 2 | Stays: numeric prefix is not provider-specific; needs stronger context/format validation. |
@@ -106,6 +106,7 @@ compatibility; this task does not silently drop detectors.
 | MiniMax API Key | 2 | Stays: broad low-floor pattern requires supported format evidence. |
 | Modal API Key | 2 | Stays: broad low-floor pattern requires supported format evidence. |
 | Resend API Key | 1 | Moved: `re_` plus 8 base58 characters, underscore, 24 base58 characters; TruffleHog resend detector and provider API-key creation docs. Segments and boundaries prevent ordinary identifier matches. |
+| Slack Webhook | 1 | Moved: `hooks.slack.com` plus `services`/`workflows`/`triggers` path and 43-56-character body; gitleaks slack-webhook-url rule. Length floor closes the short-body gap of the old detector. |
 | Together AI API Key | 2 | Stays: prefix/length assumptions need provider evidence. |
 | Groq API Key | 1 | Moved: `gsk_` plus exactly 52 alphanumeric characters; TruffleHog groq detector and `/openai/v1/models` verifier. Full adjacent boundaries required. |
 | DeepSeek API Key | 2 | Stays: generic shared prefix; explicit alphanumeric shapes also overlap Tier-1. |
