@@ -1380,12 +1380,6 @@ impl WardenSecurity {
     }
 }
 
-/// Detect binary content by checking for null bytes.
-/// Git uses a similar heuristic: any null byte means binary.
-fn is_binary_content(bytes: &[u8]) -> bool {
-    bytes.contains(&0)
-}
-
 /// ADDED 2026-07-26 (audit H-9): shared smudge path for both entry
 /// points. The whole-file tag MUST be tried FIRST and returned as RAW
 /// BYTES — the pre-fix code fell through to `String::from_utf8_lossy`
@@ -1414,11 +1408,13 @@ fn smudge_with_security(security: &WardenSecurity, bytes: &[u8]) -> Result<Vec<u
             }
         };
     }
-    if is_binary_content(bytes) {
+    // Match clean's text classification exactly: NUL is valid UTF-8 and
+    // may surround an inline tag; invalid UTF-8 must never be converted
+    // lossily. Whole-file encrypted binary payloads were handled above.
+    let Ok(content) = std::str::from_utf8(bytes) else {
         return Ok(bytes.to_vec());
-    }
-    let content = String::from_utf8_lossy(bytes);
-    let smudged = security.smart_smudge(&content)?;
+    };
+    let smudged = security.smart_smudge(content)?;
     Ok(smudged.into_bytes())
 }
 
@@ -2173,6 +2169,53 @@ API_KEY=secret"#;
         // Genuinely binary non-tag content passes through unchanged:
         let passthrough = smudge_with_security(&security, &plaintext).unwrap();
         assert_eq!(passthrough, plaintext);
+    }
+
+    #[test]
+    fn test_smudge_preserves_invalid_utf8_with_literal_marker() {
+        let security =
+            test_security_with_identity().with_managed_patterns(vec!["*.env".to_string()]);
+        let original = b"\xff literal [DRACON_SECRET:not-an-age-payload]\n";
+        let cleaned = security
+            .smart_clean_with_path(original, "asset.dat")
+            .unwrap();
+        assert_eq!(cleaned, original);
+        assert_eq!(smudge_with_security(&security, &cleaned).unwrap(), original);
+    }
+
+    #[test]
+    fn test_smudge_roundtrips_inline_secret_with_nul() {
+        let security =
+            test_security_with_identity().with_managed_patterns(vec!["*.env".to_string()]);
+        let token = format!("{}{}{}", "sk", "_live_", "A1".repeat(16));
+        let original = format!("prefix\0{token}\nsuffix");
+        let cleaned = security
+            .smart_clean_with_path(original.as_bytes(), "probe.txt")
+            .unwrap();
+        assert_ne!(cleaned, original.as_bytes());
+        assert!(!String::from_utf8_lossy(&cleaned).contains(&token));
+        assert_eq!(
+            smudge_with_security(&security, &cleaned).unwrap(),
+            original.as_bytes()
+        );
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+        #[test]
+        fn test_inline_roundtrip_arbitrary_unicode_context(
+            prefix in proptest::collection::vec(proptest::char::any(), 0..64),
+            suffix in proptest::collection::vec(proptest::char::any(), 0..64),
+        ) {
+            let security = test_security_with_identity()
+                .with_managed_patterns(vec!["*.env".to_string()]);
+            let token = format!("{}{}{}", "sk", "_live_", "A1".repeat(16));
+            let original = format!("{}\0\"{token}\"\r\n{}",
+                prefix.into_iter().collect::<String>(), suffix.into_iter().collect::<String>());
+            let cleaned = security.smart_clean_with_path(original.as_bytes(), "probe.txt").unwrap();
+            proptest::prop_assert!(!String::from_utf8_lossy(&cleaned).contains(&token));
+            proptest::prop_assert_eq!(smudge_with_security(&security, &cleaned).unwrap(), original.into_bytes());
+        }
     }
 
     #[test]
