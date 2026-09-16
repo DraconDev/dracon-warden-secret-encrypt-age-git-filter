@@ -29,6 +29,9 @@ fn inventory_covers_every_builtin_family_and_tier() {
 fn promoted_provider_tokens_replace_completely() {
     let scanner = SecretScanner::new_tier1().unwrap();
     let cases = [
+        ("OpenRouter API Key", format!("sk-or-v1-{}", "ab".repeat(32))),
+        ("Groq API Key", format!("gsk_{}", "A".repeat(52))),
+        ("Resend API Key", format!("re_{}_{}", "A".repeat(8), "B".repeat(24))),
         (
             "Google Client Secret",
             format!("{}{}", "GOCSPX-", "A1_".repeat(10) + "-"),

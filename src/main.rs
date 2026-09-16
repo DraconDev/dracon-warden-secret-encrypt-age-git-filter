@@ -433,7 +433,8 @@ impl WardenPolicy {
         anyhow::ensure!(
             (STREAM_IO_MAX_BYTES..=FILTER_IO_HARD_MAX_BYTES).contains(&limit),
             "filter_max_bytes must be between {} and {} bytes",
-            STREAM_IO_MAX_BYTES, FILTER_IO_HARD_MAX_BYTES
+            STREAM_IO_MAX_BYTES,
+            FILTER_IO_HARD_MAX_BYTES
         );
         Ok(limit)
     }
@@ -3063,7 +3064,11 @@ fn indexed_filter_blob(path: &str, limit: usize) -> Option<Vec<u8>> {
     let start = std::time::Instant::now();
     let success = loop {
         if start.elapsed() >= Duration::from_secs(2)
-            || capture.as_file().metadata().map(|m| m.len()).unwrap_or(u64::MAX)
+            || capture
+                .as_file()
+                .metadata()
+                .map(|m| m.len())
+                .unwrap_or(u64::MAX)
                 > limit as u64
         {
             let _ = child.kill();

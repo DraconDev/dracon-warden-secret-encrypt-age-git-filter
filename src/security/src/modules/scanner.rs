@@ -157,6 +157,9 @@ impl SecretScanner {
                     r"ATE KEY-----.*?-----END ENCRYPTED PRIVATE KEY-----"
                 ),
             ),
+            ("OpenRouter API Key", r"\bsk-or-v1-[0-9a-f]{64}"),
+            ("Groq API Key", r"\bgsk_[A-Za-z0-9]{52}"),
+            ("Resend API Key", r"\bre_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24}"),
             ("GCP API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}")),
             ("Google API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}")),
             ("Google Client Secret", r"\bGOCSPX-[A-Za-z0-9_-]{28,}"),
@@ -409,12 +412,9 @@ impl SecretScanner {
             // AI / Cloud Provider API Keys
             // ============================================================
             ("NVIDIA API Key", r"nvapi-[A-Za-z0-9_-]{20,}"),
-            ("OpenRouter API Key", r"sk-or-v1-[A-Za-z0-9_-]{20,}"),
             ("MiniMax API Key", r"sk-cp-[A-Za-z0-9_-]{20,}"),
             ("Modal API Key", r"modalresearch_[A-Za-z0-9_-]{20,}"),
-            ("Resend API Key", r"re_[A-Za-z0-9_-]{20,}"),
             ("Together AI API Key", r"tly_[A-Za-z0-9_-]{20,}"),
-            ("Groq API Key", r"gsk_[A-Za-z0-9_-]{20,}"),
             ("DeepSeek API Key", r"sk-[A-Za-z0-9]{20,}"),
             ("Mistral API Key", r"mistral-[A-Za-z0-9_-]{20,}"),
             // Cloudflare R2
