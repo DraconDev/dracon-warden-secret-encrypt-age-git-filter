@@ -159,7 +159,10 @@ impl SecretScanner {
             ),
             ("OpenRouter API Key", r"\bsk-or-v1-[0-9a-f]{64}"),
             ("Groq API Key", r"\bgsk_[A-Za-z0-9]{52}"),
-            ("Resend API Key", r"\bre_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24}"),
+            (
+                "Resend API Key",
+                r"\bre_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24}",
+            ),
             ("GCP API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}")),
             ("Google API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}")),
             ("Google Client Secret", r"\bGOCSPX-[A-Za-z0-9_-]{28,}"),
@@ -615,6 +618,9 @@ impl SecretScanner {
                 | "Square OAuth Secret"
                 | "HashiCorp Vault Token"
                 | "AWS MWS Key"
+                | "OpenRouter API Key"
+                | "Groq API Key"
+                | "Resend API Key"
         ) {
             return true;
         }

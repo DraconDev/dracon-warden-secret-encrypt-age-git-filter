@@ -29,9 +29,25 @@ fn inventory_covers_every_builtin_family_and_tier() {
 fn promoted_provider_tokens_replace_completely() {
     let scanner = SecretScanner::new_tier1().unwrap();
     let cases = [
-        ("OpenRouter API Key", format!("sk-or-v1-{}", "ab".repeat(32))),
+        (
+            "OpenRouter API Key",
+            format!("sk-or-v1-{}", "ab".repeat(32)),
+        ),
         ("Groq API Key", format!("gsk_{}", "A".repeat(52))),
-        ("Resend API Key", format!("re_{}_{}", "A".repeat(8), "B".repeat(24))),
+        (
+            "Resend API Key",
+            format!("re_{}_{}", "A".repeat(8), "B".repeat(24)),
+        ),
+        // Overlong bodies must not match (full adjacent boundaries required).
+        (
+            "OpenRouter Overlong",
+            format!("sk-or-v1-{}", "ab".repeat(33)),
+        ),
+        ("Groq Overlong", format!("gsk_{}", "A".repeat(53))),
+        (
+            "Resend Overlong",
+            format!("re_{}_{}", "A".repeat(9), "B".repeat(24)),
+        ),
         (
             "Google Client Secret",
             format!("{}{}", "GOCSPX-", "A1_".repeat(10) + "-"),
@@ -64,6 +80,15 @@ fn promoted_provider_tokens_replace_completely() {
     ];
     for (name, token) in cases {
         let input = format!("\"{token}\",\"{token}\"");
+        if name.ends_with("Overlong") {
+            assert!(scanner.scan(&input).is_empty(), "{name} must not match");
+            assert_eq!(
+                scanner.scan_and_replace(&input, |_, _| "BAD".to_string()),
+                input,
+                "{name} must not replace"
+            );
+            continue;
+        }
         let replaced = scanner.scan_and_replace(&input, |found_name, found| {
             assert_eq!(found_name, name);
             assert_eq!(found, token);

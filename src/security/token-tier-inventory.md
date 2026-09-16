@@ -102,12 +102,12 @@ compatibility; this task does not silently drop detectors.
 | HashiCorp Terraform Token | 2 | Stays: contextual multi-segment heuristic, not explicit provider prefix. |
 | Age Secret Key | 2 | Stays: identity-bootstrap exclusions must be preserved; global promotion would bypass the identity-file special case. |
 | NVIDIA API Key | 2 | Stays: current 20-character floor unverified, insufficient for promotion. |
-| OpenRouter API Key | 2 | Stays: current broad body/floor unverified; inventory does not invent provider lengths. |
+| OpenRouter API Key | 1 | Moved: `sk-or-v1-` plus exactly 64 lowercase hex characters; TruffleHog openrouter detector, corroborated by authenticated `/api/v1/auth/key` verifier. Full adjacent boundaries required. |
 | MiniMax API Key | 2 | Stays: broad low-floor pattern requires supported format evidence. |
 | Modal API Key | 2 | Stays: broad low-floor pattern requires supported format evidence. |
-| Resend API Key | 2 | Stays: short prefix can collide with code identifiers. |
+| Resend API Key | 1 | Moved: `re_` plus 8 base58 characters, underscore, 24 base58 characters; TruffleHog resend detector and provider API-key creation docs. Segments and boundaries prevent ordinary identifier matches. |
 | Together AI API Key | 2 | Stays: prefix/length assumptions need provider evidence. |
-| Groq API Key | 2 | Stays: low-floor length assumptions need provider evidence. |
+| Groq API Key | 1 | Moved: `gsk_` plus exactly 52 alphanumeric characters; TruffleHog groq detector and `/openai/v1/models` verifier. Full adjacent boundaries required. |
 | DeepSeek API Key | 2 | Stays: generic shared prefix; explicit alphanumeric shapes also overlap Tier-1. |
 | Mistral API Key | 2 | Stays: known model-ID false-positive class. |
 | Cloudflare R2 Account ID | 2 | Stays: contextual public identifier. |
