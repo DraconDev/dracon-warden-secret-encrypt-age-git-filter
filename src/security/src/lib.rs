@@ -2999,22 +2999,24 @@ API_KEY=secret"#;
     #[test]
     fn test_github_token_patterns_accept_variable_length() {
         let scanner = SecretScanner::new_without_age_keys().unwrap();
+        // GitHub documents 30 random + 6 checksum body characters, not
+        // 30 total. Keep the rejected legacy fixture as a negative check.
         let short = concat!("gh", "p_abcdefghijklmnopqrstuvwxyz1234");
-        let long = concat!("gh", "p_abcdefghijklmnopqrstuvwxyz123456789012");
+        let long = format!("ghp_{}", "A".repeat(41));
         let found_short = scanner.scan(short);
-        let found_long = scanner.scan(long);
+        let found_long = scanner.scan(&long);
         assert!(
-            found_short
+            !found_short
                 .iter()
                 .any(|f| f.name.contains("GitHub Token (ghp)")),
-            "should detect short GitHub token prefix token (30 chars after prefix), found: {:?}",
+            "30-character body is below the documented minimum: {:?}",
             found_short
         );
         assert!(
             found_long
                 .iter()
                 .any(|f| f.name.contains("GitHub Token (ghp)")),
-            "should detect long GitHub token prefix token (40 chars after prefix), found: {:?}",
+            "must detect the full token beyond the old 40-character ceiling, found: {:?}",
             found_long
         );
     }

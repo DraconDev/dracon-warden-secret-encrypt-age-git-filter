@@ -921,6 +921,28 @@ mod tests {
         assert!(filter_clean_refusal_reason(true, 10, Some("src/main.rs")).is_none());
     }
 
+    #[test]
+    fn filter_configured_bounds_preserve_default_and_reject_unbounded_limits() {
+        let default: WardenPolicy = toml::from_str("").expect("default policy");
+        assert_eq!(default.filter_limit().unwrap(), STREAM_IO_MAX_BYTES);
+        for limit in [STREAM_IO_MAX_BYTES, 48 * 1024 * 1024, FILTER_IO_HARD_MAX_BYTES] {
+            let policy: WardenPolicy = toml::from_str(&format!("filter_max_bytes = {limit}")).unwrap();
+            assert_eq!(policy.filter_limit().unwrap(), limit);
+            assert!(filter_clean_refusal_with_limit(true, limit, None, limit).is_none());
+            assert!(filter_clean_refusal_with_limit(true, limit + 1, None, limit).is_some());
+            assert!(filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit).is_some());
+        }
+        for limit in [0, STREAM_IO_MAX_BYTES - 1, FILTER_IO_HARD_MAX_BYTES + 1, usize::MAX] {
+            let policy = WardenPolicy { filter_max_bytes: Some(limit), ..Default::default() };
+            assert!(policy.filter_limit().is_err());
+            assert!(policy.validate().is_err());
+        }
+        let bytes = vec![b'x'; 32];
+        let mut reader = std::io::Cursor::new(bytes);
+        assert_eq!(read_filter_input(&mut reader, 10).unwrap().len(), 11);
+        assert_eq!(reader.position(), 11, "read only bound plus sentinel");
+    }
+
     /// COMPATIBILITY 2026-08-12 (audit MEDIUM follow-up): the
     /// `allow_v1_fallback` policy field still parses and updates its
     /// compatibility state, but the security crate refuses every legacy
