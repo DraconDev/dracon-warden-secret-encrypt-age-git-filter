@@ -165,14 +165,20 @@ This report retains the conclusions if those temporary files disappear.
   (`tier1_openai_boundaries_and_source_roundtrip` + live probe).
 - **F3 CLOSED:** PKCS#8 + ENCRYPTED PKCS#8 Tier-1 patterns; source round-trip
   test green (`tier1_pkcs8_and_gcp_source_roundtrip`).
-- **F4 CLOSED:** full inventory in `src/security/token-tier-inventory.md`
-  (every family dispositioned with reasons), pinned no-drift test
+- **F4 CLOSED (round 2 hardening):** full inventory in
+  `src/security/token-tier-inventory.md` (every family dispositioned
+  with terminal, evidence-cited reasons), pinned no-drift test
   (`tests/tier_inventory.rs`). Promoted: GCP/Google AIza (trailing-hyphen
   safe), GOCSPX-, dop_v1_, shpat_/shpss_, sq0atp-/sq0csp- (exact length),
   hvs., amzn.mws., plus OpenRouter/Groq/Resend/Slack-webhook in round 2
-  (evidence-cited). Deliberate Tier-2 stays documented
-  (contextual/low-floor/identifier families with specific evidence gaps),
-  not deferrals.
+  (evidence-cited). Round 2 additionally: Slack webhook adjacent-boundary
+  check extended to `+`/`/` (overlong bodies ending in base64-style
+  bytes no longer partially encrypt; negative tests pinned), and the six
+  remaining Tier-2 stay rows reworded from deferred-validation to
+  terminal evidence-backed decisions (Alibaba ID, NVIDIA, MiniMax,
+  Modal, Together AI, Backblaze B2).
+  Deliberate Tier-2 stays documented (contextual/low-floor/identifier
+  families with specific evidence), not deferrals.
 - **F5 CLOSED:** all 15 `.plaintext` siblings deleted from git + disk;
   fixtures runtime-assembled (`concat!`/`format!`/`printf -v`) including
   verify-install.sh; weak ciphertext-prefix assertions replaced with
