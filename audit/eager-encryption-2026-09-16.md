@@ -38,7 +38,7 @@ A subsequent security-crate and warden release is needed to deploy it.
 ## F2 — MEDIUM: Tier-1 is not false-positive-free (open)
 
 `src/security/src/modules/scanner.rs:139` uses an unanchored, permissive
-OpenAI-style pattern. The innocent source string `ta[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBjL0ZYWTZkcUFUclpJaFJ1emlRSmRoMUF3SEdSOG95REgvZFQzUUFpdGswCjV0ZFIvTDRrekxRTy9jdjFZSk16Y1dGVlEyOUpzbndKbVdMcy9NM0JSQUUKLT4gWDI1NTE5IElVNGpIbUlUdngwTlNrNmt1N2Vmc0UveEtRZHhUZENTTHdtbFZ3ZURXVzQKWE95Mm1JN1NuZy9DMlgyYTMzNUhtNWx2Q3hoOUxkSjNKWitueUdMZTg4OAotPiBYMjU1MTkgWGFkYVVqSzJyVURkS1dGbGd0UDRKRk5ReHo0WG1xTldabDJNZGlwSUNRdwpsWmN0ZnhucmgxbXhua1JMR2JqWWJVVFdIUU42NHc3MVU0STM3UEVWcnNRCi0+IFgyNTUxOSBCT0VBbTJ3ZGVKdGo5UmxhekFDMlpvZ04zdlV3dHJpcFlaNVYvNkNyWGlRCkczTXlEV3dta1dpcG5oWkFRNHR1TUlEMGRZMWhtV3czbVB2cGJQdEpHcE0KLT4gWDI1NTE5IHluZjc3b0RkNWtRYlovZHNKOG9iSWNIdHJwOUFFZFVHaGVHTjhBZFh1VGcKNFhVVUpXYzZ5K3dmek1icVA5RDEwTThVRkNsdm1UT1FtdEhzMDlucDRLQQotPiBtZGVVSy5DNi1ncmVhc2UKRWpXSklnQ3ZVRzN1cnJENWlwbEJmVEMzN1Z2WUFIRzFoL21jbzlEOE9ETUFNQ1hqS2hZaFRtNWFuOU5GcGY2Sgo1b2VHZk9USDNtWEVSbnlRT0xxRlpoNUVYTFdaS0tydUtMWHc2eWhscFk1YnJhVEhFRHc5bHIrRAotLS0gWWFCc1V0RHIzMStzUzNmZ3VsQW5vL3lDWGlrOFRVbzNoTnY4YUtGM2dZYwqYEZOM2yPkvKVsLLo1ZDVl2MKJuuQze+i6oyOVgBQjXszm8K0WBeE0WPmj0e6xtby+qRFmTzISHzJekghgNwpN]`
+OpenAI-style pattern. The innocent source string `task-configuration-reference-guide`
 was partially encrypted by the installed binary because its interior matches
 that pattern. Round-trip succeeded, but forge/package readers without keys
 receive ciphertext in ordinary code. The earlier assertion that ordinary code
@@ -115,9 +115,35 @@ Transient detailed logs: `/tmp/warden-smudge-before.log`,
 `/tmp/warden-audit-fixed-edge-results.json`, `/tmp/warden-release-0.113.8.log`.
 This report retains the conclusions if those temporary files disappear.
 
-## Disposition
+## Disposition (updated 2026-09-16, goal closure)
 
-0.113.8 publication is verified; a clean audit verdict is NOT warranted.
-F1 is repaired in source and tested, deployment pending. F2–F5 remain explicit
-follow-up work. No unrelated repository cleanup, history rewrite, or blanket
-fixture exemption was performed during this audit.
+- **F1 DEPLOYED:** shipped in dracon-security 0.3.4 + dracon-warden 0.113.9
+  (tag `dracon-warden-v0.113.9`, github + gitlab, crates.io). Installed
+  binary `~/.local/bin/dracon-warden` reports 0.113.9 and passes
+  verify-install.sh.
+- **F2 CLOSED:** OpenAI pattern tightened (`sk-proj-`/`sk-svcacct-` explicit,
+  legacy alnum body) plus adjacent-boundary checks; innocent slug
+  `task-configuration-reference-guide` verified untouched in blob
+  (`tier1_openai_boundaries_and_source_roundtrip` + live probe).
+- **F3 CLOSED:** PKCS#8 + ENCRYPTED PKCS#8 Tier-1 patterns; source round-trip
+  test green (`tier1_pkcs8_and_gcp_source_roundtrip`).
+- **F4 CLOSED:** full inventory in `src/security/token-tier-inventory.md`
+  (every family dispositioned with reasons), pinned no-drift test
+  (`tests/tier_inventory.rs`). Promoted: GCP/Google AIza (trailing-hyphen
+  safe), GOCSPX-, dop_v1_, shpat_/shpss_, sq0atp-/sq0csp- (exact length),
+  hvs., amzn.mws. Deliberate Tier-2 stays documented (contextual/low-floor).
+- **F5 CLOSED:** all 15 `.plaintext` siblings deleted from git + disk;
+  fixtures runtime-assembled (`concat!`/`format!`/`printf -v`) including
+  verify-install.sh; weak ciphertext-prefix assertions replaced with
+  runtime-secret checks; 75-file stored-source pass through filter-clean
+  byte-identical (no live-format literals committed); Square corpus fixed
+  to specified 22-char body.
+- **Live probe (installed 0.113.9, hardened scratch repo):** GCP + valid
+  Stripe token committed as `[DRACON_SECRET:…]`; innocent slug plaintext in
+  blob; smudge round-trip byte-exact. Note: a first probe token with a
+  19-char Stripe body was correctly NOT encrypted (below the 24 floor) —
+  behavior working as specified.
+- Residual limitation (recorded, accepted for this goal): Tier-1 lengths are
+  compatibility heuristics; provider-format drift requires ongoing
+  maintenance via the inventory + no-drift test. GCP OAuth and other
+  contextual families remain Tier-2 by documented decision.
