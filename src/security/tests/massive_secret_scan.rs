@@ -179,11 +179,14 @@ fn test_massive_dataset_permutations() {
         concat!("xox", "b-7eGh7Pq2Iyd3QPD6NLt8fAyVdLAByF"),
         concat!("xox", "b-ZsQeunnoA93QuVySqqyUseZN0N8AZz"),
         concat!("xox", "b-i8uApDfjzOmTEak0YS3Zl6kcMozIwT"),
-        concat!("sq", "0atp-xGZZx2dNzsbPTyIsIaiJAsy1VAXuGg"),
-        concat!("sq", "0atp-bOQWJSlZfMtUTgKxZbAh3WPwP4dDSY"),
-        concat!("sq", "0atp-1ysYHe1WhS2rWJakoahp1qtTINisqd"),
-        concat!("sq", "0atp-E2OAOWehcXtLRbcuofncveC0l5trsQ"),
-        concat!("sq", "0atp-pOP2fgvlH1euxSBxEJfs0pnak3OTmA"),
+        // Square's legacy access-token body is 22 characters. Overlong
+        // values used to pass only because the scanner matched a prefix.
+        // The boundary regression test separately rejects partial matches.
+        concat!("sq", "0atp-xGZZx2dNzsbPTyIsIaiJAs"),
+        concat!("sq", "0atp-bOQWJSlZfMtUTgKxZbAh3W"),
+        concat!("sq", "0atp-1ysYHe1WhS2rWJakoahp1q"),
+        concat!("sq", "0atp-E2OAOWehcXtLRbcuofncve"),
+        concat!("sq", "0atp-pOP2fgvlH1euxSBxEJfs0p"),
         concat!("key", "-aNzeQy6v84fjcs7LJRTa9ne1tdgmGa"),
         concat!("key", "-DTfCDnqnqOdJn2PuZMwWI1vq9FOZpV"),
         concat!("key", "-BNRzd7hVMgpzI9BBDTDHiS7O8RxC3h"),
