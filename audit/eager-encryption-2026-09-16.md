@@ -115,12 +115,50 @@ Transient detailed logs: `/tmp/warden-smudge-before.log`,
 `/tmp/warden-audit-fixed-edge-results.json`, `/tmp/warden-release-0.113.8.log`.
 This report retains the conclusions if those temporary files disappear.
 
-## Disposition (updated 2026-09-16, goal closure)
+## Disposition (updated 2026-09-16, completion-audit round 2)
 
+- **Completion-audit round 1 (2026-09-16T22:40Z) found three real gaps:**
+  (1) post-checkout `git status` dirty on every encrypted file — random
+  nonce per clean made `clean(smudge(blob)) ≠ blob` under the
+  `* filter=dracon` catch-all; (2) four committed `sk_live_…` fixture
+  literals in `tests/{keys_json,creds_json}_full_encrypt.rs`; (3) several
+  F4 inventory entries deferred provider-format validation instead of
+  deciding. Round 2 fixes all three:
+  - **Clean-filter output stability:** clean now reuses the stage-0 index
+    blob ONLY when authenticated decryption proves the indexed ciphertext
+    equals the incoming worktree bytes, the current policy still demands
+    the same encryption shape, and nothing newly secret was detected
+    (`clean_reusing_index`, `DraconWarden::clean_with_index` wired in
+    `run_filter` via a bounded `git cat-file --path` read). Randomized
+    encryption unchanged; no plaintext hashes; no persistent cache;
+    edits/new secrets/policy upgrades always re-encrypt. Regression:
+    `tests/index_reuse.rs` (3 tests incl. corrupted-ciphertext, new-secret
+    and inline→whole-file upgrade negatives) +
+    `scripts/verify-filter-lifecycle.py` (installed-binary Git lifecycle:
+    8 fixtures, 6 encrypted blobs, byte-exact smudge, EMPTY
+    `git status --porcelain` after checkout, real edit still detected).
+  - **F4 completion:** OpenRouter (`sk-or-v1-` + exactly 64 hex; TruffleHog
+    openrouter detector + provider `/api/v1/auth/key` verifier), Groq
+    (`gsk_` + exactly 52 alnum; TruffleHog groq detector), Resend (`re_` +
+    8 + 24 base58; TruffleHog resend detector + provider docs), and Slack
+    webhook URLs (`hooks.slack.com/services|workflows|triggers/` + 43–56
+    char body; gitleaks slack-webhook-url rule) promoted to Tier-1 with
+    full adjacent-boundary checks — overlong and sub-length bodies do not
+    match (pinned in `promoted_provider_tokens_replace_completely`).
+    Inventory rows for all four updated; remaining Tier-2 stays are
+    documented decisions (contextual/generic/identifier families), not
+    deferrals: each cites its specific evidence gap rather than deferring
+    validation wholesale.
+  - **F5 residual literals:** the four `sk_live_1111…4444` fixtures split
+    with runtime `concat!`; the exact verification command now returns
+    zero matches (`rg 'sk_live_…|ghp_…|AKIA…|-----BEGIN … PRIVATE KEY'
+    --glob '!*.md'` → empty).
 - **F1 DEPLOYED:** shipped in dracon-security 0.3.4 + dracon-warden 0.113.9
-  (tag `dracon-warden-v0.113.9`, github + gitlab, crates.io). Installed
-  binary `~/.local/bin/dracon-warden` reports 0.113.9 and passes
-  verify-install.sh.
+  (tag `dracon-warden-v0.113.9`), carried forward unchanged into
+  dracon-security 0.3.5 + dracon-warden 0.113.10
+  (tag `dracon-warden-v0.113.10`, commit `bb19cb5`, github + gitlab,
+  crates.io). Installed binary `~/.local/bin/dracon-warden` reports 0.113.10,
+  passes verify-install.sh AND verify-filter-lifecycle.py.
 - **F2 CLOSED:** OpenAI pattern tightened (`sk-proj-`/`sk-svcacct-` explicit,
   legacy alnum body) plus adjacent-boundary checks; innocent slug
   `task-configuration-reference-guide` verified untouched in blob
@@ -131,16 +169,22 @@ This report retains the conclusions if those temporary files disappear.
   (every family dispositioned with reasons), pinned no-drift test
   (`tests/tier_inventory.rs`). Promoted: GCP/Google AIza (trailing-hyphen
   safe), GOCSPX-, dop_v1_, shpat_/shpss_, sq0atp-/sq0csp- (exact length),
-  hvs., amzn.mws. Deliberate Tier-2 stays documented (contextual/low-floor).
+  hvs., amzn.mws., plus OpenRouter/Groq/Resend/Slack-webhook in round 2
+  (evidence-cited). Deliberate Tier-2 stays documented
+  (contextual/low-floor/identifier families with specific evidence gaps),
+  not deferrals.
 - **F5 CLOSED:** all 15 `.plaintext` siblings deleted from git + disk;
   fixtures runtime-assembled (`concat!`/`format!`/`printf -v`) including
   verify-install.sh; weak ciphertext-prefix assertions replaced with
   runtime-secret checks; 75-file stored-source pass through filter-clean
   byte-identical (no live-format literals committed); Square corpus fixed
   to specified 22-char body.
-- **Live probe (installed 0.113.9, hardened scratch repo):** GCP + valid
-  Stripe token committed as `[DRACON_SECRET:…]`; innocent slug plaintext in
-  blob; smudge round-trip byte-exact. Note: a first probe token with a
+- **Live probe (installed 0.113.10):** `verify-filter-lifecycle.py` — 8
+  fixtures (Stripe/GCP/OpenAI/PKCS#8/ENCRYPTED PKCS#8/NUL-context tokens,
+  innocent slug, invalid-UTF-8 marker), all 6 secret fixtures encrypted in
+  committed blobs, all 8 round-trips byte-exact, `git status --porcelain`
+  EMPTY after checkout, and a genuine edit still flagged + re-encrypted
+  through `git add`. Note: a first probe token with a
   19-char Stripe body was correctly NOT encrypted (below the 24 floor) —
   behavior working as specified.
 - Residual limitation (recorded, accepted for this goal): Tier-1 lengths are
