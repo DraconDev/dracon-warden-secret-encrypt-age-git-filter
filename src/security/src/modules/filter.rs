@@ -255,7 +255,11 @@ impl WardenSecurity {
                     // naive substring check does not understand `**` globs at
                     // depth; reaching this line already proves the path cleared
                     // the protected-patterns gate above.
-                    || filename == "creds.json";
+                    // EXTENDED 2026-09-15 (showcase round 2): same treatment for
+                    // keys.json — another credential-declaring filename found
+                    // carrying provider secrets in the wild.
+                    || filename == "creds.json"
+                    || filename == "keys.json";
                 if is_full_encrypt {
                     // Don't double-encrypt
                     if content.starts_with(HEADER_V2_MAGIC)
