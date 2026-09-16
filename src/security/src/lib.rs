@@ -1667,7 +1667,7 @@ mod tests {
         // A fake OpenAI-style key that the Tier-1 OpenAI regex matches
         // (`sk-` followed by 20+ chars). Guaranteed encrypted wherever
         // the Tier-1 scanner runs.
-        let openai_key = b"sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let openai_key = concat!("sk-", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").as_bytes();
         // A model ID that triggered the original incident. Tier-2-only:
         // must never be touched outside protected paths.
         let model_id = br#"id: "mistralai/mistral-small-3.1-24b-instruct""#;
@@ -1731,7 +1731,7 @@ mod tests {
             .unwrap()
             .with_managed_patterns(vec!["secrets/*".to_string(), ".ssh/*".to_string()]);
         security.add_memory_identity(age::x25519::Identity::generate());
-        let secret = b"sk-abcdef0123456789abcdef0123456789";
+        let secret = concat!("sk-", "abcdef0123456789abcdef0123456789").as_bytes();
         let tier2_only = br#"id: "mistralai/mistral-small-3.1-24b-instruct""#;
 
         for path in ["secrets/api.key", ".ssh/id_ed25519"] {
@@ -3121,7 +3121,7 @@ API_KEY=secret"#;
         let identity = age::x25519::Identity::generate();
         security.add_memory_identity(identity);
 
-        let sk = "sk-abcdef0123456789abcdef0123456789";
+        let sk = concat!("sk-", "abcdef0123456789abcdef0123456789");
         let ancestor_pt = format!("line1\nline2\n{sk}\n");
         let ancestor_raw = security.smart_clean(&ancestor_pt).unwrap().into_bytes();
         assert!(

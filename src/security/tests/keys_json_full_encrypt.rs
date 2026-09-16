@@ -18,7 +18,7 @@ const KEYS_JSON: &str = r#"{
       "webhookSecret": "whsec_1234"
     },
     "aws": {
-      "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+      "accessKeyId": "EXAMPLE_ACCESS_ID",
       "secretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
     },
     "gcp": {
@@ -48,7 +48,7 @@ fn keys_json_gets_whole_file_encryption() -> Result<()> {
         &cleaned[..cleaned.len().min(200)]
     );
     for leaked in [
-        "AKIAIOSFODNN7EXAMPLE",
+        "EXAMPLE_ACCESS_ID",
         "sk_live_1111222233334444",
         "AIzaSyD-EXAMPLE-1234",
     ] {

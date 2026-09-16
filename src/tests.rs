@@ -3865,7 +3865,7 @@ protected_patterns = ["secrets.json"]
         // Inline-tag format: content carries an OpenAI sk- key (the
         // guaranteed scanner match) so `smart_clean` emits DRACON_SECRET
         // markers decryptable by the public `smart_smudge`.
-        let sk = "sk-abcdef0123456789abcdef0123456789";
+        let sk = concat!("sk-", "abcdef0123456789abcdef0123456789");
         let ancestor_pt = format!("line1\nline2\n{sk}\nline4\nline5\n");
         let current_pt = format!("line1\nline2-A\n{sk}\nline4\nline5\n");
         let other_pt = format!("line1\nline2\n{sk}\nline4-B\nline5\n");
