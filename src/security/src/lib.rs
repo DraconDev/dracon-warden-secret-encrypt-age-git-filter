@@ -1430,6 +1430,17 @@ impl DraconWarden {
     }
 
     pub fn smudge(&self, bytes: &[u8], _path: Option<&str>) -> Result<Vec<u8>> {
+        // Fast path (ADDED 2026-09-16, eager source encryption): the
+        // `* filter=dracon` catch-all routes EVERY blob through smudge on
+        // checkout. Blobs without any tag marker are returned untouched
+        // WITHOUT loading identities — `smart_smudge` only acts on
+        // `[<MARKER>:` prefixes and every valid marker ends `_SECRET`
+        // (enforced by `normalize_secret_marker`), so absence of the
+        // `_SECRET:` substring proves there is nothing to decrypt.
+        // Whole-file tags are bracket tags with the same prefix shape.
+        if !bytes.windows(8).any(|w| w == b"_SECRET:") {
+            return Ok(bytes.to_vec());
+        }
         let security = WardenSecurity::get_or_init()?;
         smudge_with_security(security, bytes)
     }
@@ -1629,70 +1640,73 @@ mod tests {
     }
 
     #[test]
-    fn test_smart_clean_with_path_skips_unprotected_source_code() {
-        // Regression: previously the SmartScanner would encrypt a
-        // model ID inside a `*.ts` test file when the model name
-        // happened to match one of the 50+ scanner patterns. After
-        // the protected-patterns gate, source code files are passed
-        // through unchanged.
+    fn test_smart_clean_with_path_tier1_covers_unprotected_source_code() {
+        // EVOLVED 2026-09-16 (eager source encryption): the old
+        // default-deny gate let structured provider tokens (sk_live_*,
+        // ghp_*, ...) pass through in ANY unprotected file — including
+        // source — and land on the forge in plaintext. The gate now has
+        // two tiers:
+        //   Tier-1 (structured provider tokens) runs on EVERY
+        //      non-hatched text file, protected or not.
+        //   Tier-2 (generic / keyword-anchored / low-floor) stays
+        //      behind the protected-patterns gate (2026-06 gibuardien
+        //      false-positive lesson).
         //
         // We test:
-        //   1. Source code paths -> scanner NEVER runs -> content
-        //      unchanged even if it would have matched a pattern.
-        //   2. A protected path (.pem) -> the scanner IS allowed to
-        //      run (it will match a known-secret pattern like
-        //      `sk-XXX` for OpenAI keys; we don't assert encryption
-        //      here because the model-id content doesn't always
-        //      match the strict Mistral regex).
-        let security = WardenSecurity::new(None)
+        //   1. A Tier-1 OpenAI-style key (`sk-` + 20 chars) IS encrypted
+        //      in `.ts`, `.rs`, and plain `.txt` alike.
+        //   2. The `mistralai/...` model ID that triggered the original
+        //      incident (Tier-2-only) is STILL untouched in unprotected
+        //      paths.
+        //   3. A protected path (.pem) still encrypts via the full
+        //      scanner.
+        let mut security = WardenSecurity::new(None)
             .unwrap()
             .with_managed_patterns(vec![
                 "*.env".to_string(),
                 "*.pem".to_string(),
                 "*.key".to_string(),
             ]);
-        // A fake OpenAI-style key that the OpenAI regex matches
-        // (`sk-` followed by 20+ chars). This is guaranteed to be
-        // encrypted by the scanner when invoked.
+        security.add_memory_identity(age::x25519::Identity::generate());
+        // A fake OpenAI-style key that the Tier-1 OpenAI regex matches
+        // (`sk-` followed by 20+ chars). Guaranteed encrypted wherever
+        // the Tier-1 scanner runs.
         let openai_key = b"sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        // A model ID that triggered the original incident.
+        // A model ID that triggered the original incident. Tier-2-only:
+        // must never be touched outside protected paths.
         let model_id = br#"id: "mistralai/mistral-small-3.1-24b-instruct""#;
 
-        // 1. Source code path -> unchanged. The OpenAI key in a
-        // `.ts` file is NOT encrypted, even though it matches a
-        // scanner pattern.
-        let result = security
-            .smart_clean_with_path(openai_key, "test/components.test.ts")
-            .unwrap();
-        assert_eq!(
-            result, openai_key,
-            "source code (.ts) should not be encrypted even with OpenAI key"
-        );
-        // Another source code path.
-        let result = security
-            .smart_clean_with_path(openai_key, "src/main.rs")
-            .unwrap();
-        assert_eq!(
-            result, openai_key,
-            "source code (.rs) should not be encrypted even with OpenAI key"
-        );
-        // A non-source, non-protected file (e.g. plain text) is also
-        // unchanged because it's not in protected_patterns.
-        let result = security
-            .smart_clean_with_path(openai_key, "notes.txt")
-            .unwrap();
-        assert_eq!(
-            result, openai_key,
-            "non-protected plain text should not be encrypted"
-        );
-        // The model_id that was incorrectly encrypted in the
-        // original incident. It's unchanged in any unprotected path.
-        let result = security
-            .smart_clean_with_path(model_id, "test/components.test.ts")
-            .unwrap();
-        assert_eq!(result, model_id, "model_id in .ts should not be encrypted");
+        // 1. Tier-1 key in source code -> ENCRYPTED, even unprotected.
+        for path in ["test/components.test.ts", "src/main.rs", "notes.txt"] {
+            let result = security.smart_clean_with_path(openai_key, path).unwrap();
+            assert_ne!(
+                result, openai_key,
+                "Tier-1 key must be encrypted even in unprotected path: {path}"
+            );
+            assert!(
+                String::from_utf8_lossy(&result).contains("DRACON_SECRET"),
+                "Tier-1 hit must leave an encrypted marker: {path}"
+            );
+            // Byte-exact round-trip through smudge.
+            let restored = security
+                .smart_smudge(std::str::from_utf8(&result).unwrap())
+                .unwrap();
+            assert_eq!(
+                restored.as_bytes(),
+                openai_key,
+                "Tier-1 round-trip must be byte-exact: {path}"
+            );
+        }
+        // 2. Tier-2-only model ID stays untouched in unprotected paths.
+        for path in ["test/components.test.ts", "src/main.rs", "notes.txt"] {
+            let result = security.smart_clean_with_path(model_id, path).unwrap();
+            assert_eq!(
+                result, model_id,
+                "Tier-2-only content must stay plaintext outside protected paths: {path}"
+            );
+        }
 
-        // 2. Protected path (.pem) -> scanner IS allowed to run.
+        // 3. Protected path (.pem) -> full scanner still encrypts.
         //    The OpenAI key matches the OpenAI regex, so it WILL be
         //    encrypted.
         let result = security
@@ -1707,13 +1721,22 @@ mod tests {
     #[test]
     fn test_smart_clean_with_path_honors_single_star_attributes() {
         // The generated `.gitattributes` assigns the filter to these direct
-        // children only. The clean gate must encrypt the same paths Git
-        // attributes would filter, while leaving deeper paths untouched.
+        // children only. The Tier-2 clean gate must encrypt the same paths
+        // Git attributes would filter, while leaving deeper paths to the
+        // Tier-1 scanner only.
+        //
+        // CHANGED 2026-09-16 (eager source encryption): Tier-1 content
+        // is encrypted at ANY depth; single-star scoping now applies to
+        // Tier-2 only. The nested-path assertions use Tier-2-only content
+        // (the `mistralai/...` model ID — never Tier-1) so they still pin
+        // the glob semantics, plus a Tier-1 assertion proving depth does
+        // not shield structured tokens.
         let mut security = WardenSecurity::new(None)
             .unwrap()
             .with_managed_patterns(vec!["secrets/*".to_string(), ".ssh/*".to_string()]);
         security.add_memory_identity(age::x25519::Identity::generate());
         let secret = b"sk-abcdef0123456789abcdef0123456789";
+        let tier2_only = br#"id: "mistralai/mistral-small-3.1-24b-instruct""#;
 
         for path in ["secrets/api.key", ".ssh/id_ed25519"] {
             let cleaned = security
@@ -1730,12 +1753,22 @@ mod tests {
         }
 
         for path in ["secrets/team/api.key", ".ssh/work/id_ed25519"] {
+            // Tier-2-only content passes through: single-star must not
+            // cross `/` for the protected gate.
+            let cleaned = security
+                .smart_clean_with_path(tier2_only, path)
+                .expect("unmatched nested path should pass Tier-2 content through");
+            assert_eq!(
+                cleaned, tier2_only,
+                "single-star glob must not cross `/`: {path}"
+            );
+            // Tier-1 content is still encrypted at depth.
             let cleaned = security
                 .smart_clean_with_path(secret, path)
-                .expect("unmatched nested path should pass through");
-            assert_eq!(
+                .expect("nested path should still Tier-1 clean");
+            assert_ne!(
                 cleaned, secret,
-                "single-star glob must not cross `/`: {path}"
+                "Tier-1 key must be encrypted at any depth: {path}"
             );
         }
     }

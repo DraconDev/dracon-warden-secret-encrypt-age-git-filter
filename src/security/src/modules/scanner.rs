@@ -34,13 +34,127 @@ fn snippet_for_display(value: &str, max_bytes: usize) -> String {
 }
 
 impl SecretScanner {
-    /// Expose patterns for integrity testing (e.g. Max Length Check)
+    /// Tier-1 (high-confidence, structured provider tokens) patterns.
+    ///
+    /// ADDED 2026-09-16 (eager source encryption): these run on EVERY
+    /// non-hatched text file, including source files outside the
+    /// protected-patterns gate (see `smart_clean_with_path`). Membership
+    /// bar: a fixed provider prefix + rigid body shape, so ordinary code
+    /// (model IDs, function names, test vectors, base64 blobs) cannot
+    /// match. Generic/keyword-anchored/low-floor patterns stay Tier-2
+    /// (protected paths only) — running those on arbitrary source
+    /// repeats the 2026-06 gibuardien false-positive incident.
+    ///
+    /// Relative order mirrors the original `get_patterns` interleaving so
+    /// combined-regex match attribution is unchanged.
+    pub fn tier1_patterns() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("AWS Access Key ID", concat!("AK", "IA[0-9A-Z]{16}")),
+            ("GitHub Token (ghp)", concat!("gh", "p_[A-Za-z0-9_]{30,40}")),
+            ("GitHub Token (gho)", concat!("gh", "o_[A-Za-z0-9_]{30,40}")),
+            ("GitHub Token (ghu)", concat!("gh", "u_[A-Za-z0-9_]{30,40}")),
+            ("GitHub Token (ghs)", concat!("gh", "s_[A-Za-z0-9_]{30,40}")),
+            ("GitHub Token (ghr)", concat!("gh", "r_[A-Za-z0-9_]{30,40}")),
+            ("GitLab Token", concat!("gl", "pat-[A-Za-z0-9\\-_]{20,}")),
+            ("GitLab Runner Token", r"GR1348941[A-Za-z0-9\-_]{20,}"),
+            (
+                "Stripe Live Secret Key",
+                concat!("sk", "_live_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Stripe Live Restricted Key",
+                concat!("rk", "_live_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Stripe Test Secret Key",
+                concat!("sk", "_test_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Stripe Test Restricted Key",
+                concat!("rk", "_test_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Stripe Webhook Secret",
+                concat!("wh", "sec_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Slack Token",
+                concat!("xox", "[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*"),
+            ),
+            (
+                "Slack Bot Token",
+                concat!("xox", "b-[0-9]{11}-[0-9]{11}-[a-zA-Z0-9]{24}"),
+            ),
+            (
+                "Slack Bot Token (Compact)",
+                concat!("xox", "b-[A-Za-z0-9]{24,68}"),
+            ),
+            ("Twilio API Key", r"SK[a-f0-9]{32}"),
+            ("Twilio Account SID", r"AC[a-f0-9]{32}"),
+            (
+                "SendGrid API Key",
+                r"SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}",
+            ),
+            ("Mailchimp API Key", r"[0-9a-f]{32}-us[0-9]{1,2}"),
+            (
+                "RSA Private Key",
+                concat!(
+                    r"(?s)-----BEGIN RSA PRIV",
+                    r"ATE KEY-----.*?-----END RSA PRIVATE KEY-----"
+                ),
+            ),
+            (
+                "DSA Private Key",
+                concat!(
+                    r"(?s)-----BEGIN DSA PRIV",
+                    r"ATE KEY-----.*?-----END DSA PRIVATE KEY-----"
+                ),
+            ),
+            (
+                "EC Private Key",
+                concat!(
+                    r"(?s)-----BEGIN EC PRIV",
+                    r"ATE KEY-----.*?-----END EC PRIVATE KEY-----"
+                ),
+            ),
+            (
+                "OpenSSH Private Key",
+                concat!(
+                    r"(?s)-----BEGIN OPENSSH PRIV",
+                    r"ATE KEY-----.*?-----END OPENSSH PRIVATE KEY-----"
+                ),
+            ),
+            (
+                "PGP Private Key",
+                concat!(
+                    r"(?s)-----BEGIN PGP PRIV",
+                    r"ATE KEY BLOCK-----.*?-----END PGP PRIVATE KEY BLOCK-----"
+                ),
+            ),
+            (
+                "SSH Private Key (generic)",
+                r"(?s)-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----",
+            ),
+            ("NPM Access Token", r"npm_[A-Za-z0-9]{36}"),
+            ("OpenAI API Key", r"sk-[a-zA-Z0-9_\-]{20,}"),
+        ]
+    }
+
+    /// Expose patterns for integrity testing (e.g. Max Length Check).
+    /// Tier-1 first, then Tier-2 — full set unchanged.
     pub fn get_patterns() -> Vec<(&'static str, &'static str)> {
+        let mut all = Self::tier1_patterns();
+        all.extend(Self::tier2_patterns());
+        all
+    }
+
+    /// Tier-2 (generic / keyword-anchored / low-floor) patterns: protected
+    /// paths only. Unchanged content, original order.
+    fn tier2_patterns() -> Vec<(&'static str, &'static str)> {
         vec![
             // ============================================================
             // AWS
             // ============================================================
-            ("AWS Access Key ID", concat!("AK", "IA[0-9A-Z]{16}")),
             (
                 "AWS Secret Access Key",
                 r#"(?i)aws(.{0,20})?["'][0-9a-zA-Z/+]{40}["']"#,
@@ -120,11 +234,9 @@ impl SecretScanner {
             // ============================================================
             // GitHub / GitLab / Bitbucket
             // ============================================================
-            ("GitHub Token (ghp)", concat!("gh", "p_[A-Za-z0-9_]{30,40}")),
-            ("GitHub Token (gho)", concat!("gh", "o_[A-Za-z0-9_]{30,40}")),
-            ("GitHub Token (ghu)", concat!("gh", "u_[A-Za-z0-9_]{30,40}")),
-            ("GitHub Token (ghs)", concat!("gh", "s_[A-Za-z0-9_]{30,40}")),
-            ("GitHub Token (ghr)", concat!("gh", "r_[A-Za-z0-9_]{30,40}")),
+            // GitHub / GitLab / Bitbucket: structured gh*_ / glpat tokens
+            // are Tier-1 (see tier1_patterns); keyword-anchored variants
+            // stay Tier-2 here.
             (
                 "GitHub Client Secret",
                 r#"(?i)github.{0,20}client.{0,20}secret.{0,20}["']?[a-f0-9]{40}["']?"#,
@@ -142,54 +254,20 @@ impl SecretScanner {
                 "GitHub App Token",
                 r#"(?i)github.{0,20}["'][A-Za-z0-9_]{35,40}["']"#,
             ),
-            ("GitLab Token", concat!("gl", "pat-[A-Za-z0-9\\-_]{20,}")),
-            ("GitLab Runner Token", r"GR1348941[A-Za-z0-9\-_]{20,}"),
             (
                 "Bitbucket Token",
                 r#"(?i)bitbucket.{0,20}["'][A-Za-z0-9_]{30,}["']"#,
             ),
-            // ============================================================
-            // Stripe (ONLY LIVE KEYS)
-            // ============================================================
-            (
-                "Stripe Live Secret Key",
-                concat!("sk", "_live_[0-9a-zA-Z]{24,}"),
-            ),
-            (
-                "Stripe Live Restricted Key",
-                concat!("rk", "_live_[0-9a-zA-Z]{24,}"),
-            ),
-            (
-                "Stripe Test Secret Key",
-                concat!("sk", "_test_[0-9a-zA-Z]{24,}"),
-            ),
-            (
-                "Stripe Test Restricted Key",
-                concat!("rk", "_test_[0-9a-zA-Z]{24,}"),
-            ),
-            (
-                "Stripe Webhook Secret",
-                concat!("wh", "sec_[0-9a-zA-Z]{24,}"),
-            ),
+            // Stripe structured keys are Tier-1 (see tier1_patterns).
             // ============================================================
             // Slack
             // ============================================================
-            (
-                "Slack Token",
-                concat!("xox", "[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*"),
-            ),
+            // (broad xox* token is Tier-1)
             (
                 "Slack Webhook",
                 r"https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+",
             ),
-            (
-                "Slack Bot Token",
-                concat!("xox", "b-[0-9]{11}-[0-9]{11}-[a-zA-Z0-9]{24}"),
-            ),
-            (
-                "Slack Bot Token (Compact)",
-                concat!("xox", "b-[A-Za-z0-9]{24,68}"),
-            ),
+            // (xoxb bot tokens are Tier-1)
             // ============================================================
             // Discord
             // ============================================================
@@ -202,14 +280,8 @@ impl SecretScanner {
             // ============================================================
             // Twilio / SendGrid / Mailgun
             // ============================================================
-            ("Twilio API Key", r"SK[a-f0-9]{32}"),
-            ("Twilio Account SID", r"AC[a-f0-9]{32}"),
-            (
-                "SendGrid API Key",
-                r"SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}",
-            ),
+            // (Twilio/SendGrid structured keys are Tier-1)
             ("Mailgun API Key", concat!("key", "-[0-9a-zA-Z]{28,34}")),
-            ("Mailchimp API Key", r"[0-9a-f]{32}-us[0-9]{1,2}"),
             // ============================================================
             // Database / Connection Strings
             // ============================================================
@@ -237,55 +309,7 @@ impl SecretScanner {
             // ============================================================
             // SSH / Private Keys
             // ============================================================
-            (
-                "RSA Private Key",
-                concat!(
-                    r"(?s)-----BEGIN RSA PRIV",
-                    r"ATE KEY-----.*?-----END RSA PRIVATE KEY-----"
-                ),
-            ),
-            (
-                "DSA Private Key",
-                concat!(
-                    r"(?s)-----BEGIN DSA PRIV",
-                    r"ATE KEY-----.*?-----END DSA PRIVATE KEY-----"
-                ),
-            ),
-            (
-                "EC Private Key",
-                concat!(
-                    r"(?s)-----BEGIN EC PRIV",
-                    r"ATE KEY-----.*?-----END EC PRIVATE KEY-----"
-                ),
-            ),
-            (
-                "OpenSSH Private Key",
-                concat!(
-                    r"(?s)-----BEGIN OPENSSH PRIV",
-                    r"ATE KEY-----.*?-----END OPENSSH PRIVATE KEY-----"
-                ),
-            ),
-            (
-                "PGP Private Key",
-                concat!(
-                    r"(?s)-----BEGIN PGP PRIV",
-                    r"ATE KEY BLOCK-----.*?-----END PGP PRIVATE KEY BLOCK-----"
-                ),
-            ),
-            (
-                "SSH Private Key (generic)",
-                r"(?s)-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----",
-            ),
-            // ============================================================
-            // NPM / PyPI / Package Managers
-            // ============================================================
-            (
-                "NPM Token",
-                r"//registry\.npmjs\.org/:_authToken=[A-Za-z0-9_-]+",
-            ),
-            ("NPM Access Token", r"npm_[A-Za-z0-9]{36}"),
-            ("PyPI Token", r"pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}"),
-            ("NuGet API Key", r"oy2[a-z0-9]{43}"),
+            // (PEM blocks + npm/OpenAI structured tokens are Tier-1)
             // ============================================================
             // Heroku / Vercel / Netlify
             // ============================================================
@@ -304,7 +328,7 @@ impl SecretScanner {
             // ============================================================
             // OpenAI / Anthropic / AI APIs
             // ============================================================
-            ("OpenAI API Key", r"sk-[a-zA-Z0-9_\-]{20,}"),
+            // (OpenAI sk- structured key is Tier-1)
             (
                 "Cohere API Key",
                 r#"(?i)cohere.{0,20}["'][A-Za-z0-9]{40}["']"#,
@@ -451,14 +475,18 @@ impl SecretScanner {
 
     /// Create a scanner with custom patterns merged with built-in patterns.
     /// Custom patterns are tuples of (name, regex_pattern).
-    pub fn new_with_custom_patterns(custom: &[(&str, &str)]) -> Result<Self> {
-        let mut patterns_raw = Self::get_patterns();
-        for (name, pattern) in custom {
-            patterns_raw.push((*name, *pattern));
-        }
+    /// Create a Tier-1-only scanner (structured provider tokens).
+    /// ADDED 2026-09-16: runs on every non-hatched text file including
+    /// unprotected source files. See `tier1_patterns` for the membership
+    /// bar and `smart_clean_with_path` for the call site.
+    pub fn new_tier1() -> Result<Self> {
+        Self::build_from_raw(&Self::tier1_patterns())
+    }
 
-        let patterns_raw = patterns_raw;
-
+    /// Shared builder: compile `patterns_raw` into per-pattern regexes
+    /// plus the combined single-pass regex. Extracted 2026-09-16 so
+    /// `new_with_custom_patterns` and `new_tier1` share one code path.
+    fn build_from_raw(patterns_raw: &[(&str, &str)]) -> Result<Self> {
         let patterns: Vec<(String, Regex)> = patterns_raw
             .iter()
             .filter_map(|(name, pattern)| {
@@ -492,6 +520,15 @@ impl SecretScanner {
             patterns,
             full_regex,
         })
+    }
+
+    pub fn new_with_custom_patterns(custom: &[(&str, &str)]) -> Result<Self> {
+        let mut patterns_raw = Self::get_patterns();
+        for (name, pattern) in custom {
+            patterns_raw.push((*name, *pattern));
+        }
+
+        Self::build_from_raw(&patterns_raw)
     }
 
     /// Create a scanner that excludes age identity key patterns.

@@ -137,8 +137,27 @@ impl WardenSecurity {
         // NEVER invoked. This is the "default-deny" posture: the
         // operator must explicitly add a file pattern to
         // `protected_patterns` to opt it in to encryption.
+        // CHANGED 2026-09-16 (eager source encryption): a non-protected
+        // path no longer passes through blind. UTF-8 text gets a Tier-1-
+        // only selective clean — structured provider tokens (sk_live_*,
+        // ghp_*, AKIA*, PEM blocks, ...) are encrypted wherever they
+        // appear, including source files no protected glob covers. The
+        // Tier-1 membership bar (fixed prefix + rigid body) keeps the
+        // false-positive rate near zero; generic Tier-2 patterns stay
+        // behind this gate (2026-06 gibuardien lesson). Non-UTF8 content
+        // still passes through: binary in a non-sensitive, non-protected
+        // location is never encrypted. The .plaintext hatch above still
+        // wins over everything.
         if !path_is_protected(path_str, &self.managed_patterns) {
-            return Ok(content.to_vec());
+            return match std::str::from_utf8(content) {
+                Ok(text_content) => {
+                    let scanner = SecretScanner::new_tier1()?;
+                    Ok(self
+                        .smart_clean_with_scanner(text_content, &scanner)?
+                        .into_bytes())
+                }
+                Err(_) => Ok(content.to_vec()),
+            };
         }
 
         // 1. Definition of Sensitive Paths (Still used for binary detection)

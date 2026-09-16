@@ -49,10 +49,18 @@ in the `git show` output (even though your working tree file is plaintext).
 - Master key hierarchy for key recovery
 
 ### Secret Scanning
+- Two-tier patterns: Tier-1 structured provider tokens (Stripe,
+  GitHub, GitLab, Slack, Twilio, SendGrid, Mailchimp, NPM, OpenAI
+  `sk-`, PEM blocks — fixed prefix + rigid body) encrypt in EVERY
+  text file including source; Tier-2 generic/keyword/low-floor
+  patterns stay scoped to protected paths
 - Comprehensive regex patterns for AWS, GCP, Azure, GitHub, Slack, etc.
 - Scans for API keys, tokens, passwords, private keys
 - Configurable allowlists for legitimate plaintext patterns
 - Prevents accidental secret exposure in git history
+- Test fixture convention: no live-format secret strings committed
+  anywhere including tests — assemble tokens at runtime or use
+  structurally-invalid placeholders
 
 ### Clean/Smudge Filter Pipeline
 - `filter.clean`: Encrypts secrets when staging files

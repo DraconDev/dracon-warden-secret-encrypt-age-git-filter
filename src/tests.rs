@@ -1275,6 +1275,11 @@ mod tests {
             ..Default::default()
         };
         let block = build_gitattributes_block(&policy).expect("gitattributes block");
+        // CHANGED 2026-09-16 (eager source encryption): the catch-all
+        // routes every file through the filter for Tier-1 scanning, so
+        // `git check-attr filter` is now true everywhere; the
+        // protected gate keeps single-star semantics for Tier-2.
+        assert!(block.contains("* filter=dracon"));
         assert!(block.contains("secrets/* filter=dracon"));
         assert!(block.contains(".ssh/* filter=dracon"));
 
@@ -1295,7 +1300,7 @@ mod tests {
             fs::write(&file, b"fixture").expect("write attribute fixture");
         }
 
-        for (path, expected) in [
+        for (path, gate_expected) in [
             ("secrets/api.key", true),
             ("secrets/team/api.key", false),
             (".ssh/id_ed25519", true),
@@ -1303,17 +1308,18 @@ mod tests {
         ] {
             let git_output = git_in_output(repo, &["check-attr", "filter", "--", path]);
             let git_filtered = git_output.trim_end() == format!("{path}: filter: dracon");
+            // The catch-all filters every path (Tier-1 coverage).
+            assert!(
+                git_filtered,
+                "catch-all must filter every path, including {path}"
+            );
             let gate = dracon_security_kit::modules::filter::path_is_protected(
                 path,
                 &policy.protected_patterns,
             );
             assert_eq!(
-                gate, git_filtered,
-                "filter gate must agree with generated .gitattributes for {path}"
-            );
-            assert_eq!(
-                git_filtered, expected,
-                "unexpected Git attribute result for {path}"
+                gate, gate_expected,
+                "protected gate keeps single-star semantics for {path}"
             );
         }
     }

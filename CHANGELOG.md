@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.113.8] - 2026-09-16
+
+### Added (eager source encryption 2026-09-16)
+
+- **Tier-1 structured tokens encrypt in EVERY text file:** the
+  protected-patterns gate used to pass unprotected files (notably
+  source: `.rs`, `.ts`, `.svelte`, ...) through blind, so a stray
+  `sk_live_*` / `ghp_*` / `AKIA*` in source landed on the forge in
+  plaintext (2026-09-15 showcase class). The scanner is now two-tier:
+  Tier-1 (structured provider tokens — fixed prefix + rigid body:
+  Stripe, GitHub, GitLab, Slack, Twilio, SendGrid, Mailchimp, NPM,
+  OpenAI `sk-`, PEM blocks) runs on every non-hatched text file;
+  Tier-2 (generic / keyword-anchored / low-floor) stays behind the
+  protected gate (2026-06 gibuardien false-positive lesson).
+  Selective inline encryption with byte-exact smudge round-trip;
+  binary passes through untouched; the `.plaintext` hatch still wins.
+- **`* filter=dracon` catch-all in hardened `.gitattributes`:** no
+  source extension can be overlooked. Filter-only (no `diff=` /
+  `merge=` drivers), with a smudge fast path that skips identity
+  loading for tag-free blobs.
+- **Test fixture convention:** no live-format secret strings are
+  committed anywhere including tests — fixtures assemble tokens at
+  runtime (`concat!` / `format!`) or use structurally-invalid
+  placeholders. New `tier1_source_encrypt` suite (detection,
+  ordinary-code ignores, Tier-1-leads-`get_patterns` no-drift pin,
+  clean + byte-exact round-trip in source paths, binary passthrough).
 ## [0.113.7] - 2026-09-15
 
 ### Fixed (warden-showcase probe 2026-09-15)

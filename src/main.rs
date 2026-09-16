@@ -778,6 +778,19 @@ pub(crate) fn build_gitattributes_block(policy: &WardenPolicy) -> Result<String>
     let mut lines = Vec::new();
     lines.push(BLOCK_BEGIN.to_string());
     lines.push("# managed by dracon-warden".to_string());
+    // ADDED 2026-09-16 (eager source encryption): the catch-all routes
+    // EVERY file through the clean/smudge filter so Tier-1 structured
+    // tokens (sk_live_*, ghp_*, AKIA*, PEM blocks, ...) are encrypted
+    // wherever they appear — no source extension can be overlooked.
+    // Filter-only on purpose: no `diff=dracon` (textconv on binaries
+    // would corrupt `git diff`) and no `merge=dracon` (default textual
+    // merge of tag ciphertext is fine; the dracon merge driver stays
+    // scoped to protected paths). Non-UTF8 content passes clean through
+    // untouched (see `smart_clean_with_path`); smudge short-circuits
+    // tag-free blobs without loading identities. Specific protected
+    // lines below (and `-filter` carve-outs) override this line per
+    // gitattributes last-match-wins.
+    lines.push("* filter=dracon".to_string());
     let mut plaintext_patterns = BTreeSet::new();
     for p in &policy.plaintext_patterns {
         plaintext_patterns.insert(p.clone());
@@ -822,9 +835,8 @@ fn read_existing_hardening_file(path: &Path) -> Result<String> {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()),
         Err(error) => {
-            return Err(error).with_context(|| {
-                format!("failed to inspect hardening input {}", path.display())
-            })
+            return Err(error)
+                .with_context(|| format!("failed to inspect hardening input {}", path.display()))
         }
     };
 
@@ -835,10 +847,7 @@ fn read_existing_hardening_file(path: &Path) -> Result<String> {
         );
     }
     if !metadata.is_file() {
-        anyhow::bail!(
-            "refusing non-regular hardening input {}",
-            path.display()
-        );
+        anyhow::bail!("refusing non-regular hardening input {}", path.display());
     }
 
     #[cfg(unix)]
@@ -854,10 +863,7 @@ fn read_existing_hardening_file(path: &Path) -> Result<String> {
             .open(path)
             .with_context(|| format!("failed to read hardening input {}", path.display()))?;
         if !file.metadata()?.is_file() {
-            anyhow::bail!(
-                "refusing non-regular hardening input {}",
-                path.display()
-            );
+            anyhow::bail!("refusing non-regular hardening input {}", path.display());
         }
         let mut content = String::new();
         file.read_to_string(&mut content)
