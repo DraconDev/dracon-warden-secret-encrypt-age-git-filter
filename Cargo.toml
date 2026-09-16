@@ -1,6 +1,6 @@
 [package]
 name = "dracon-warden"
-version = "0.113.8"
+version = "0.113.9"
 edition = "2021"
 license = "AGPL-3.0-only"
 description = "Git filter encryption and repository hardening for secrets at rest"
@@ -39,7 +39,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "ti
 # standalone dracon-warden repo (src/security is tracked inside it).
 # Keep `version` so a future crates.io publish can revert to the
 # registry form by dropping `path`.
-dracon-security-kit = { package = "dracon-security", version = "0.3.3", path = "src/security" }
+dracon-security-kit = { package = "dracon-security", version = "0.3.4", path = "src/security" }
 
 tempfile = "3"
 

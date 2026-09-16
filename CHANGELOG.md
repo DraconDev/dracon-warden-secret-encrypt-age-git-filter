@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.113.9] - 2026-09-16
+
+### Fixed (post-release audit follow-up 2026-09-16)
+
+- **Tier-1 boundary + coverage overhaul (F2–F4):** tightened OpenAI `sk-`
+  matching with token-boundary checks (innocent slugs like
+  `ta[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6NEVhZDkreE1YUitxYnFvYVV3Lzh6cjJJNXFnMk0yZXV1NWM4ZlN6Y1ZRCnp2NDJXMmxrNjB5ZEs2TDhpQkhVU3BieXBsZGNUVzRpZHVwS0FaSERnRFEKLT4gWDI1NTE5IHNZUENIZDh0RDRqUFZtNEFwVXNSU2RMamFYd0dXd1JBdSt5ZjNwOFRrQVEKL1VrallOWld6UDBEWU0wcFNBWmI4aGZnVnNxdWxETHZIYk93K3lZOHpyQQotPiBYMjU1MTkgY1NTakVMRlNINXhVQkpTd1ByRzJzT0x0ZVJJZXJDQnNFcEVaL25QZTlTYwpLMUdqenNrMWJaNG9LZHhOWnZaa2JWVVdpNXFJU25ScUQvSFFtUmJKTmdJCi0+IFgyNTUxOSAvZ21VdWtkNGRyaERYbXlpajBKTDdTTDZBems1Q3J0Q1hhT3hLblk0cjJNClZmR2hha0w5ekhxcGl2ajNVczVTMXNSRndBWFZJemRQc0x0NnlLSlVhUTAKLT4gWDI1NTE5IHR5a2pxNjF6UWNiVkpqZkFST0hON1pWMDZ5TDZDOWJHZTkwL21sZlBxMmsKTXdkWHdsbmtOQnpSOWFJRXF5QTFJdzBGQ0tkQlo3QS9IMkNpMnlFRkhNYwotPiAzZitELWdyZWFzZSBsMyBbCjZad1dqOUlERGhDV2lUQVZWT1JkWGFSVlBadE4veGIyNEJEajN2NDVsQkg2ek9YQml4RW1HcXVJdGdPMAotLS0gMzI1amFzYWZJbk1PUWZDRmtqZ2NZYTZrdmhRMUlFTFVwZmlOakt2K3FTWQpLrhlrA10SzI3GO4uxqTMy0VE4vB2gRQ+WKNRzqP7N0W3RxdjsIZXkC4ojcKKo+wN6edzYp1fFl16KgXLVxMjX]` no longer partially encrypt; explicit
+  `sk-proj-`/`sk-svcacct-` + legacy alnum bodies still caught). Added
+  unlabelled PKCS#8 + ENCRYPTED PKCS#8 envelopes to Tier-1. Promoted fully
+  structured provider tokens (GCP/Google `AIza…` incl. trailing hyphen,
+  `GOCSPX-`, `dop_v1_`, `shpat_`/`shpss_`, `sq0atp-`/`sq0csp-` exact-length,
+  `hvs.`, `amzn.mws.`) with adjacent-boundary checks so partial prefix
+  matches no longer re-encrypt surrounding bytes. Full per-family tier
+  inventory with decisions lives in
+  `src/security/token-tier-inventory.md`, pinned by a no-drift test
+  (`tests/tier_inventory.rs`) that fails if a family is added/renamed
+  without an inventory row or a tier flips silently.
+- **F5 fixture convention enforced:** all 15 committed `.plaintext` hatch
+  siblings removed; fixtures assemble secret-shaped strings at runtime
+  (`concat!`/`format!`/`printf -v`), including the pre-push-hook-sensitive
+  `scripts/verify-install.sh`. A 75-file stored-source pass through
+  `filter-clean` returns byte-identical output (no live-format literals
+  committed). Weak negative assertions in `plaintext_sibling_test.rs`
+  (ciphertext-prefix checks) replaced with runtime-assembled secret checks.
+  Square fixture corpus corrected from 30-char to the specified 22-char
+  body (partial-prefix matches had masked the discrepancy).
+- **F1 smudge fix (from source-only `07f5ba1`) now ships:** NUL-containing
+  UTF-8 decrypts inline tags; invalid UTF-8 passes through losslessly
+  (lossy U+FFFD corruption removed); whole-file binary payload handling
+  unchanged and byte-exact.
 
 ### Fixed
 
