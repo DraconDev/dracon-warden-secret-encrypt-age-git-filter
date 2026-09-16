@@ -139,18 +139,18 @@ impl SecretScanner {
             // Boundaries prevent matching the interior of task-like slugs.
             // Project/service keys have explicit prefixes; legacy bare keys
             // have an alphanumeric body, not arbitrary hyphenated prose.
-            ("OpenAI API Key", r"\bsk-(?:(?:proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})\b"),
+            ("OpenAI API Key", r"\bsk-(?:(?:proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})"),
             ("PKCS8 Private Key", concat!(r"(?s)-----BEGIN PRIV", r"ATE KEY-----.*?-----END PRIVATE KEY-----")),
             ("Encrypted PKCS8 Private Key", concat!(r"(?s)-----BEGIN ENCRYPTED PRIV", r"ATE KEY-----.*?-----END ENCRYPTED PRIVATE KEY-----")),
-            ("GCP API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}\b")),
-            ("Google API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}\b")),
-            ("Google Client Secret", r"\bGOCSPX-[A-Za-z0-9_-]{28,}\b"),
+            ("GCP API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}")),
+            ("Google API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}")),
+            ("Google Client Secret", r"\bGOCSPX-[A-Za-z0-9_-]{28,}"),
             ("DigitalOcean Token", concat!(r"\bdop", r"_v1_[a-f0-9]{64}\b")),
             ("Shopify Token", concat!(r"\bsh", r"pat_[a-fA-F0-9]{32}\b")),
             ("Shopify Secret", r"\bshpss_[a-fA-F0-9]{32}\b"),
-            ("Square Access Token", concat!(r"\bsq", r"0atp-[A-Za-z0-9_-]{22}\b")),
-            ("Square OAuth Secret", concat!(r"\bsq", r"0csp-[A-Za-z0-9_-]{43}\b")),
-            ("HashiCorp Vault Token", concat!(r"\bhvs", r"\.[A-Za-z0-9_-]{24,}\b")),
+            ("Square Access Token", concat!(r"\bsq", r"0atp-[A-Za-z0-9_-]{22}")),
+            ("Square OAuth Secret", concat!(r"\bsq", r"0csp-[A-Za-z0-9_-]{43}")),
+            ("HashiCorp Vault Token", concat!(r"\bhvs", r"\.[A-Za-z0-9_-]{24,}")),
             ("AWS MWS Key", r"\bamzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"),
         ]
     }
@@ -568,6 +568,21 @@ impl SecretScanner {
         })
     }
 
+    /// Regex word boundaries are not token boundaries: '-' is valid in
+    /// several provider bodies. Check the surrounding bytes without
+    /// consuming delimiters (which would skip adjacent keys).
+    fn has_token_boundaries(name: &str, content: &str, start: usize, end: usize) -> bool {
+        if !matches!(name, "OpenAI API Key" | "GCP API Key" | "Google API Key"
+            | "Google Client Secret" | "DigitalOcean Token" | "Shopify Token"
+            | "Shopify Secret" | "Square Access Token" | "Square OAuth Secret"
+            | "HashiCorp Vault Token" | "AWS MWS Key") {
+            return true;
+        }
+        let token_byte = |b: &u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-');
+        !start.checked_sub(1).and_then(|i| content.as_bytes().get(i)).is_some_and(token_byte)
+            && !content.as_bytes().get(end).is_some_and(token_byte)
+    }
+
     pub fn scan(&self, content: &str) -> Vec<SecretFinding> {
         use rayon::prelude::*;
 
@@ -583,6 +598,9 @@ impl SecretScanner {
                 let mut results = Vec::new();
                 for mat in re.find_iter(content) {
                     let start_idx = mat.start();
+                    if !Self::has_token_boundaries(name, content, start_idx, mat.end()) {
+                        continue;
+                    }
 
                     // SAFEGUARD: Ignore secrets already inside an encrypted tag.
                     // Accepts any marker name that ends with "_SECRET".
@@ -645,6 +663,9 @@ impl SecretScanner {
                 }
             }
 
+            if !Self::has_token_boundaries(pattern_name, content, mat.start(), mat.end()) {
+                continue;
+            }
             new_result.push_str(&content[last_end..mat.start()]);
             new_result.push_str(&f(pattern_name, matched_str));
             last_end = mat.end();
