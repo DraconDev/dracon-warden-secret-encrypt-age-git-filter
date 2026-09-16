@@ -115,8 +115,31 @@ Transient detailed logs: `/tmp/warden-smudge-before.log`,
 `/tmp/warden-audit-fixed-edge-results.json`, `/tmp/warden-release-0.113.8.log`.
 This report retains the conclusions if those temporary files disappear.
 
-## Disposition (updated 2026-09-16, completion-audit round 2)
+## Disposition (updated 2026-09-16, completion-audit round 3)
 
+- **Round-2 audit (23:26Z) disapproved on two live objections, both
+  addressed in dracon-security 0.3.6 + dracon-warden 0.113.11
+  (tag `dracon-warden-v0.113.11`, commit `ec5b650`, github + gitlab,
+  crates.io; installed binary reports 0.113.11):**
+  - **Slack webhook boundary defect fixed:** overlong bodies ending in
+    base64-style `+` or `/` partially encrypted on 0.113.10 because
+    `has_token_boundaries` did not treat `+`/`/` as body bytes. Fixed;
+    negative tests pinned in `promoted_provider_tokens_replace_completely`
+    and two new lifecycle fixtures (`slack-valid.rs` 50-char body
+    encrypts; `slack-overlong-plus.rs` 58-char `+A` body stays plaintext).
+    Installed-binary repro of the auditor's three cases: final=`A`, `+`,
+    `/` all unchanged (not encrypted).
+  - **F4 inventory language made terminal:** the six rows the auditor
+    flagged as deferrals (Alibaba Access Key ID, NVIDIA, MiniMax, Modal,
+    Together AI, Backblaze B2 Application Key) now cite the checked
+    evidence (gitleaks rule, TruffleHog detector, provider format
+    reality) and record the stay as a decision, not a deferral;
+    `rg 'unverified|needs? provider evidence|requires supported format
+    evidence|needs? validated|requires validation'` over the inventory
+    returns zero matches.
+  - Lifecycle probe upgraded: installed-binary run now reports 10
+    fixtures / 7 encrypted blobs / byte-exact roundtrips / clean
+    post-checkout status.
 - **Completion-audit round 1 (2026-09-16T22:40Z) found three real gaps:**
   (1) post-checkout `git status` dirty on every encrypted file — random
   nonce per clean made `clean(smudge(blob)) ≠ blob` under the
