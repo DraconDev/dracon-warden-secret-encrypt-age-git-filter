@@ -156,9 +156,5 @@ fn clean_with_empty_sibling_path_is_a_noop() {
         .expect("clean should succeed");
     // The cleaned output should NOT contain the plaintext secret.
     let s = String::from_utf8_lossy(&cleaned);
-    assert!(
-        !s.contains(secret),
-        "empty path leaked plaintext: {}",
-        s
-    );
+    assert!(!s.contains(secret), "empty path leaked plaintext: {}", s);
 }
