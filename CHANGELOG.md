@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ## [0.113.10] - 2026-09-16
 
+### Fixed (completion-audit round 2, 2026-09-16)
+
+- **Slack webhook boundary fix:** overlong bodies ending in base64-style
+  `+` or `/` no longer partially encrypt — `has_token_boundaries` now
+  treats `+` and `/` as body bytes. Negative tests pinned for 58-char
+  bodies ending in `+`, `/`, and `A`; valid-length bodies ending in each
+  alphabet byte still encrypt (tier_inventory overlong cases).
+- **F4 inventory language made terminal:** the six remaining Tier-2 rows
+  (Alibaba Access Key ID, NVIDIA, MiniMax, Modal, Together AI, Backblaze
+  B2 Application Key) now record evidence-backed stay decisions
+  (gitleaks/TruffleHog references, provider format reality) instead of
+  deferred-validation wording.
+
 ### Fixed (completion-audit follow-up 2026-09-16)
 
 - **Clean-filter output stability (post-checkout dirty-status fix):** the
