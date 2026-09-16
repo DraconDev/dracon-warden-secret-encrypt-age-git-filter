@@ -136,7 +136,22 @@ impl SecretScanner {
                 r"(?s)-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----",
             ),
             ("NPM Access Token", r"npm_[A-Za-z0-9]{36}"),
-            ("OpenAI API Key", r"sk-[a-zA-Z0-9_\-]{20,}"),
+            // Boundaries prevent matching the interior of task-like slugs.
+            // Project/service keys have explicit prefixes; legacy bare keys
+            // have an alphanumeric body, not arbitrary hyphenated prose.
+            ("OpenAI API Key", r"\bsk-(?:(?:proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})\b"),
+            ("PKCS8 Private Key", concat!(r"(?s)-----BEGIN PRIV", r"ATE KEY-----.*?-----END PRIVATE KEY-----")),
+            ("Encrypted PKCS8 Private Key", concat!(r"(?s)-----BEGIN ENCRYPTED PRIV", r"ATE KEY-----.*?-----END ENCRYPTED PRIVATE KEY-----")),
+            ("GCP API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}\b")),
+            ("Google API Key", concat!(r"\bAI", r"za[0-9A-Za-z_-]{35}\b")),
+            ("Google Client Secret", r"\bGOCSPX-[A-Za-z0-9_-]{28,}\b"),
+            ("DigitalOcean Token", concat!(r"\bdop", r"_v1_[a-f0-9]{64}\b")),
+            ("Shopify Token", concat!(r"\bsh", r"pat_[a-fA-F0-9]{32}\b")),
+            ("Shopify Secret", r"\bshpss_[a-fA-F0-9]{32}\b"),
+            ("Square Access Token", concat!(r"\bsq", r"0atp-[A-Za-z0-9_-]{22}\b")),
+            ("Square OAuth Secret", concat!(r"\bsq", r"0csp-[A-Za-z0-9_-]{43}\b")),
+            ("HashiCorp Vault Token", concat!(r"\bhvs", r"\.[A-Za-z0-9_-]{24,}\b")),
+            ("AWS MWS Key", r"\bamzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"),
         ]
     }
 
@@ -166,7 +181,6 @@ impl SecretScanner {
             // ============================================================
             // Cloud Providers Extended
             // ============================================================
-            ("GCP API Key", concat!("AI", "za[0-9A-Za-z\\-_]{35}")),
             ("GCP OAuth Access Token", r"ya29\.[0-9A-Za-z_\-]{20,80}"),
             (
                 "Azure Shared Access Signature",
@@ -174,14 +188,9 @@ impl SecretScanner {
             ),
             ("Azure Storage Account Key", r"[a-zA-Z0-9+/]{86}=="),
             ("Alibaba Access Key ID", concat!("LT", "AI[a-zA-Z0-9]{20}")),
-            (
-                "AWS MWS Key",
-                r"amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-            ),
             // ============================================================
             // Google Cloud
             // ============================================================
-            ("Google API Key", concat!("AI", "za[0-9A-Za-z\\-_]{35}")),
             (
                 "Google Client ID",
                 r"[0-9]+-[0-9a-z_]{32}\.apps\.googleusercontent\.com",
@@ -241,7 +250,6 @@ impl SecretScanner {
                 "GitHub Client Secret",
                 r#"(?i)github.{0,20}client.{0,20}secret.{0,20}["']?[a-f0-9]{40}["']?"#,
             ),
-            ("Google Client Secret", r#"(?i)GOCSPX-[A-Za-z0-9_\-]{28,}"#),
             (
                 "Discord Client Secret",
                 r#"(?i)discord.{0,20}client.{0,20}secret.{0,20}["']?[A-Za-z0-9_\-]{32}["']?"#,
@@ -336,7 +344,6 @@ impl SecretScanner {
             // ============================================================
             // DigitalOcean / Linode / Vultr
             // ============================================================
-            ("DigitalOcean Token", concat!("dop", "_v1_[a-f0-9]{64}")),
             (
                 "DigitalOcean Spaces Key",
                 r#"(?i)digitalocean.{0,20}spaces.{0,20}["'][A-Z0-9]{20}["']"#,
@@ -345,16 +352,6 @@ impl SecretScanner {
             // ============================================================
             // Shopify / Square / Payment
             // ============================================================
-            ("Shopify Token", concat!("sh", "pat_[a-fA-F0-9]{32}")),
-            ("Shopify Secret", r"shpss_[a-fA-F0-9]{32}"),
-            (
-                "Square Access Token",
-                concat!("sq", "0atp-[A-Za-z0-9_-]{22}"),
-            ),
-            (
-                "Square OAuth Secret",
-                concat!("sq", "0csp-[A-Za-z0-9_-]{43}"),
-            ),
             (
                 "PayPal Client ID",
                 r#"(?i)paypal.{0,20}client.{0,20}id.{0,10}["'][A-Za-z0-9_-]{80}["']"#,
@@ -362,10 +359,6 @@ impl SecretScanner {
             // ============================================================
             // HashiCorp / Vault
             // ============================================================
-            (
-                "HashiCorp Vault Token",
-                concat!("hvs", "\\.[A-Za-z0-9_-]{24,}"),
-            ),
             (
                 "HashiCorp Terraform Token",
                 r#"(?i)terraform.{0,20}["'][A-Za-z0-9]{14}\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{67}["']"#,
