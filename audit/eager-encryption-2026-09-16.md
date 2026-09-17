@@ -1,6 +1,60 @@
 # Eager encryption post-release audit — 2026-09-16
 
-## Scope and release evidence
+## Current disposition — 2026-09-17 (round 4)
+
+**F1 deployed; F2, F3, F5 remain fixed; F4's latest substantive objections
+addressed in source and deployment. Completion audit remains independent.**
+The historical findings below describe 0.113.8 and earlier completion claims;
+this section supersedes their present-tense installed-version and F4 claims.
+
+- **F4 format review:** `src/security/token-tier-inventory.md` now compares
+  every existing Tier-1 family with explicit reference formats, distinguishing
+  compatibility deviations from provider-issued formats. Immutable source
+  links identify TruffleHog `288a8a8`, gitleaks `b58d3f1`, and Backblaze SDK
+  `7f17741`. Backblaze's invented 100-character/base62 claim is withdrawn;
+  the actual K005/20+ detector is explicitly a protected-path heuristic, not
+  a format guaranteed by the SDK's opaque ID/key interface. Modal's prior
+  assertion of provider-wide absence is also withdrawn. All family/tier rows
+  remain checked by `tier_inventory`.
+- **GitHub correction:** external comparison found the old 30–40 body range
+  mismatched TruffleHog's 36–255 range. All five gh-prefixed families now use
+  that range and complete-token boundaries; fine-grained PATs added. No claim
+  that every permitted length is issued. Tests in `github_format_review.rs`
+  cover all six prefixes, lengths 36/41/76/82/255, adjacent repeated tokens,
+  rejected 0/29/35/256 lengths, and embedded-prefix negatives. They failed
+  on the old scanner; pass after the fix. Former 30-character fixture
+  expectations are preserved as explicit negatives rather than weakening
+  the new floor.
+- **Deployment:** dracon-security **0.3.7** published at
+  `2026-09-17T00:17:48.773319Z`, then dracon-warden **0.113.12** at
+  `2026-09-17T00:18:17.330605Z` (crates.io API, both not yanked).
+  `scripts/release.sh 0.113.12 --yes` ran through sync maintenance with
+  security-first gate and packaged-artifact verification. Release/tag commit
+  **fa4944707a4d255f2ef837c3b70b54afe37762ba** was verified on GitHub and
+  GitLab main/tag refs. GitLab's storage warning did not reject this push.
+  Installed from the packaged crate to `~/.local/bin`; both PATH and absolute
+  binary report **0.113.12**. No history or remote settings were changed.
+- **Installed lifecycle:** upgraded `scripts/verify-filter-lifecycle.py`
+  invokes installed `once` on its scratch repo, asserts generated filter
+  config, and pins that exact binary for subprocesses. **13 fixtures, 9
+  encrypted blobs, byte-exact checkout, clean status, real edit detected and
+  encrypted.** Includes GitHub long/fine-grained positives and overlong
+  negative, Stripe, GCP, OpenAI, both PKCS#8 envelopes, NUL, invalid UTF-8,
+  innocent slug and Slack boundary cases. `verify-install.sh` also passes.
+- **Gates:** default and all-features package suites: **320 passed, 0 failed,
+  6 ignored, 25 suites**. Targeted GitHub tests: 2 passed; exact `once`
+  integration test: 1 passed. Clippy and package formatting pass. Tracked
+  hatch list, source-hatch find, and specified live-format literal scan are
+  empty. These are package gates, not a new claim of workspace-wide success.
+- **Reviewer rehearsal:** fresh read-only fallback reviewed the new source
+  comparisons and found one factual error (GL Mailchimp's case-insensitive
+  alphabet), now corrected. Reviewer did not finish full scanner/test reads
+  within its read budget and did not execute tests; no independent approval
+  is claimed. Parent inspected boundary/replacement code and full GitHub test
+  file and executed the above gates. Detached completion audit remains the
+  independent verification step.
+
+## Scope and release evidence (historical)
 
 Direct source review and local synthetic behavioral checks; no independent
 reviewer was launched. No live credentials were used in the probes. Findings
