@@ -929,15 +929,28 @@ mod tests {
         assert_eq!(filter_timeout_secs(48 * 1024 * 1024), 150);
         assert_eq!(filter_timeout_secs(FILTER_IO_HARD_MAX_BYTES), 210);
         assert_eq!(filter_timeout_secs(usize::MAX), 210);
-        for limit in [STREAM_IO_MAX_BYTES, 48 * 1024 * 1024, FILTER_IO_HARD_MAX_BYTES] {
-            let policy: WardenPolicy = toml::from_str(&format!("filter_max_bytes = {limit}")).unwrap();
+        for limit in [
+            STREAM_IO_MAX_BYTES,
+            48 * 1024 * 1024,
+            FILTER_IO_HARD_MAX_BYTES,
+        ] {
+            let policy: WardenPolicy =
+                toml::from_str(&format!("filter_max_bytes = {limit}")).unwrap();
             assert_eq!(policy.filter_limit().unwrap(), limit);
             assert!(filter_clean_refusal_with_limit(true, limit, None, limit).is_none());
             assert!(filter_clean_refusal_with_limit(true, limit + 1, None, limit).is_some());
             assert!(filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit).is_some());
         }
-        for limit in [0, STREAM_IO_MAX_BYTES - 1, FILTER_IO_HARD_MAX_BYTES + 1, usize::MAX] {
-            let policy = WardenPolicy { filter_max_bytes: Some(limit), ..Default::default() };
+        for limit in [
+            0,
+            STREAM_IO_MAX_BYTES - 1,
+            FILTER_IO_HARD_MAX_BYTES + 1,
+            usize::MAX,
+        ] {
+            let policy = WardenPolicy {
+                filter_max_bytes: Some(limit),
+                ..Default::default()
+            };
             assert!(policy.filter_limit().is_err());
             assert!(policy.validate().is_err());
         }

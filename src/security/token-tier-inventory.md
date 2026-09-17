@@ -4,8 +4,9 @@ Scope: every distinct built-in family, including duplicate aliases. This is
 an inventory of supported syntactic detectors, not a promise to recognize all
 provider credentials or validate whether any token is live. Provider formats
 can change; uncertain low-floor detectors stay gated rather than being promoted
-solely because their current regex has a prefix. Existing Tier-1 legacy lengths
-are compatibility heuristics, not authoritative provider specifications.
+solely because their current regex has a prefix. The source comparison below
+separates supported syntax from provider specifications and records where we
+intentionally retain broader compatibility detection.
 
 Tier-1 uses explicit token/envelope structure in UTF-8 files. Tier-2 retains
 context-dependent or insufficiently distinctive patterns in protected paths.
@@ -25,7 +26,7 @@ compatibility; this task does not silently drop detectors.
 | GitHub Token (ghr) | 1 | App refresh token: prefix confirmed by G1/G2; G2 range 36–255 replaces our truncating 40-body ceiling. Long variants now encrypt in full. |
 | GitHub Fine-grained PAT | 1 | Added missing github_pat_ family from G2. Supports its 36–255 alnum/underscore body range, not a new provider-length claim. Boundary and full replacement tests cover each of the six prefixes. |
 | GitLab Token | 1 | Keep provider prefix and body; custom server prefixes are not inferred. |
-| GitLab Runner Token | 1 | Keep established runner prefix; newer formats require separate evidence. |
+| GitLab Runner Token | 1 | Retain GR1348941 + 20-or-more URL-safe characters; GL gitlab-rrt has exactly 20. Longer bodies are an intentional compatibility superset, not a claim about issuance. |
 | Stripe Live Secret Key | 1 | Keep provider prefix and body. |
 | Stripe Live Restricted Key | 1 | Keep provider prefix and body. |
 | Stripe Test Secret Key | 1 | Keep: test credentials still grant access. |
@@ -127,3 +128,48 @@ compatibility; this task does not silently drop detectors.
 | Private Key Variable (Unquoted) | 2 | Stays: variable-name heuristic. |
 | Password Variable (Unquoted) | 2 | Stays: low-floor password context. |
 | Generic Assignment (Unquoted) | 2 | Stays: variable-name heuristic. |
+
+## Format review sources
+
+Inspected 2026-09-17. These are syntax references, never live credential probes.
+A scanner rule is evidence of an established detection shape, not proof that
+all matching strings are issued or that the rule exhausts a provider's formats.
+
+- **G1**: [GitHub's token-format design, 2021-04-05](https://github.blog/engineering/platform-security/behind-githubs-new-authentication-token-formats/): three-letter prefixes, underscore separator, 30 random base62 characters plus six CRC32/base62 checksum characters. This establishes the classic 36-character body, not a permanent maximum for future types.
+- **G2**: [TruffleHog github/v2 at 288a8a8](https://github.com/trufflesecurity/trufflehog/blob/288a8a8643a2c5a36b81d231c550dccfa0beeb64/pkg/detectors/github/v2/github.go#L32-L55): `keyPat` enumerates all six prefixes with `[a-zA-Z0-9_]{36,255}`. Our new range follows this maintained detector; it does not assert that every length is issued. Unlike a bare regex match, our replacement also rejects adjacent body characters, including an overlong 256-character body.
+- **GL**: [gitleaks rules at b58d3f1](https://github.com/gitleaks/gitleaks/blob/b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b/config/gitleaks.toml). Rule IDs below are search anchors in this immutable source.
+- **B1**: [Backblaze official SDK at 7f17741](https://github.com/Backblaze/b2-sdk-python/blob/7f17741b34b74c7a6a82127fe242aba79670e37f/b2sdk/_internal/raw_api.py#L561-L565). `authorize_account` base64-encodes the supplied ID/opaque-key pair; it does **not** specify a 100-character key, base62, or K005. The simulator is not used as evidence of production key format. The public documentation endpoint returned HTTP 403 during this review, so no factual claim is attributed to its contents.
+
+### Existing Tier-1 comparison (not just promoted families)
+
+These decisions supplement the one-family-per-row inventory above. The GitHub
+range mismatch required code changes; the comparisons below explicitly retain
+compatibility detectors rather than claiming their floors are provider contracts.
+
+| Families | Inspectable format comparison | Decision |
+|---|---|---|
+| AWS Access Key ID | GL `aws-access-token`: AKIA and other prefixes plus 16 uppercase/base32 characters. Ours: AKIA plus 16 uppercase/digit characters. | Retain AKIA-only subset of prefixes, broader digit alphabet. This encrypts a recognizable key identifier, not just signing secrets; no exhaustive AWS claim. |
+| GitLab Token | GL `gitlab-pat`: glpat- plus exactly 20 URL-safe characters; separate `gitlab-pat-routable` uses a dot and routing suffix. Ours: glpat- plus 20-or-more URL-safe characters. | Retain standard-token compatibility superset. Routed token grammar is not fully recognized by this detector; no claim to cover all GitLab token types. |
+| GitLab Runner Token | GL `gitlab-rrt`: GR1348941 plus exactly 20 URL-safe characters. | Keep legacy registration-token detector with broader length; newer glrt- authentication tokens are a distinct family, not inferred from this prefix. |
+| Stripe Live/Test Secret and Restricted (four rows) | GL `stripe-access-token`: sk/rk + live/test/prod + 10–99 alphanumeric characters. Ours: live/test, minimum 24, no upper bound. | Retain explicit secret/restricted-key prefixes and 24-character floor to avoid short examples; stricter low end and broader high end are intentional. Not a claim of an exact Stripe issuance length or coverage of prod aliases. |
+| Stripe Webhook Secret | [Stripe signature docs](https://docs.stripe.com/webhooks/signature): endpoint signing secret begins whsec_; no length assertion follows from that prefix. Ours: 24+ alphanumeric body. | Retain signing-secret prefix with compatibility floor, explicitly not a fixed provider length. |
+| Slack Token / Slack Bot Token | GL `slack-bot-token`: xoxb-, 10–13 decimal characters, separator, another 10–13 decimals then alnum/hyphens. Our broad rule includes this shape and extra xox prefixes; exact bot rule fixes both numeric segments to 11 and final segment to 24. | Retain both overlapping detectors; precise bot rule is a subset, not the sole Slack detector. GL has separate user/legacy grammars, so our extra prefixes are compatibility coverage, not verified exhaustive Slack grammar. |
+| Slack Bot Token (Compact) | GL's bot and legacy-bot rules require a numeric segment and separator; our compact xoxb- + 24–68 alphanumeric body does not implement either. | Deliberately retain the pre-existing compact detector as a conservative xoxb- namespace heuristic; do not describe the 24–68 range as a documented Slack format. No new promotion is justified by this rule. |
+| Twilio API Key / Account SID | GL `twilio-api-key`: SK + 32 case-insensitive hex. [Twilio Account resource](https://www.twilio.com/docs/iam/api/account): Account SID AC plus 32 hex. Ours restricts both bodies to lowercase hex. | Retain lowercase subset; both are provider identifiers, and require a separate secret to authenticate. Encrypting these identifiers is intentional existing policy. |
+| SendGrid API Key | GL `sendgrid-api-token`: SG. plus 66 characters from a broader alphabet. Ours requires 22 URL-safe chars, dot, 43 URL-safe chars (66 with separator). | Keep more structured two-segment subset; GL supports its total body size, but does not prove our segmentation is universal. |
+| Mailchimp API Key | GL `mailchimp-api-key`: 32 lowercase hex then -us and two decimal digits, under Mailchimp context. Ours allows one or two digits without context. | Keep distinctive data-centre suffix with one-digit compatibility extension. No generic 32-hex promotion. |
+| NPM Access Token | GL `npm-access-token`: npm_ plus 36 case-insensitive alphanumeric characters. | Keep equivalent body and prefix. |
+| OpenAI API Key | GL `openai-api-key`: legacy 20 + T3BlbkFJ + 20 body; project/service/admin forms have 58 or 74 characters on each side of that marker. Ours accepts 20+ legacy alnum and explicit project/service URL-safe bodies. | Retain broader compatibility grammar from F2, not a provider-issued minimum. Project/service forms in GL are covered; admin form is not claimed. Full boundaries reject prose and embedded matches. |
+| RSA / DSA / EC / OpenSSH / PGP / generic SSH / PKCS8 / Encrypted PKCS8 | [RFC 7468 sections 10–11](https://www.rfc-editor.org/rfc/rfc7468#section-10) defines PRIVATE KEY and ENCRYPTED PRIVATE KEY textual labels; [OpenSSH key format](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.key) describes its private-key format; GL `private-key` detects private-key envelope labels. | Keep explicit private-key envelopes in Tier-1. These patterns classify sensitive envelopes, not key validity, ASN.1, passphrase strength, or whether BEGIN/END labels match in the generic rule. |
+
+### Backblaze disposition
+
+The supported B2 application-key regex remains `K005[a-zA-Z0-9]{20,}` in
+protected paths. B1 supports only the statement that the API takes an opaque
+key paired with a key ID. Consequently neither a fixed 100-character body nor
+an authoritative K005 prefix is established here. The decision is **stay
+Tier-2**, because the current guessed prefix/floor is not evidence for eager
+encryption in arbitrary source. General credential assignments and designated
+whole-file credential paths remain separate protections. This is a bounded
+syntax detector, not a claim of complete B2 secret coverage.
+

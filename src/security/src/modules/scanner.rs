@@ -54,12 +54,30 @@ impl SecretScanner {
             // characters after the prefix. The maintained github/v2 detector
             // supports 36..255 body characters, including newer token variants.
             // See token-tier-inventory.md#format-review-sources.
-            ("GitHub Token (ghp)", concat!(r"\bgh", "p_[A-Za-z0-9_]{36,255}")),
-            ("GitHub Token (gho)", concat!(r"\bgh", "o_[A-Za-z0-9_]{36,255}")),
-            ("GitHub Token (ghu)", concat!(r"\bgh", "u_[A-Za-z0-9_]{36,255}")),
-            ("GitHub Token (ghs)", concat!(r"\bgh", "s_[A-Za-z0-9_]{36,255}")),
-            ("GitHub Token (ghr)", concat!(r"\bgh", "r_[A-Za-z0-9_]{36,255}")),
-            ("GitHub Fine-grained PAT", r"\bgithub_pat_[A-Za-z0-9_]{36,255}"),
+            (
+                "GitHub Token (ghp)",
+                concat!(r"\bgh", "p_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Token (gho)",
+                concat!(r"\bgh", "o_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Token (ghu)",
+                concat!(r"\bgh", "u_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Token (ghs)",
+                concat!(r"\bgh", "s_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Token (ghr)",
+                concat!(r"\bgh", "r_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Fine-grained PAT",
+                r"\bgithub_pat_[A-Za-z0-9_]{36,255}",
+            ),
             ("GitLab Token", concat!("gl", "pat-[A-Za-z0-9\\-_]{20,}")),
             ("GitLab Runner Token", r"GR1348941[A-Za-z0-9\-_]{20,}"),
             (
