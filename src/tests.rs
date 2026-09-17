@@ -925,6 +925,10 @@ mod tests {
     fn filter_configured_bounds_preserve_default_and_reject_unbounded_limits() {
         let default: WardenPolicy = toml::from_str("").expect("default policy");
         assert_eq!(default.filter_limit().unwrap(), STREAM_IO_MAX_BYTES);
+        assert_eq!(filter_timeout_secs(STREAM_IO_MAX_BYTES), 30);
+        assert_eq!(filter_timeout_secs(48 * 1024 * 1024), 150);
+        assert_eq!(filter_timeout_secs(FILTER_IO_HARD_MAX_BYTES), 210);
+        assert_eq!(filter_timeout_secs(usize::MAX), 210);
         for limit in [STREAM_IO_MAX_BYTES, 48 * 1024 * 1024, FILTER_IO_HARD_MAX_BYTES] {
             let policy: WardenPolicy = toml::from_str(&format!("filter_max_bytes = {limit}")).unwrap();
             assert_eq!(policy.filter_limit().unwrap(), limit);

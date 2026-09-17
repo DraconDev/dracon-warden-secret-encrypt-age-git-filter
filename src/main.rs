@@ -2970,9 +2970,16 @@ fn read_filter_input(reader: impl Read, limit: usize) -> Result<Vec<u8>> {
 /// to stderr and exit with status 1 — git treats non-zero exit as filter failure,
 /// which is the correct behavior: returning passthrough would silently corrupt data
 /// (encrypted content would be written to disk as plaintext, or vice versa).
+fn filter_timeout_secs(limit: usize) -> u64 {
+    // Preserve the default deadline; larger operator-approved scan bounds get
+    // proportional time, capped by the same 64 MiB policy maximum (210s).
+    FILTER_TIMEOUT_SECS * limit.min(FILTER_IO_HARD_MAX_BYTES).div_ceil(STREAM_IO_MAX_BYTES) as u64
+}
+
 async fn run_filter_with_timeout(is_clean: bool, label: &str, path: Option<String>) -> Result<()> {
+    let timeout_secs = filter_timeout_secs(configured_filter_limit()?);
     let join_result = tokio::time::timeout(
-        Duration::from_secs(FILTER_TIMEOUT_SECS),
+        Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || run_filter(is_clean, path.as_deref())),
     )
     .await;
@@ -2988,7 +2995,7 @@ async fn run_filter_with_timeout(is_clean: bool, label: &str, path: Option<Strin
         Err(_elapsed) => {
             eprintln!(
                 "dracon-warden: {} timed out after {}s, exiting (parent likely gone)",
-                label, FILTER_TIMEOUT_SECS
+                label, timeout_secs
             );
             std::process::exit(1);
         }
