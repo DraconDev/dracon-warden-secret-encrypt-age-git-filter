@@ -20,10 +20,15 @@ with tempfile.TemporaryDirectory(prefix="warden-lifecycle-") as directory:
         return result.stdout
 
     run("git", "init", "-q")
+    # Exercise the actual installed hardening command, not a handwritten
+    # approximation of its attributes. Verify its generated filter commands,
+    # then pin the executable to the exact binary requested by this probe.
+    run(binary, "once", str(root))
     for direction in ("clean", "smudge"):
+        configured = run("git", "config", "--get", f"filter.dracon.{direction}")
+        assert f"filter-{direction}".encode() in configured, configured
         run("git", "config", f"filter.dracon.{direction}", f"'{binary}' filter-{direction} %f")
-    run("git", "config", "filter.dracon.required", "true")
-    (root / ".gitattributes").write_text("* filter=dracon\n")
+    assert run("git", "config", "--get", "filter.dracon.required").strip() == b"true"
     begin = "-----BEGIN "
     end = "-----END "
     fixtures = {
@@ -37,16 +42,19 @@ with tempfile.TemporaryDirectory(prefix="warden-lifecycle-") as directory:
         # base64-style '+' stays plaintext (round-2 boundary fix).
         "slack-valid.rs": ('https://hooks.slack.com/services/' + 'Aa09+/' * 8 + 'Aa').encode(),
         "slack-overlong-plus.rs": ('https://hooks.slack.com/services/' + 'A' * 56 + '+A').encode(),
+        "github-long.rs": ('ghp_' + 'G' * 41).encode(),
+        "github-fine.rs": ('github_pat_' + 'H' * 82).encode(),
+        "github-overlong.rs": ('ghp_' + 'J' * 256).encode(),
         "slug.rs": b'task-configuration-reference-guide',
         "invalid.rs": b'\xff literal _SECRET: marker',
     }
     for name, content in fixtures.items():
         (root / name).write_bytes(content)
-    run("git", "add", "--", ".gitattributes", *fixtures)
+    run("git", "add", "--", ".gitattributes", ".gitignore", ".dracon", *fixtures)
     run("git", "commit", "-qm", "Synthetic filter lifecycle regression")
     for name, content in fixtures.items():
         blob = run("git", "show", f"HEAD:{name}")
-        if name in ("slug.rs", "invalid.rs", "slack-overlong-plus.rs"):
+        if name in ("slug.rs", "invalid.rs", "slack-overlong-plus.rs", "github-overlong.rs"):
             assert blob == content, name
         else:
             assert b'[DRACON_SECRET:' in blob and content not in blob, name
@@ -63,6 +71,6 @@ with tempfile.TemporaryDirectory(prefix="warden-lifecycle-") as directory:
     assert b'[DRACON_SECRET:' in run("git", "show", ":stripe.rs")
     run("git", "checkout", "HEAD", "--", "stripe.rs")
     assert not run("git", "status", "--porcelain")
-    print(json.dumps({"binary": binary, "fixtures": len(fixtures), "encrypted_blobs": 7,
+    print(json.dumps({"binary": binary, "fixtures": len(fixtures), "encrypted_blobs": 9, "hardening": "installed once command",
                       "roundtrips": "byte-exact", "post_checkout_status": "clean",
                       "real_edit": "detected and encrypted"}))
