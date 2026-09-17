@@ -429,16 +429,14 @@ run git add -f -- "${RELPFX}Cargo.toml" "Cargo.lock" "${RELPFX}CHANGELOG.md" "$N
 # 2026-08-09): skip the commit when there is nothing to commit, skip the
 # tag when it already exists, skip the gh release when it already exists.
 if [[ $DRY_RUN -eq 1 ]]; then
-    run git -c user.email=dracsharp@gmail.com -c user.name=DraconDev \
-        commit --no-verify -m "release: v${VERSION}"
+    run git commit --no-verify -m "release: v${VERSION}"
     run git tag "$TAG"
 else
     if git diff --cached --quiet; then
         ok "  nothing to commit (release commit already exists)"
     else
         printf '   $ git commit --no-verify -m release: v%s\n' "$VERSION"
-        git -c user.email=dracsharp@gmail.com -c user.name=DraconDev \
-            commit --no-verify -m "release: v${VERSION}"
+        git commit --no-verify -m "release: v${VERSION}"
     fi
     if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
         ok "  tag $TAG already exists"

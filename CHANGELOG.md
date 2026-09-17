@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed
+
+- GitHub syntax review: use the maintained TruffleHog 36–255-character body range for all five gh-prefixed token families, add fine-grained PAT coverage, and reject partial/embedded matches. Synthetic tests cover complete replacement and invalid lengths; obsolete 30-character positives are now explicit negatives.
+- F4 inventory: withdraw the unsupported Backblaze 100-character/base62 claim. Document the actual K005 heuristic separately from the official SDK's opaque credential input; compare all existing Tier-1 families against inspectable reference formats without claiming exhaustive provider coverage.
+- Configured filter-size limits receive proportional, capped filter deadlines (default deadline unchanged), with bounds regression coverage.
+- Release commits now use the repository's configured identity rather than overriding it.
+
 ## [0.113.11] - 2026-09-16
 ## [0.113.10] - 2026-09-16
 
