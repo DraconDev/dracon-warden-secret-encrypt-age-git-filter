@@ -3142,6 +3142,18 @@ fn filter_clean_refusal_with_limit(
 /// Read stage zero without invoking filters, writing the index, or falling back
 /// to HEAD (which can differ from the staged content). Missing/unmerged entries
 /// and Git failures simply disable reuse. Bound both time and captured bytes.
+macro_rules! fdbg {
+    ($($arg:tt)*) => {
+        if std::env::var("DRACON_FILTER_DEBUG").as_deref() == Ok("1") {
+            eprintln!("[filter-process {}] {}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis()).unwrap_or(0),
+                format!($($arg)*));
+        }
+    };
+}
+
 fn indexed_filter_blob(path: &str, limit: usize) -> Option<Vec<u8>> {
     use std::process::Stdio;
     let capture = tempfile::NamedTempFile::new().ok()?;
@@ -3181,6 +3193,313 @@ fn indexed_filter_blob(path: &str, limit: usize) -> Option<Vec<u8>> {
     }
     let bytes = read_filter_input(capture.reopen().ok()?, limit).ok()?;
     (bytes.len() <= limit).then_some(bytes)
+}
+
+/// Cap for a single blob drained from the batch child (v0.113.14).
+/// The batch reader does not know the caller-supplied filter `limit`,
+/// so grossly oversized blobs are discarded here to keep framing;
+/// `filter_transform_bytes` still enforces `limit` before use.
+/// 64 MiB clears the largest firehose blobs observed (51 MB).
+const INDEX_BATCH_BLOB_CAP: usize = 64 * 1024 * 1024;
+
+/// Which index-lookup strategy a clean request uses (v0.113.14).
+/// One-shot filters keep the legacy per-file spawn; the process
+/// driver carries one persistent batch session.
+#[derive(Debug)]
+enum IndexLookup {
+    OneShot,
+    Batch(IndexBatch),
+}
+
+/// Persistent `git cat-file --batch` session for the long-running
+/// filter driver (ADDED 2026-09-19, v0.113.14). The per-file
+/// `indexed_filter_blob` spawn (~10-50 ms: git startup + tempfile +
+/// 5 ms poll loop) is invisible on small repos but serializes into
+/// 15-50 s on 1000-file firehose diffs — the whole daemon
+/// classification budget (ai-auto-writer, 2026-09-19). One batch
+/// child serves the driver's lifetime; per-file cost drops to two
+/// stats + a pipe round-trip (~0.2 ms measured).
+///
+/// Correctness contract (outcome-for-outcome with the one-shot path):
+/// - The batch reads the caller's index via `:0:path`, exactly what
+///   the per-file spawn did. Anything unanswerable (missing,
+///   non-blob, oversized, locked, slow) yields `None`, and
+///   `clean_reusing_index` treats `None` as "no reusable
+///   representation" — always safe, only costs ciphertext churn.
+/// - `index.lock` present means our caller (git add) is rewriting
+///   the index mid-run: `:0:` reads would race the rewrite, so the
+///   batch is dropped and the file goes through with fresh
+///   encryption. Faster AND more correct than the old spawn (which
+///   happily read a torn index). The lock check is an optimization
+///   and common-case guard, not a security boundary: a lock that
+///   appears mid-query at worst yields a stale blob, and the
+///   `smudge(old) == bytes` comparison in `clean_reusing_index`
+///   fails safe back to fresh encryption.
+/// - The batch snapshots the index at spawn; if the index mtime
+///   moves (a concurrent writer finished between two of our files)
+///   the snapshot is stale, so the batch is respawned. One stat per
+///   file guards this.
+/// - A hung batch (5 s without a response) is killed and the file
+///   goes through fresh; the next file respawns. A whole-driver
+///   wedge is strictly worse than one slow file, so the timeout
+///   fails OPEN toward fresh encryption (policy-valid output —
+///   `clean_reusing_index` always computes `fresh` first).
+/// - Pathnames come from git verbatim; a `\n` in a name would split
+///   the batch framing, so such names skip the lookup (fresh
+///   encryption — safe). The one documented narrowing versus the
+///   argv spawn, confined to an absurd case.
+#[derive(Debug)]
+struct IndexBatch {
+    /// `.git` dir resolution: `None` = not yet attempted,
+    /// `Some(None)` = outside a repo (never try), `Some(Some(_))` =
+    /// resolved.
+    gitdir: Option<Option<std::path::PathBuf>>,
+    live: Option<LiveBatch>,
+    /// Spawn the batch child with this cwd instead of inheriting
+    /// (tests point it at a fixture repo; production passes `None`
+    /// so git discovery matches the driver's own invocation).
+    cwd: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug)]
+struct LiveBatch {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    /// `Some(bytes)` = staged blob, `None` = missing/oversized/non-blob.
+    /// Channel close (reader gone) means the child died.
+    responses: std::sync::mpsc::Receiver<Option<Vec<u8>>>,
+    index_mtime: Option<std::time::SystemTime>,
+}
+
+impl Drop for LiveBatch {
+    fn drop(&mut self) {
+        // Reap, never wedge the driver on a dead child. The reader
+        // thread observes EOF and exits on its own (its sender fails
+        // once `responses` is dropped with us).
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl IndexBatch {
+    fn new() -> Self {
+        Self {
+            gitdir: None,
+            live: None,
+            cwd: None,
+        }
+    }
+
+    fn with_cwd(path: std::path::PathBuf) -> Self {
+        Self {
+            gitdir: None,
+            live: None,
+            cwd: Some(path),
+        }
+    }
+
+    /// Staged blob for `path`, or `None` when no reusable
+    /// representation exists (see the struct contract). Never fails
+    /// the caller: every transport problem degrades to fresh
+    /// encryption.
+    fn lookup(&mut self, path: &str, limit: usize) -> Option<Vec<u8>> {
+        if path.contains('\n') {
+            return None;
+        }
+        let dir = match self.gitdir.clone() {
+            Some(d) => d,
+            None => {
+                let resolved = resolve_gitdir(&self.cwd);
+                self.gitdir = Some(resolved.clone());
+                resolved
+            }
+        };
+        let dir = dir?;
+        if dir.join("index.lock").exists() {
+            fdbg!("index-batch: index.lock present, skipping lookup");
+            self.live = None;
+            return None;
+        }
+        let mtime = std::fs::metadata(dir.join("index"))
+            .and_then(|m| m.modified())
+            .ok();
+        if self
+            .live
+            .as_ref()
+            .is_some_and(|l| l.index_mtime != mtime)
+        {
+            fdbg!("index-batch: index moved, respawning");
+            self.live = None;
+        }
+        if self.live.is_none() && !self.spawn(&dir, mtime) {
+            return None;
+        }
+        let live = self.live.as_mut()?;
+        // A dead-but-unreaped child accepts nothing: EPIPE here
+        // means the batch is gone — drop it, go fresh, respawn
+        // on the next file.
+        if std::io::Write::write_all(
+            &mut live.stdin,
+            format!(":0:{path}\n").as_bytes(),
+        )
+        .and_then(|()| std::io::Write::flush(&mut live.stdin))
+        .is_err()
+        {
+            fdbg!("index-batch: query write failed, dropping batch");
+            self.live = None;
+            return None;
+        }
+        match live
+            .responses
+            .recv_timeout(std::time::Duration::from_secs(5))
+        {
+            Ok(blob) => {
+                let blob = blob?;
+                (blob.len() <= limit).then_some(blob)
+            }
+            Err(_) => {
+                fdbg!("index-batch: response timeout/disconnect, dropping batch");
+                self.live = None;
+                None
+            }
+        }
+    }
+
+    /// Spawn the batch child. `false` = could not spawn (the next
+    /// file retries; a missing git binary fails every file fast at
+    /// one spawn attempt each — bounded and visible in debug logs).
+    fn spawn(
+        &mut self,
+        dir: &std::path::Path,
+        mtime: Option<std::time::SystemTime>,
+    ) -> bool {
+        let mut cmd = ProcessCommand::new("git");
+        if let Some(cwd) = &self.cwd {
+            cmd.current_dir(cwd);
+        }
+        let mut child = match cmd
+            .args(["cat-file", "--batch"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                fdbg!("index-batch: spawn failed: {}", e);
+                return false;
+            }
+        };
+        let stdin = match child.stdin.take() {
+            Some(s) => s,
+            None => return false,
+        };
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => return false,
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || index_batch_reader(stdout, tx));
+        fdbg!("index-batch: spawned for {}", dir.display());
+        self.live = Some(LiveBatch {
+            child,
+            stdin,
+            responses: rx,
+            index_mtime: mtime,
+        });
+        true
+    }
+}
+
+/// Resolve the repo-local `.git` dir once per driver. `None` =
+/// not in a repo (or git missing): lookups stay disabled and every
+/// file takes fresh encryption — identical outcome to the old path
+/// whose per-file spawn failed the same way.
+fn resolve_gitdir(cwd: &Option<std::path::PathBuf>) -> Option<std::path::PathBuf> {
+    let mut cmd = ProcessCommand::new("git");
+    if let Some(d) = cwd {
+        cmd.current_dir(d);
+    }
+    let out = cmd.args(["rev-parse", "--absolute-git-dir"]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let dir = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if dir.is_empty() {
+        return None;
+    }
+    let dir = std::path::PathBuf::from(dir);
+    // `--absolute-git-dir` prints absolute; belt-and-braces join
+    // against the spawn cwd for exotic setups.
+    let dir = match cwd {
+        Some(c) if dir.is_relative() => c.join(dir),
+        _ => dir,
+    };
+    dir.is_dir().then_some(dir)
+}
+
+/// Batch reader thread: owns the child's stdout, delivers one
+/// `Option<Vec<u8>>` per query in request order (batch protocol
+/// preserves order), exits on EOF/error. The main side abandons a
+/// batch wholesale on timeout, so positional matching never
+/// diverges: a batch is never reused after a doubt.
+fn index_batch_reader(
+    stdout: std::process::ChildStdout,
+    tx: std::sync::mpsc::Sender<Option<Vec<u8>>>,
+) {
+    use std::io::BufRead;
+    let mut r = std::io::BufReader::new(stdout);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        // Cap a garbage header line at 1 MiB; overlong means
+        // desync — die (main side treats disconnect as batch
+        // death and goes fresh).
+        let mut capped = r.by_ref().take(1024 * 1024 + 1);
+        let n = match capped.read_until(b'\n', &mut line) {
+            Ok(0) => return, // clean EOF
+            Ok(n) => n,
+            Err(_) => return,
+        };
+        if n > 1024 * 1024 {
+            return;
+        }
+        let header = String::from_utf8_lossy(&line);
+        let header = header.trim_end_matches(['\n', '\r']);
+        if header.ends_with(" missing") {
+            if tx.send(None).is_err() {
+                return;
+            }
+            continue;
+        }
+        let mut parts = header.split(' ');
+        let (typ, size) = match (parts.next(), parts.next(), parts.next()) {
+            (Some(_sha), Some(t), Some(s)) => (t, s),
+            _ => return, // desync: die
+        };
+        let size: usize = match size.parse() {
+            Ok(n) => n,
+            Err(_) => return,
+        };
+        // Drain framing even for answers we discard (non-blob
+        // like a gitlink commit, or over-cap blobs). Past the cap
+        // the framing cannot be recovered — die instead.
+        let framed = size.checked_add(1); // + trailing newline
+        let keep = typ == "blob" && size <= INDEX_BATCH_BLOB_CAP;
+        match framed {
+            Some(total) if total <= INDEX_BATCH_BLOB_CAP + 1 => {
+                let mut buf = vec![0u8; total];
+                if std::io::Read::read_exact(&mut r, &mut buf).is_err() {
+                    return;
+                }
+                let body = buf[..size].to_vec();
+                if tx.send(keep.then_some(body)).is_err() {
+                    return;
+                }
+            }
+            _ => return, // too big to drain: die
+        }
+    }
 }
 
 fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
@@ -3237,7 +3556,14 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
     // via the block above.
 
     let warden = DraconWarden::new()?;
-    let output = filter_transform_bytes(&warden, is_clean, path, input, limit)?;
+    let output = filter_transform_bytes(
+        &warden,
+        is_clean,
+        path,
+        input,
+        limit,
+        &mut IndexLookup::OneShot,
+    )?;
     std::io::stdout().write_all(&output)?;
     Ok(())
 }
@@ -3255,6 +3581,7 @@ fn filter_transform_bytes(
     path: Option<&str>,
     input: Vec<u8>,
     limit: usize,
+    lookup: &mut IndexLookup,
 ) -> Result<Vec<u8>> {
     if let Some(reason) = filter_clean_refusal_with_limit(is_clean, input.len(), path, limit) {
         eprintln!("{}", reason);
@@ -3280,7 +3607,12 @@ fn filter_transform_bytes(
         }
     }
     if is_clean {
-        let indexed = path.and_then(|p| indexed_filter_blob(p, limit));
+        // One-shot filters keep the legacy per-file spawn; the
+        // process driver consults its persistent batch session.
+        let indexed = match lookup {
+            IndexLookup::OneShot => path.and_then(|p| indexed_filter_blob(p, limit)),
+            IndexLookup::Batch(b) => path.and_then(|p| b.lookup(p, limit)),
+        };
         Ok(warden.clean_with_index(&input, path, indexed.as_deref())?)
     } else {
         Ok(warden.smudge(&input, path)?)
@@ -3363,18 +3695,6 @@ fn pkt_key_line(s: &str) -> Vec<u8> {
 /// `DRACON_FILTER_DEBUG=1` (stderr — git surfaces driver stderr on
 /// failure). Permanent: the driver is otherwise a black box when
 /// git reports "remote end hung up".
-macro_rules! fdbg {
-    ($($arg:tt)*) => {
-        if std::env::var("DRACON_FILTER_DEBUG").as_deref() == Ok("1") {
-            eprintln!("[filter-process {}] {}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis()).unwrap_or(0),
-                format!($($arg)*));
-        }
-    };
-}
-
 fn run_filter_process() -> i32 {
     fdbg!("start");
     wire_managed_patterns_from_policy();
@@ -3468,9 +3788,15 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
         }
     }
     fdbg!("handshake done clean={} smudge={}", want_clean, want_smudge);
+    // One batch session for the driver's whole lifetime (v0.113.14):
+    // per-file spawns serialize into tens of seconds on firehose
+    // repos. Created up front; resolution is lazy inside (first
+    // clean request pays one `rev-parse`, non-repo drivers disable
+    // silently and take fresh encryption per file).
+    let mut lookup = IndexLookup::Batch(IndexBatch::new());
     if section.iter().any(|l| l.starts_with(b"command=")) {
         fdbg!("phase-2 section was a request, serving directly");
-        serve_one_request(input, output, warden, limit, &section)?;
+        serve_one_request(input, output, warden, limit, &section, &mut lookup)?;
     } else {
         if want_clean {
             output.write_all(&pkt_key_line("capability=clean"))?;
@@ -3497,7 +3823,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
                 }
             }
         }
-        serve_one_request(input, output, warden, limit, &header)?;
+        serve_one_request(input, output, warden, limit, &header, &mut lookup)?;
     }
 }
 
@@ -3511,6 +3837,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     warden: &DraconWarden,
     limit: usize,
     header: &[Vec<u8>],
+    lookup: &mut IndexLookup,
 ) -> Result<()> {
     let mut command: Option<&str> = None;
     let mut pathname: Option<&str> = None;
@@ -3556,7 +3883,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
         }
     };
     let t1 = std::time::Instant::now();
-    let r = filter_transform_bytes(warden, direction, pathname, content, limit);
+    let r = filter_transform_bytes(warden, direction, pathname, content, limit, lookup);
     fdbg!("transform done in {:?}", t1.elapsed());
     match r {
         Ok(bytes) => {
