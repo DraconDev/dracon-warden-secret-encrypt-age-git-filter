@@ -1499,9 +1499,15 @@ fn ensure_repo_filter_config(repo: &Path) -> Result<bool> {
     // encrypted-file diffs/merges would operate on ciphertext. textconv
     // decrypts blobs for `git diff`/`git log -p` (git appends the file
     // path); the merge driver decrypts, text-merges, and re-encrypts.
+    // CHANGED 2026-09-19 (v0.113.13): the per-file clean/smudge
+    // drivers are replaced by the long-running `filter-process`
+    // driver (ONE warden process per git command instead of one
+    // per file — a 4092-file `git diff` spent 78s almost entirely
+    // in per-file process startup). The old keys are UNSET below
+    // so no repo keeps paying the spawn storm; clean/smudge
+    // subcommands remain as fallback/debugging entry points.
     let desired = [
-        ("filter.dracon.clean", "dracon-warden filter-clean %f"),
-        ("filter.dracon.smudge", "dracon-warden filter-smudge %f"),
+        ("filter.dracon.process", "dracon-warden filter-process"),
         ("filter.dracon.required", "true"),
         ("diff.dracon.textconv", "dracon-warden filter-smudge"),
         ("merge.dracon.driver", "dracon-warden merge %O %A %B"),
@@ -1511,7 +1517,44 @@ fn ensure_repo_filter_config(repo: &Path) -> Result<bool> {
         ),
     ];
 
+    // Remove the superseded per-file driver keys (v0.113.13
+    // migration): leaving `filter.dracon.clean` set alongside
+    // `filter.dracon.process` would keep git on the slow path
+    // (explicit clean/smudge take precedence over process).
     let mut changed = false;
+    for old_key in ["filter.dracon.clean", "filter.dracon.smudge"] {
+        let current = ProcessCommand::new("git")
+            .arg("-C")
+            .arg(repo)
+            .arg("config")
+            .arg("--local")
+            .arg("--get")
+            .arg(old_key)
+            .output()
+            .with_context(|| format!("failed to read git config {} in {}", old_key, repo.display()))?;
+        if current.status.success() {
+            let status = ProcessCommand::new("git")
+                .arg("-C")
+                .arg(repo)
+                .arg("config")
+                .arg("--local")
+                .arg("--unset")
+                .arg(old_key)
+                .status()
+                .with_context(|| {
+                    format!("failed to unset git config {} in {}", old_key, repo.display())
+                })?;
+            if !status.success() {
+                return Err(anyhow::anyhow!(
+                    "git config --unset {} failed in {} (exit={})",
+                    old_key,
+                    repo.display(),
+                    status
+                ));
+            }
+            changed = true;
+        }
+    }
     for (key, value) in desired {
         let current = ProcessCommand::new("git")
             .arg("-C")
@@ -3222,6 +3265,186 @@ fn filter_transform_bytes(
         Ok(warden.clean_with_index(&input, path, indexed.as_deref())?)
     } else {
         Ok(warden.smudge(&input, path)?)
+    }
+}
+
+/// pkt-line framing for the `git-filter-process` protocol
+/// (v0.113.13). Packets are opaque bytes: `4-hex length (including
+/// the header) + payload`, `0000` = flush, `0001` = delim (treated
+/// as a section boundary like flush). Max payload 65516 bytes.
+const PKT_MAX_PAYLOAD: usize = 65516;
+
+fn pkt_encode(payload: &[u8]) -> Vec<u8> {
+    if payload.is_empty() {
+        return b"0000".to_vec();
+    }
+    let mut out = Vec::with_capacity(payload.len() + 4);
+    out.extend_from_slice(format!("{:04x}", payload.len() + 4).as_bytes());
+    out.extend_from_slice(payload);
+    out
+}
+
+#[derive(Debug, PartialEq)]
+enum Pkt {
+    Flush,
+    Delim,
+    Data(Vec<u8>),
+}
+
+/// None = clean EOF at a packet boundary (git closed stdin: done).
+/// EOF mid-packet is a protocol error.
+fn pkt_read<R: std::io::Read>(r: &mut R) -> Result<Option<Pkt>> {
+    let mut hdr = [0u8; 4];
+    match r.read_exact(&mut hdr) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(e) => return Err(anyhow::anyhow!("filter-process header read: {}", e)),
+    }
+    if &hdr == b"0000" {
+        return Ok(Some(Pkt::Flush));
+    }
+    if &hdr == b"0001" {
+        return Ok(Some(Pkt::Delim));
+    }
+    let hdr_str = std::str::from_utf8(&hdr)
+        .map_err(|_| anyhow::anyhow!("filter-process: non-hex packet header"))?;
+    let len = usize::from_str_radix(hdr_str, 16)
+        .map_err(|_| anyhow::anyhow!("filter-process: bad packet length '{}'", hdr_str))?;
+    if len < 4 {
+        return Err(anyhow::anyhow!("filter-process: packet length {} < 4", len));
+    }
+    let mut payload = vec![0u8; len - 4];
+    r.read_exact(&mut payload)
+        .map_err(|e| anyhow::anyhow!("filter-process payload read: {}", e))?;
+    Ok(Some(Pkt::Data(payload)))
+}
+
+/// Split a `key=value` protocol line. Returns None for malformed lines.
+fn pkt_kv(line: &[u8]) -> Option<(&str, &str)> {
+    let s = std::str::from_utf8(line).ok()?;
+    let (k, v) = s.split_once('=')?;
+    Some((k, v))
+}
+
+/// Long-running filter driver: one process serves every file in the
+/// git command (v0.113.13). Reads requests on stdin, writes
+/// responses on stdout, exits 0 on clean EOF. Returns the process
+/// exit code (0 = clean EOF; 1 = handshake violation, I/O error,
+/// or config failure — all fail closed: git aborts the operation).
+fn run_filter_process() -> i32 {
+    wire_managed_patterns_from_policy();
+    let limit = match configured_filter_limit() {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("dracon-warden: filter-process config failed: {}", e);
+            return 1;
+        }
+    };
+    // Constructed ONCE for the whole git command (the one-shot
+    // path pays this per file — part of the cost being removed).
+    let warden = match DraconWarden::new() {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("dracon-warden: filter-process init failed: {}", e);
+            return 1;
+        }
+    };
+    let mut input = std::io::BufReader::new(std::io::stdin());
+    let mut output = std::io::BufWriter::new(std::io::stdout());
+    if let Err(e) = filter_process_serve(&mut input, &mut output, &warden, limit) {
+        eprintln!("dracon-warden: filter-process error: {}", e);
+        return 1;
+    }
+    0
+}
+
+fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
+    input: &mut R,
+    output: &mut W,
+    warden: &DraconWarden,
+    limit: usize,
+) -> Result<()> {
+    use std::io::Write as _;
+    // --- Handshake: expect `git-filter-client` first, then
+    // capabilities until flush. Anything else is a violation.
+    let mut first = true;
+    loop {
+        match pkt_read(input)? {
+            None => return Err(anyhow::anyhow!("EOF during handshake")),
+            Some(Pkt::Flush) | Some(Pkt::Delim) => break,
+            Some(Pkt::Data(line)) => {
+                if first && line != b"git-filter-client" {
+                    return Err(anyhow::anyhow!("not a git-filter client"));
+                }
+                first = false;
+            }
+        }
+    }
+    for cap in ["git-filter-server", "version=2", "capability=clean", "capability=smudge"] {
+        output.write_all(&pkt_encode(cap.as_bytes()))?;
+    }
+    output.write_all(b"0000")?;
+    output.flush()?;
+    // --- Request loop until clean EOF.
+    loop {
+        let mut command: Option<String> = None;
+        let mut pathname: Option<String> = None;
+        loop {
+            match pkt_read(input)? {
+                None => return Ok(()),
+                Some(Pkt::Flush) | Some(Pkt::Delim) => break,
+                Some(Pkt::Data(line)) => {
+                    if let Some((k, v)) = pkt_kv(&line) {
+                        match k {
+                            "command" => command = Some(v.to_string()),
+                            "pathname" => pathname = Some(v.to_string()),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        let Some(command) = command else {
+            return Err(anyhow::anyhow!("request without command"));
+        };
+        let mut content = Vec::new();
+        loop {
+            match pkt_read(input)? {
+                None => return Err(anyhow::anyhow!("EOF mid-content")),
+                Some(Pkt::Flush) | Some(Pkt::Delim) => break,
+                Some(Pkt::Data(chunk)) => content.extend_from_slice(&chunk),
+            }
+        }
+        // Only clean/smudge were advertised; anything else (e.g.
+        // list_available_blobs) fails closed per file.
+        let direction = match command.as_str() {
+            "clean" => true,
+            "smudge" => false,
+            other => {
+                eprintln!("dracon-warden: filter-process unsupported command '{}'", other);
+                output.write_all(&pkt_encode(b"status=error"))?;
+                output.write_all(b"0000")?;
+                output.flush()?;
+                continue;
+            }
+        };
+        match filter_transform_bytes(warden, direction, pathname.as_deref(), content, limit) {
+            Ok(bytes) => {
+                output.write_all(&pkt_encode(b"status=success"))?;
+                for chunk in bytes.chunks(PKT_MAX_PAYLOAD) {
+                    output.write_all(&pkt_encode(chunk))?;
+                }
+                output.write_all(b"0000")?;
+            }
+            Err(e) => {
+                // Fail closed: git aborts the diff/add rather than
+                // committing unfiltered content.
+                eprintln!("dracon-warden: filter-process transform failed: {}", e);
+                output.write_all(&pkt_encode(b"status=error"))?;
+                output.write_all(b"0000")?;
+            }
+        }
+        output.flush()?;
     }
 }
 
