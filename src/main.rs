@@ -3290,6 +3290,7 @@ impl IndexBatch {
         }
     }
 
+    #[cfg(test)]
     fn with_cwd(path: std::path::PathBuf) -> Self {
         Self {
             gitdir: None,
