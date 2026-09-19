@@ -1518,9 +1518,8 @@ fn ensure_repo_filter_config(repo: &Path) -> Result<bool> {
     ];
 
     // Remove the superseded per-file driver keys (v0.113.13
-    // migration): leaving `filter.dracon.clean` set alongside
-    // `filter.dracon.process` would keep git on the slow path
-    // (explicit clean/smudge take precedence over process).
+    // migration): exactly one driver must be configured so there
+    // is no ambiguity about which path git takes.
     let mut changed = false;
     for old_key in ["filter.dracon.clean", "filter.dracon.smudge"] {
         let current = ProcessCommand::new("git")
