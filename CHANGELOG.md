@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed
+
+- Global pre-push wrapper no longer chains pre-marker legacy warden hooks (same false-managed block class as the pre-commit/pre-rebase skip in 0.113.13: the legacy local hook lacks the tag-push corroboration fix and re-scans history from the empty tree, flagging grandfathered fixtures — observed blocking the v0.113.13 tag push). Ships in the next release; fleet-local legacy hooks are already replaced by 0.113.13 harden.
 ## [0.113.13] - 2026-09-19
 
 ### Added
