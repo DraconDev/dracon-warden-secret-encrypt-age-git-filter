@@ -3375,6 +3375,8 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
     // --- Handshake: expect `git-filter-client` first, then
     // capabilities until flush. Anything else is a violation.
     let mut first = true;
+    let mut want_clean = false;
+    let mut want_smudge = false;
     loop {
         match pkt_read(input)? {
             None => return Err(anyhow::anyhow!("EOF during handshake")),
@@ -3385,11 +3387,26 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
                     return Err(anyhow::anyhow!("not a git-filter client"));
                 }
                 first = false;
+                // Capability negotiation is by intersection: echo
+                // back only what the client asked for. Modern git
+                // (2.51) sends NO capability lines (commands arrive
+                // per file); older peers that ask get an answer.
+                if norm == b"capability=clean" {
+                    want_clean = true;
+                } else if norm == b"capability=smudge" {
+                    want_smudge = true;
+                }
             }
         }
     }
-    for cap in ["git-filter-server", "version=2", "capability=clean", "capability=smudge"] {
+    for cap in ["git-filter-server", "version=2"] {
         output.write_all(&pkt_key_line(cap))?;
+    }
+    if want_clean {
+        output.write_all(&pkt_key_line("capability=clean"))?;
+    }
+    if want_smudge {
+        output.write_all(&pkt_key_line("capability=smudge"))?;
     }
     output.write_all(b"0000")?;
     output.flush()?;
