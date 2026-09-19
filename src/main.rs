@@ -4646,18 +4646,10 @@ fn install_hooks_for_repo(repo: &Path) -> Result<()> {
     if !pre_rebase_path.exists() {
         write_hook_atomically(&pre_rebase_path, &render_hook(PRE_REBASE_HOOK, None))?;
     }
-    // ADDED 2026-09-19 (v0.113.13): refresh STALE warden-owned
-    // hooks. Repo-local hooks were install-once; a template change
-    // (here: the pre-commit driver probe accepting
-    // `filter.dracon.process`) would otherwise leave every repo
-    // with a hook that blocks all commits post-migration. Only
-    // warden-owned hooks (marker) and pre-marker legacy warden
-    // hooks are touched — user hooks are never overwritten. The render uses the same None
-    // foreign-hook argument as the initial install, so chaining
-    // behavior is unchanged; only template drift is repaired.
-    refresh_warden_hook_if_stale(&pre_commit_path, PRE_COMMIT_HOOK)?;
-    refresh_warden_hook_if_stale(&pre_push_path, PRE_PUSH_HOOK)?;
-    refresh_warden_hook_if_stale(&pre_rebase_path, PRE_REBASE_HOOK)?;
+    // NOTE (v0.113.13): stale-refresh of warden-owned hooks
+    // happens at the top of this function (before the
+    // all-present early-return and regardless of
+    // core.hooksPath), so no second refresh is needed here.
 
     #[cfg(unix)]
     {
