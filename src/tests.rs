@@ -3343,7 +3343,7 @@ protected_patterns = ["secrets.json"]
 
     /// Invoke a hook script with positional args, isolated from the
     /// operator's global/system git config (determinism for the
-    /// `git config filter.dracon.clean` probe in the pre-commit hook).
+    /// `filter.dracon.process|clean` probe in the pre-commit hook).
     /// Returns (status, stdout+stderr concatenated) — the pre-commit
     /// hook prints to stdout, the pre-rebase hook to stderr.
     fn run_hook_args(
@@ -4126,6 +4126,12 @@ protected_patterns = ["secrets.json"]
             }
             assert_eq!(pkts[i], Flush);
             i += 1;
+            // Success responses carry the trailing empty
+            // status list (second flush per the protocol).
+            if expect_body.is_some() {
+                assert_eq!(pkts[i], Flush);
+                i += 1;
+            }
         }
     }
 

@@ -3537,10 +3537,18 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     fdbg!("transform done in {:?}", t1.elapsed());
     match r {
         Ok(bytes) => {
+            // Response shape per gitattributes(5) long-running
+            // filter: status list + flush, content + flush,
+            // SECOND (here empty) list + flush. Omitting the
+            // trailing empty list desyncs git: it keeps reading
+            // for the final terminator (observed 2026-09-19:
+            // add stalls after the first file).
             output.write_all(&pkt_key_line("status=success"))?;
+            output.write_all(b"0000")?;
             for chunk in bytes.chunks(PKT_MAX_PAYLOAD) {
                 output.write_all(&pkt_encode(chunk))?;
             }
+            output.write_all(b"0000")?;
             output.write_all(b"0000")?;
         }
         Err(e) => {
@@ -3967,6 +3975,7 @@ MANAGED=0
 # `git config` succeeds in every repo on the machine and the
 # non-managed early-exit below would be dead code (verified
 # 2026-07-26: scratch repo blocked without --local).
+git -C "$REPO" config --local filter.dracon.process >/dev/null 2>&1 && MANAGED=1
 git -C "$REPO" config --local filter.dracon.clean >/dev/null 2>&1 && MANAGED=1
 grep -q "filter=dracon" "$REPO/.gitattributes" 2>/dev/null && MANAGED=1
 [ -d "$REPO/.dracon" ] && MANAGED=1
@@ -3979,14 +3988,16 @@ if ! grep -q "filter=dracon" "$REPO/.gitattributes" 2>/dev/null; then
     exit 1
 fi
 
-# Check git config has filter.dracon.clean set — MUST be --local:
+# Check git config has a dracon filter driver set — MUST be --local:
 # the operator's GLOBAL ~/.gitconfig also carries filter.dracon.*
 # (this machine included), so a plain `git config` read succeeds in
 # EVERY repo and the check would be dead code — exactly the drift
 # class the MANAGED probe above guards against. `once` writes the
 # keys locally (ensure_repo_filter_config), so validate the same
-# scope. FIXED 2026-08-11 (audit LOW).
-if ! git -C "$REPO" config --local filter.dracon.clean >/dev/null 2>&1; then
+# scope. FIXED 2026-08-11 (audit LOW). CHANGED 2026-09-19
+# (v0.113.13): the process driver replaces per-file clean/smudge —
+# accept either key (legacy clean during migration).
+if ! git -C "$REPO" config --local filter.dracon.process >/dev/null 2>&1 && ! git -C "$REPO" config --local filter.dracon.clean >/dev/null 2>&1; then
     echo "❌ Warden filter not configured in local git config."
     echo "   Run: dracon-warden once $REPO"
     exit 1
