@@ -3599,18 +3599,21 @@ protected_patterns = ["secrets.json"]
         let user = td.path().join("user");
         fs::write(&user, "#!/bin/sh\nexit 0\n").expect("write user");
         assert!(!refresh_warden_hook_if_stale(&user, PRE_COMMIT_HOOK).expect("refresh user"));
-        assert_eq!(fs::read_to_string(&user).expect("read user"), "#!/bin/sh\nexit 0\n");
+        assert_eq!(
+            fs::read_to_string(&user).expect("read user"),
+            "#!/bin/sh\nexit 0\n"
+        );
         // Missing path is a no-op.
-        assert!(!refresh_warden_hook_if_stale(
-            &td.path().join("missing"),
-            PRE_COMMIT_HOOK
-        )
-        .expect("refresh missing"));
+        assert!(
+            !refresh_warden_hook_if_stale(&td.path().join("missing"), PRE_COMMIT_HOOK)
+                .expect("refresh missing")
+        );
     }
 
     #[test]
     fn pre_commit_wrapper_skips_legacy_warden_local_hook() {
-        let (td, hook_path) = make_repo_with_hook("chain_commit_legacy", "pre-commit", PRE_COMMIT_HOOK);
+        let (td, hook_path) =
+            make_repo_with_hook("chain_commit_legacy", "pre-commit", PRE_COMMIT_HOOK);
         let repo = td.path();
         run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
 
@@ -3632,21 +3635,23 @@ protected_patterns = ["secrets.json"]
 
     #[test]
     fn pre_commit_wrapper_still_chains_user_local_hook() {
-        let (td, hook_path) = make_repo_with_hook("chain_commit_user", "pre-commit", PRE_COMMIT_HOOK);
+        let (td, hook_path) =
+            make_repo_with_hook("chain_commit_user", "pre-commit", PRE_COMMIT_HOOK);
         let repo = td.path();
         run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
 
         // Genuine user hook (no warden signature) must still chain (H-10).
         let local_hook = repo.join(".git/hooks/pre-commit");
-        fs::write(
-            &local_hook,
-            "#!/bin/sh\necho USER-RAN\nexit 3\n",
-        )
-        .expect("write user local hook");
+        fs::write(&local_hook, "#!/bin/sh\necho USER-RAN\nexit 3\n")
+            .expect("write user local hook");
         chmod_755(&local_hook);
 
         let (status, text) = run_hook_args(repo, &hook_path, &[]);
-        assert_eq!(status.code(), Some(3), "user hook failure must propagate: {text}");
+        assert_eq!(
+            status.code(),
+            Some(3),
+            "user hook failure must propagate: {text}"
+        );
         assert!(text.contains("USER-RAN"), "user hook must have run: {text}");
     }
 
