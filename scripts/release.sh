@@ -338,7 +338,9 @@ dracon-warden keygen
 
 # Per repo you want to encrypt: harden it — writes the managed
 # .gitattributes filter=dracon block + .gitignore block, configures
-# filter.dracon.clean/smudge, and scrubs plaintext markers.
+# filter.dracon.process (long-running filter driver; legacy
+# clean/smudge keys are migrated away automatically), and scrubs
+# plaintext markers.
 dracon-warden once <repo>
 \`\`\`
 
