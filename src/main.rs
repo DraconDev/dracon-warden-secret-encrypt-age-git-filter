@@ -3720,12 +3720,13 @@ fn is_legacy_warden_hook(path: &Path) -> bool {
 /// Missing paths and foreign (user) hooks are left alone — the
 /// caller handles fresh installs; this only repairs drift.
 /// Pre-marker legacy warden hooks are also replaced (they predate
-/// chaining, so wholesale replacement loses nothing).
+/// chaining, so wholesale replacement loses nothing). A recorded
+/// foreign chain is preserved via `rendered_foreign_hook`.
 fn refresh_warden_hook_if_stale(path: &Path, template: &str) -> Result<bool> {
     if !path.exists() || (!is_warden_hook(path) && !is_legacy_warden_hook(path)) {
         return Ok(false);
     }
-    let rendered = render_hook(template, None);
+    let rendered = render_hook(template, rendered_foreign_hook(path).as_deref());
     let current = fs::read_to_string(path)
         .with_context(|| format!("failed to read hook {}", path.display()))?;
     if current == rendered {
@@ -3733,6 +3734,29 @@ fn refresh_warden_hook_if_stale(path: &Path, template: &str) -> Result<bool> {
     }
     write_hook_atomically(path, &rendered)?;
     Ok(true)
+}
+
+/// Refresh stale warden-owned hooks in the GLOBAL hooks dir
+/// (`~/.config/git/hooks`, v0.113.13). The fleet runs with a
+/// global `core.hooksPath`, so the global pre-commit wrapper's
+/// driver probe gates EVERY commit — leaving it stale blocks the
+/// whole fleet post-migration. Pure refresh: never installs into
+/// an empty dir (fresh installs stay behind `setup-hooks`).
+/// Returns true when any hook was refreshed.
+fn refresh_global_hooks_if_stale() -> Result<bool> {
+    let dir = hook_dir(HookMode::Global, None)?;
+    if !dir.exists() {
+        return Ok(false);
+    }
+    let mut refreshed = false;
+    for (name, template) in [
+        ("pre-commit", PRE_COMMIT_HOOK),
+        ("pre-push", PRE_PUSH_HOOK),
+        ("pre-rebase", PRE_REBASE_HOOK),
+    ] {
+        refreshed |= refresh_warden_hook_if_stale(&dir.join(name), template)?;
+    }
+    Ok(refreshed)
 }
 
 /// Choose a non-destructive backup path for a foreign global hook.
@@ -4578,6 +4602,15 @@ fn install_hooks_for_repo(repo: &Path) -> Result<()> {
     }
 
     let effective_hooks = effective_hooks_dir(repo)?;
+    // ADDED 2026-09-19 (v0.113.13): refresh stale warden-owned
+    // LOCAL hooks BEFORE the guards below. The local hooks execute
+    // even when a global core.hooksPath is active (the global
+    // wrapper chains $LOCAL_HOOK), so skipping them here would
+    // leave migrated repos with commit-blocking stale hooks. This
+    // is pure refresh (never fresh install, never user hooks).
+    refresh_warden_hook_if_stale(&local_hooks_dir.join("pre-commit"), PRE_COMMIT_HOOK)?;
+    refresh_warden_hook_if_stale(&local_hooks_dir.join("pre-push"), PRE_PUSH_HOOK)?;
+    refresh_warden_hook_if_stale(&local_hooks_dir.join("pre-rebase"), PRE_REBASE_HOOK)?;
     if !same_path(&effective_hooks, &local_hooks_dir) {
         // Global or repo-local core.hooksPath is active.  Do not seed files
         // into an inactive directory; the effective wrapper is responsible
