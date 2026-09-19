@@ -4318,4 +4318,133 @@ protected_patterns = ["secrets.json"]
         assert!(r.is_err(), "bad handshake must fail closed");
         assert!(output.is_empty(), "no response after bad handshake");
     }
+
+    fn git_batch_fixture() -> tempfile::TempDir {
+        // Fixture repo: tracked.txt committed as v1, worktree at v2
+        // (unstaged), plus an untracked file. The batch must read
+        // the INDEX (v1), not the worktree.
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let run = |args: &[&str]| {
+            let st = std::process::Command::new("git")
+                .current_dir(dir.path())
+                .args(args)
+                .status()
+                .expect("spawn git");
+            assert!(st.success(), "git {:?}", args);
+        };
+        run(&["init", "-q", "-b", "main"]);
+        run(&["config", "user.email", "t@t"]);
+        run(&["config", "user.name", "t"]);
+        std::fs::write(dir.path().join("tracked.txt"), b"v1\n").expect("write");
+        run(&["add", "tracked.txt"]);
+        run(&["commit", "-qm", "v1"]);
+        std::fs::write(dir.path().join("tracked.txt"), b"v2\n").expect("write");
+        std::fs::write(dir.path().join("untracked.txt"), b"u\n").expect("write");
+        dir
+    }
+
+    #[test]
+    fn index_batch_returns_staged_blob_not_worktree() {
+        // The batch reads `:0:path` (staged), exactly like the
+        // per-file spawn it replaces. Untracked/missing paths yield
+        // None (fresh encryption downstream).
+        let dir = git_batch_fixture();
+        let mut b = crate::IndexBatch::with_cwd(dir.path().to_path_buf());
+        assert_eq!(
+            b.lookup("tracked.txt", 1024 * 1024),
+            Some(b"v1\n".to_vec()),
+            "must return the staged blob, not the worktree"
+        );
+        assert_eq!(b.lookup("untracked.txt", 1024 * 1024), None);
+        assert_eq!(b.lookup("nope.txt", 1024 * 1024), None);
+    }
+
+    #[test]
+    fn index_batch_lock_skips_and_recovers() {
+        // index.lock = our caller is rewriting the index mid-run:
+        // skip the lookup (fresh encryption) rather than race it,
+        // and serve again once the lock is gone.
+        let dir = git_batch_fixture();
+        let mut b = crate::IndexBatch::with_cwd(dir.path().to_path_buf());
+        assert!(b.lookup("tracked.txt", 1024 * 1024).is_some());
+        std::fs::write(dir.path().join(".git/index.lock"), b"").expect("lock");
+        assert_eq!(
+            b.lookup("tracked.txt", 1024 * 1024),
+            None,
+            "locked index must skip, not read torn state"
+        );
+        std::fs::remove_file(dir.path().join(".git/index.lock")).expect("unlock");
+        assert_eq!(
+            b.lookup("tracked.txt", 1024 * 1024),
+            Some(b"v1\n".to_vec()),
+            "batch must serve again after the lock lifts"
+        );
+    }
+
+    #[test]
+    fn index_batch_respawns_after_stage() {
+        // The batch snapshots the index at spawn; staging new
+        // content moves the index mtime, so the next lookup must
+        // see the NEW blob (a stuck snapshot would serve stale v1
+        // forever and clean_reusing_index would pin dead ciphertext).
+        let dir = git_batch_fixture();
+        let mut b = crate::IndexBatch::with_cwd(dir.path().to_path_buf());
+        assert_eq!(b.lookup("tracked.txt", 1024 * 1024), Some(b"v1\n".to_vec()));
+        let st = std::process::Command::new("git")
+            .current_dir(dir.path())
+            .args(["add", "tracked.txt"])
+            .status()
+            .expect("spawn git");
+        assert!(st.success());
+        assert_eq!(
+            b.lookup("tracked.txt", 1024 * 1024),
+            Some(b"v2\n".to_vec()),
+            "must observe the restaged blob after the index moves"
+        );
+    }
+
+    #[test]
+    fn filter_transform_batch_matches_oneshot() {
+        // Same policy output on both lookup paths for changed
+        // content (the batch only changes HOW the staged blob is
+        // fetched, never what clean computes).
+        let dir = git_batch_fixture();
+        let warden = crate::DraconWarden::new().expect("create warden");
+        let input = b"plain prose, no secrets".to_vec();
+        let mut batch = crate::IndexLookup::Batch(crate::IndexBatch::with_cwd(
+            dir.path().to_path_buf(),
+        ));
+        // Prime the batch so the equivalence run exercises a live
+        // session (not lazy resolution):
+        let primed = crate::filter_transform_bytes(
+            &warden,
+            true,
+            Some("untracked.txt"),
+            input.clone(),
+            1024 * 1024,
+            &mut batch,
+        )
+        .expect("prime batch");
+        assert_eq!(primed, input);
+        let via_batch = crate::filter_transform_bytes(
+            &warden,
+            true,
+            Some("tracked.txt"),
+            input.clone(),
+            1024 * 1024,
+            &mut batch,
+        )
+        .expect("batch transform");
+        let via_oneshot = crate::filter_transform_bytes(
+            &warden,
+            true,
+            Some("tracked.txt"),
+            input.clone(),
+            1024 * 1024,
+            &mut crate::IndexLookup::OneShot,
+        )
+        .expect("oneshot transform");
+        assert_eq!(via_batch, via_oneshot);
+        assert_eq!(via_batch, input, "unprotected content passes through");
+    }
 }
