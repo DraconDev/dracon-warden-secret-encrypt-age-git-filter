@@ -3487,49 +3487,47 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     let Some(command) = command else {
         return Err(anyhow::anyhow!("request without command"));
     };
-    {
-        let mut content = Vec::new();
-        loop {
-            match pkt_read(input)? {
-                None => return Err(anyhow::anyhow!("EOF mid-content")),
-                Some(Pkt::Delim) => continue,
-                Some(Pkt::Flush) => break,
-                Some(Pkt::Data(chunk)) => content.extend_from_slice(&chunk),
-            }
+    let mut content = Vec::new();
+    loop {
+        match pkt_read(input)? {
+            None => return Err(anyhow::anyhow!("EOF mid-content")),
+            Some(Pkt::Delim) => continue,
+            Some(Pkt::Flush) => break,
+            Some(Pkt::Data(chunk)) => content.extend_from_slice(&chunk),
         }
-        // Only clean/smudge were advertised; anything else (e.g.
-        // list_available_blobs) fails closed per file — the
-        // driver stays up to serve the rest.
-        let direction = match command {
-            "clean" => true,
-            "smudge" => false,
-            other => {
-                eprintln!("dracon-warden: filter-process unsupported command '{}'", other);
-                output.write_all(&pkt_key_line("status=error"))?;
-                output.write_all(b"0000")?;
-                output.flush()?;
-                return Ok(());
-            }
-        };
-        match filter_transform_bytes(warden, direction, pathname.as_deref(), content, limit) {
-            Ok(bytes) => {
-                output.write_all(&pkt_key_line("status=success"))?;
-                for chunk in bytes.chunks(PKT_MAX_PAYLOAD) {
-                    output.write_all(&pkt_encode(chunk))?;
-                }
-                output.write_all(b"0000")?;
-            }
-            Err(e) => {
-                // Fail closed: git aborts the diff/add rather than
-                // committing unfiltered content.
-                eprintln!("dracon-warden: filter-process transform failed: {}", e);
-                output.write_all(&pkt_key_line("status=error"))?;
-                output.write_all(b"0000")?;
-            }
-        }
-        output.flush()?;
     }
-}
+    // Only clean/smudge were advertised; anything else (e.g.
+    // list_available_blobs) fails closed per file — the
+    // driver stays up to serve the rest.
+    let direction = match command {
+        "clean" => true,
+        "smudge" => false,
+        other => {
+            eprintln!("dracon-warden: filter-process unsupported command '{}'", other);
+            output.write_all(&pkt_key_line("status=error"))?;
+            output.write_all(b"0000")?;
+            output.flush()?;
+            return Ok(());
+        }
+    };
+    match filter_transform_bytes(warden, direction, pathname, content, limit) {
+        Ok(bytes) => {
+            output.write_all(&pkt_key_line("status=success"))?;
+            for chunk in bytes.chunks(PKT_MAX_PAYLOAD) {
+                output.write_all(&pkt_encode(chunk))?;
+            }
+            output.write_all(b"0000")?;
+        }
+        Err(e) => {
+            // Fail closed: git aborts the diff/add rather than
+            // committing unfiltered content.
+            eprintln!("dracon-warden: filter-process transform failed: {}", e);
+            output.write_all(&pkt_key_line("status=error"))?;
+            output.write_all(b"0000")?;
+        }
+    }
+    output.flush()?;
+    Ok(())
 
 /// Git merge driver implementation (`dracon-warden merge %O %A %B`).
 ///
