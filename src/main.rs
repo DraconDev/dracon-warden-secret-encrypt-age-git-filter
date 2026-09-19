@@ -3698,6 +3698,43 @@ fn is_warden_hook(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Pre-marker warden hooks (v0.113.13 migration): the ancient
+/// `init.templateDir` generation carries "Installed by:
+/// dracon-warden setup-hooks" but no marker and demands
+/// `filter.dracon.clean` — it would block every commit after the
+/// process-driver migration. Unambiguously warden's (that string
+/// only exists in warden's own old output) and chain-free (the
+/// gen-1 template never chained), so wholesale replacement with
+/// the current template is safe.
+fn is_legacy_warden_hook(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .map(|content| {
+            !content.lines().any(|line| line == WARDEN_HOOK_MARKER)
+                && content.contains("Installed by: dracon-warden setup-hooks")
+        })
+        .unwrap_or(false)
+}
+
+/// Rewrite a warden-owned hook when its content drifted from the
+/// current template (v0.113.13). Returns true when refreshed.
+/// Missing paths and foreign (user) hooks are left alone — the
+/// caller handles fresh installs; this only repairs drift.
+/// Pre-marker legacy warden hooks are also replaced (they predate
+/// chaining, so wholesale replacement loses nothing).
+fn refresh_warden_hook_if_stale(path: &Path, template: &str) -> Result<bool> {
+    if !path.exists() || (!is_warden_hook(path) && !is_legacy_warden_hook(path)) {
+        return Ok(false);
+    }
+    let rendered = render_hook(template, None);
+    let current = fs::read_to_string(path)
+        .with_context(|| format!("failed to read hook {}", path.display()))?;
+    if current == rendered {
+        return Ok(false);
+    }
+    write_hook_atomically(path, &rendered)?;
+    Ok(true)
+}
+
 /// Choose a non-destructive backup path for a foreign global hook.
 fn next_foreign_hook_backup(path: &Path) -> Result<PathBuf> {
     let file_name = path
@@ -4576,6 +4613,18 @@ fn install_hooks_for_repo(repo: &Path) -> Result<()> {
     if !pre_rebase_path.exists() {
         write_hook_atomically(&pre_rebase_path, &render_hook(PRE_REBASE_HOOK, None))?;
     }
+    // ADDED 2026-09-19 (v0.113.13): refresh STALE warden-owned
+    // hooks. Repo-local hooks were install-once; a template change
+    // (here: the pre-commit driver probe accepting
+    // `filter.dracon.process`) would otherwise leave every repo
+    // with a hook that blocks all commits post-migration. Only
+    // warden-owned hooks (marker) and pre-marker legacy warden
+    // hooks are touched — user hooks are never overwritten. The render uses the same None
+    // foreign-hook argument as the initial install, so chaining
+    // behavior is unchanged; only template drift is repaired.
+    refresh_warden_hook_if_stale(&pre_commit_path, PRE_COMMIT_HOOK)?;
+    refresh_warden_hook_if_stale(&pre_push_path, PRE_PUSH_HOOK)?;
+    refresh_warden_hook_if_stale(&pre_rebase_path, PRE_REBASE_HOOK)?;
 
     #[cfg(unix)]
     {
