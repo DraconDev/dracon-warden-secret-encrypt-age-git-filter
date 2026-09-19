@@ -3516,6 +3516,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
             Some(Pkt::Data(chunk)) => content.extend_from_slice(&chunk),
         }
     }
+    fdbg!("content {} bytes in {:?}", content.len(), t0.elapsed());
     // Only clean/smudge were advertised; anything else (e.g.
     // list_available_blobs) fails closed per file — the
     // driver stays up to serve the rest.
@@ -3530,7 +3531,10 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
             return Ok(());
         }
     };
-    match filter_transform_bytes(warden, direction, pathname, content, limit) {
+    let t1 = std::time::Instant::now();
+    let r = filter_transform_bytes(warden, direction, pathname, content, limit);
+    fdbg!("transform done in {:?}", t1.elapsed());
+    match r {
         Ok(bytes) => {
             output.write_all(&pkt_key_line("status=success"))?;
             for chunk in bytes.chunks(PKT_MAX_PAYLOAD) {
