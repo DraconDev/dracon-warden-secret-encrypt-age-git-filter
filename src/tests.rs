@@ -4250,6 +4250,9 @@ protected_patterns = ["secrets.json"]
                 other => panic!("expected status, got {:?}", other),
             }
             i += 1;
+            // Status-list terminator precedes the content.
+            assert_eq!(pkts[i], Flush);
+            i += 1;
             if let Some(body) = expect_body {
                 let mut got = Vec::new();
                 while let Data(chunk) = &pkts[i] {
@@ -4257,14 +4260,15 @@ protected_patterns = ["secrets.json"]
                     i += 1;
                 }
                 assert_eq!(String::from_utf8_lossy(&got), body);
-            }
-            assert_eq!(pkts[i], Flush);
-            i += 1;
-            // Success responses carry the trailing empty
-            // status list (second flush per the protocol).
-            if expect_body.is_some() {
+                // Content terminator ...
                 assert_eq!(pkts[i], Flush);
                 i += 1;
+                // ... then the trailing empty status list.
+                assert_eq!(pkts[i], Flush);
+                i += 1;
+            } else {
+                // Error responses carry no content: the single
+                // flush above already terminated the status list.
             }
         }
     }
