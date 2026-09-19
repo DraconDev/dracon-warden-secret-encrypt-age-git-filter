@@ -3339,8 +3339,26 @@ fn pkt_key_line(s: &str) -> Vec<u8> {
 /// responses on stdout, exits 0 on clean EOF. Returns the process
 /// exit code (0 = clean EOF; 1 = handshake violation, I/O error,
 /// or config failure — all fail closed: git aborts the operation).
+/// Timestamped trace line for filter-process forensics, gated on
+/// `DRACON_FILTER_DEBUG=1` (stderr — git surfaces driver stderr on
+/// failure). Permanent: the driver is otherwise a black box when
+/// git reports "remote end hung up".
+macro_rules! fdbg {
+    ($($arg:tt)*) => {
+        if std::env::var("DRACON_FILTER_DEBUG").as_deref() == Ok("1") {
+            eprintln!("[filter-process {}] {}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis()).unwrap_or(0),
+                format!($($arg)*));
+        }
+    };
+}
+
 fn run_filter_process() -> i32 {
+    fdbg!("start");
     wire_managed_patterns_from_policy();
+    fdbg!("patterns wired");
     let limit = match configured_filter_limit() {
         Ok(l) => l,
         Err(e) => {
@@ -3357,6 +3375,7 @@ fn run_filter_process() -> i32 {
             return 1;
         }
     };
+    fdbg!("warden constructed");
     let mut input = std::io::BufReader::new(std::io::stdin());
     let mut output = std::io::BufWriter::new(std::io::stdout());
     if let Err(e) = filter_process_serve(&mut input, &mut output, &warden, limit) {
@@ -3428,7 +3447,9 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
             }
         }
     }
+    fdbg!("handshake done clean={} smudge={}", want_clean, want_smudge);
     if section.iter().any(|l| l.starts_with(b"command=")) {
+        fdbg!("phase-2 section was a request, serving directly");
         serve_one_request(input, output, warden, limit, &section)?;
     } else {
         if want_clean {
@@ -3485,6 +3506,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     let Some(command) = command else {
         return Err(anyhow::anyhow!("request without command"));
     };
+    fdbg!("request command={} pathname={:?}", command, pathname);
     let mut content = Vec::new();
     loop {
         match pkt_read(input)? {
