@@ -3507,6 +3507,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
         return Err(anyhow::anyhow!("request without command"));
     };
     fdbg!("request command={} pathname={:?}", command, pathname);
+    let t0 = std::time::Instant::now();
     let mut content = Vec::new();
     loop {
         match pkt_read(input)? {
