@@ -3395,6 +3395,38 @@ protected_patterns = ["secrets.json"]
     }
 
     #[test]
+    fn pre_push_hook_skips_legacy_warden_local_hook() {
+        // v0.113.13: a pre-marker legacy local hook lacks the
+        // tag-push corroboration fix and must not run via the
+        // global chain (it blocked the v0.113.13 tag push by
+        // re-scanning history from the empty tree).
+        let (td, hook_path) = make_repo_with_pre_push_hook("chain_push_legacy");
+        let repo = td.path();
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "c1"]);
+        let sha = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let local_hook = repo.join(".git/hooks/pre-push");
+        fs::write(
+            &local_hook,
+            "#!/bin/sh\n# Installed by: dracon-warden setup-hooks\necho LEGACY-RAN > \"$PWD/.git/legacy-push.log\"\nexit 1\n",
+        )
+        .expect("write legacy local hook");
+        chmod_755(&local_hook);
+
+        let (status, _stderr) = run_hook(repo, &hook_path, &sha, ZERO_SHA);
+        assert!(
+            !repo.join(".git/legacy-push.log").exists(),
+            "legacy warden hook must be skipped, not executed"
+        );
+        assert!(
+            status.success(),
+            "clean push passes with the legacy hook skipped"
+        );
+    }
+
+    #[test]
     fn pre_push_hook_chains_to_repo_local_hook() {
         let (td, hook_path) = make_repo_with_pre_push_hook("chain_push_ok");
         let repo = td.path();
