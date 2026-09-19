@@ -4411,9 +4411,8 @@ protected_patterns = ["secrets.json"]
         let dir = git_batch_fixture();
         let warden = crate::DraconWarden::new().expect("create warden");
         let input = b"plain prose, no secrets".to_vec();
-        let mut batch = crate::IndexLookup::Batch(crate::IndexBatch::with_cwd(
-            dir.path().to_path_buf(),
-        ));
+        let mut batch =
+            crate::IndexLookup::Batch(crate::IndexBatch::with_cwd(dir.path().to_path_buf()));
         // Prime the batch so the equivalence run exercises a live
         // session (not lazy resolution):
         let primed = crate::filter_transform_bytes(

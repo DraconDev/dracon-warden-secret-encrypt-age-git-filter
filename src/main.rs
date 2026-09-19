@@ -3323,11 +3323,7 @@ impl IndexBatch {
         let mtime = std::fs::metadata(dir.join("index"))
             .and_then(|m| m.modified())
             .ok();
-        if self
-            .live
-            .as_ref()
-            .is_some_and(|l| l.index_mtime != mtime)
-        {
+        if self.live.as_ref().is_some_and(|l| l.index_mtime != mtime) {
             fdbg!("index-batch: index moved, respawning");
             self.live = None;
         }
@@ -3338,12 +3334,9 @@ impl IndexBatch {
         // A dead-but-unreaped child accepts nothing: EPIPE here
         // means the batch is gone — drop it, go fresh, respawn
         // on the next file.
-        if std::io::Write::write_all(
-            &mut live.stdin,
-            format!(":0:{path}\n").as_bytes(),
-        )
-        .and_then(|()| std::io::Write::flush(&mut live.stdin))
-        .is_err()
+        if std::io::Write::write_all(&mut live.stdin, format!(":0:{path}\n").as_bytes())
+            .and_then(|()| std::io::Write::flush(&mut live.stdin))
+            .is_err()
         {
             fdbg!("index-batch: query write failed, dropping batch");
             self.live = None;
@@ -3368,11 +3361,7 @@ impl IndexBatch {
     /// Spawn the batch child. `false` = could not spawn (the next
     /// file retries; a missing git binary fails every file fast at
     /// one spawn attempt each — bounded and visible in debug logs).
-    fn spawn(
-        &mut self,
-        dir: &std::path::Path,
-        mtime: Option<std::time::SystemTime>,
-    ) -> bool {
+    fn spawn(&mut self, dir: &std::path::Path, mtime: Option<std::time::SystemTime>) -> bool {
         let mut cmd = ProcessCommand::new("git");
         if let Some(cwd) = &self.cwd {
             cmd.current_dir(cwd);
@@ -3420,7 +3409,10 @@ fn resolve_gitdir(cwd: &Option<std::path::PathBuf>) -> Option<std::path::PathBuf
     if let Some(d) = cwd {
         cmd.current_dir(d);
     }
-    let out = cmd.args(["rev-parse", "--absolute-git-dir"]).output().ok()?;
+    let out = cmd
+        .args(["rev-parse", "--absolute-git-dir"])
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
