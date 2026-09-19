@@ -3175,14 +3175,54 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
     // via the block above.
 
     let warden = DraconWarden::new()?;
-    let output = if is_clean {
-        let indexed = path.and_then(|p| indexed_filter_blob(p, limit));
-        warden.clean_with_index(&input, path, indexed.as_deref())?
-    } else {
-        warden.smudge(&input, path)?
-    };
+    let output = filter_transform_bytes(&warden, is_clean, path, input, limit)?;
     std::io::stdout().write_all(&output)?;
     Ok(())
+}
+
+/// Pure byte transform shared by the one-shot filter entry points
+/// and the long-running `filter-process` driver (v0.113.13). Guards
+/// mirror `run_filter` exactly: clean direction fails closed
+/// (oversized / absolute / `..` → Err, so git aborts rather than
+/// committing plaintext); smudge direction passes through
+/// (oversized input echoes — the caller streams the remainder in
+/// one-shot mode, while packet mode already holds the whole file).
+fn filter_transform_bytes(
+    warden: &DraconWarden,
+    is_clean: bool,
+    path: Option<&str>,
+    input: Vec<u8>,
+    limit: usize,
+) -> Result<Vec<u8>> {
+    if let Some(reason) = filter_clean_refusal_with_limit(is_clean, input.len(), path, limit) {
+        eprintln!("{}", reason);
+        return Err(anyhow::anyhow!("{}", reason));
+    }
+    if input.len() > limit {
+        // Smudge-only passthrough (clean never reaches here — the
+        // refusal above fails it closed).
+        return Ok(input);
+    }
+    if let Some(p) = path {
+        let p_buf = std::path::PathBuf::from(p);
+        if p_buf.is_absolute()
+            || p_buf
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            eprintln!(
+                "dracon-warden: refusing filter path '{}' (smudge passthrough)",
+                p
+            );
+            return Ok(input);
+        }
+    }
+    if is_clean {
+        let indexed = path.and_then(|p| indexed_filter_blob(p, limit));
+        Ok(warden.clean_with_index(&input, path, indexed.as_deref())?)
+    } else {
+        Ok(warden.smudge(&input, path)?)
+    }
 }
 
 /// Git merge driver implementation (`dracon-warden merge %O %A %B`).
