@@ -4036,7 +4036,18 @@ case "$GIT_COMMON_DIR" in
     *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
 esac
 LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-commit"
-if [ -x "$LOCAL_HOOK" ] && ! grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null; then
+# ADDED 2026-09-19 (v0.113.13): never chain a PRE-MARKER legacy
+# warden hook ("Installed by: dracon-warden setup-hooks" without
+# the v1 marker). That generation probes `filter.dracon.clean`
+# WITHOUT --local, so the machine-global key false-marks EVERY
+# repo as managed and blocks the commit; harden replaces legacy
+# hooks with the current template on its next pass, and this
+# wrapper's own checks below enforce the same policy meanwhile.
+# (User hooks — anything without warden's signature — still chain.)
+LOCAL_IS_WARDEN=0
+grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+grep -q 'Installed by: dracon-warden setup-hooks' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
     "$LOCAL_HOOK" "$@" || exit $?
 fi
 
@@ -4384,7 +4395,13 @@ case "$GIT_COMMON_DIR" in
     *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
 esac
 LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-rebase"
-if [ -x "$LOCAL_HOOK" ] && ! grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null; then
+# ADDED 2026-09-19 (v0.113.13): same legacy-warden skip as the
+# pre-commit wrapper — the pre-marker generation must never run
+# via the global chain (see comment there).
+LOCAL_IS_WARDEN=0
+grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+grep -q 'Installed by: dracon-warden setup-hooks' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
     "$LOCAL_HOOK" "$@" || exit $?
 fi
 
