@@ -307,6 +307,14 @@ enum Command {
         /// Optional path from git filter (%f)
         path: Option<String>,
     },
+    /// Git long-running filter process (`filter.dracon.process`).
+    /// Called by git, not for direct use. Speaks the
+    /// `git-filter-process` pkt-line protocol (handshake +
+    /// per-file clean/smudge over ONE process) so firehose-scale
+    /// diffs/adds stop paying per-file process-startup cost
+    /// (observed 2026-09-19: 4092-file `git diff` at 78s, almost
+    /// all of it spawning `filter-clean` once per file).
+    FilterProcess,
     /// Git merge driver (%O %A %B). Called by git via `merge.dracon.driver`,
     /// not for direct use.
     ///
@@ -2038,6 +2046,17 @@ async fn main() -> Result<()> {
         }
         Command::FilterSmudge { path } => {
             run_filter_with_timeout(false, "filter-smudge", path).await?;
+        }
+        // No wall-clock timeout: the process driver is long-lived
+        // BY DESIGN (git owns its lifecycle — spawns once per git
+        // command, kills it when done). A timeout here would abort
+        // mid-diff. Per-file work is the same bounded transform as
+        // the one-shot path.
+        Command::FilterProcess => {
+            let code = tokio::task::spawn_blocking(run_filter_process)
+                .await
+                .map_err(|e| anyhow::anyhow!("filter-process task panicked: {}", e))?;
+            std::process::exit(code);
         }
         Command::Merge {
             ancestor,
