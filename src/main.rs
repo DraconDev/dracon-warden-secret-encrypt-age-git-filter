@@ -3319,10 +3319,19 @@ fn pkt_read<R: std::io::Read>(r: &mut R) -> Result<Option<Pkt>> {
 }
 
 /// Split a `key=value` protocol line. Returns None for malformed lines.
+/// Git appends `\n` to protocol lines (observed git 2.51.2) — strip
+/// one trailing newline so both old and new peers parse.
 fn pkt_kv(line: &[u8]) -> Option<(&str, &str)> {
+    let line = line.strip_suffix(b"\n").unwrap_or(line);
     let s = std::str::from_utf8(line).ok()?;
     let (k, v) = s.split_once('=')?;
     Some((k, v))
+}
+
+/// Encode a protocol KEY line the way git sends them (trailing
+/// `\n`; observed git 2.51.2). Content packets stay raw.
+fn pkt_key_line(s: &str) -> Vec<u8> {
+    pkt_encode(format!("{}\n", s).as_bytes())
 }
 
 /// Long-running filter driver: one process serves every file in the
@@ -3371,7 +3380,8 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
             None => return Err(anyhow::anyhow!("EOF during handshake")),
             Some(Pkt::Flush) | Some(Pkt::Delim) => break,
             Some(Pkt::Data(line)) => {
-                if first && line != b"git-filter-client" {
+                let norm = line.strip_suffix(b"\n").unwrap_or(&line);
+                if first && norm != b"git-filter-client" {
                     return Err(anyhow::anyhow!("not a git-filter client"));
                 }
                 first = false;
@@ -3379,7 +3389,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
         }
     }
     for cap in ["git-filter-server", "version=2", "capability=clean", "capability=smudge"] {
-        output.write_all(&pkt_encode(cap.as_bytes()))?;
+        output.write_all(&pkt_key_line(cap))?;
     }
     output.write_all(b"0000")?;
     output.flush()?;
@@ -3420,7 +3430,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
             "smudge" => false,
             other => {
                 eprintln!("dracon-warden: filter-process unsupported command '{}'", other);
-                output.write_all(&pkt_encode(b"status=error"))?;
+                output.write_all(&pkt_key_line("status=error"))?;
                 output.write_all(b"0000")?;
                 output.flush()?;
                 continue;
@@ -3428,7 +3438,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
         };
         match filter_transform_bytes(warden, direction, pathname.as_deref(), content, limit) {
             Ok(bytes) => {
-                output.write_all(&pkt_encode(b"status=success"))?;
+                output.write_all(&pkt_key_line("status=success"))?;
                 for chunk in bytes.chunks(PKT_MAX_PAYLOAD) {
                     output.write_all(&pkt_encode(chunk))?;
                 }
@@ -3438,7 +3448,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
                 // Fail closed: git aborts the diff/add rather than
                 // committing unfiltered content.
                 eprintln!("dracon-warden: filter-process transform failed: {}", e);
-                output.write_all(&pkt_encode(b"status=error"))?;
+                output.write_all(&pkt_key_line("status=error"))?;
                 output.write_all(b"0000")?;
             }
         }

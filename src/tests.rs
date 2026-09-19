@@ -4104,11 +4104,12 @@ protected_patterns = ["secrets.json"]
         assert!(matches!(pkts[0], Data(_)));
         assert_eq!(pkts[4], Flush);
         // clean → success + content + flush; content identical.
+        // (Protocol key lines carry git's trailing `\n`.)
         let mut i = 5;
         for (expect_status, expect_body) in [
-            ("status=success", Some("plain prose, no secrets")),
-            ("status=success", Some("plain prose, no secrets")),
-            ("status=error", None),
+            ("status=success\n", Some("plain prose, no secrets")),
+            ("status=success\n", Some("plain prose, no secrets")),
+            ("status=error\n", None),
         ] {
             match &pkts[i] {
                 Data(s) => assert_eq!(String::from_utf8_lossy(s), expect_status),
