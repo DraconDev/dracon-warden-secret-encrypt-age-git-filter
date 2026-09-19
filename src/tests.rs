@@ -4026,31 +4026,31 @@ protected_patterns = ["secrets.json"]
         // Framing: payload → header+payload; empty → flush;
         // binary-safe; lengths parse back exactly.
         for payload in [&b""[..], &b"status=success"[..], &[0u8, 255, 10, 0, 13]] {
-            let enc = super::pkt_encode(payload);
+            let enc = crate::pkt_encode(payload);
             if payload.is_empty() {
                 assert_eq!(enc, b"0000");
                 continue;
             }
             let mut cur = std::io::Cursor::new(enc);
-            match super::pkt_read(&mut cur).expect("decode").expect("packet") {
-                super::Pkt::Data(back) => assert_eq!(back, payload),
+            match crate::pkt_read(&mut cur).expect("decode").expect("packet") {
+                crate::Pkt::Data(back) => assert_eq!(back, payload),
                 other => panic!("expected data, got {:?}", other),
             }
         }
         // Flush and delim markers decode distinctly.
         let mut cur = std::io::Cursor::new(b"0000".to_vec());
         assert_eq!(
-            super::pkt_read(&mut cur).expect("decode").expect("packet"),
-            super::Pkt::Flush
+            crate::pkt_read(&mut cur).expect("decode").expect("packet"),
+            crate::Pkt::Flush
         );
         let mut cur = std::io::Cursor::new(b"0001".to_vec());
         assert_eq!(
-            super::pkt_read(&mut cur).expect("decode").expect("packet"),
-            super::Pkt::Delim
+            crate::pkt_read(&mut cur).expect("decode").expect("packet"),
+            crate::Pkt::Delim
         );
         // Clean EOF at a boundary is Ok(None), not an error.
         let mut cur = std::io::Cursor::new(Vec::new());
-        assert!(super::pkt_read(&mut cur).expect("eof").is_none());
+        assert!(crate::pkt_read(&mut cur).expect("eof").is_none());
     }
 
     #[test]
@@ -4060,7 +4060,7 @@ protected_patterns = ["secrets.json"]
         // Unprotected content must pass through byte-identical
         // (fail-open content would be a leak; fail-closed refusal
         // would break every add).
-        let warden = super::DraconWarden::new().expect("create warden");
+        let warden = crate::DraconWarden::new().expect("create warden");
         let mut script = Vec::new();
         for line in [
             "git-filter-client",
@@ -4068,7 +4068,7 @@ protected_patterns = ["secrets.json"]
             "capability=clean",
             "capability=smudge",
         ] {
-            script.extend_from_slice(&super::pkt_encode(line.as_bytes()));
+            script.extend_from_slice(&crate::pkt_encode(line.as_bytes()));
         }
         script.extend_from_slice(b"0000");
         let bodies: &[(&str, &str, &[u8])] = &[
@@ -4077,29 +4077,29 @@ protected_patterns = ["secrets.json"]
             ("frobnicate", "x", b"zzz"),
         ];
         for (cmd, path, body) in bodies {
-            script.extend_from_slice(&super::pkt_encode(
+            script.extend_from_slice(&crate::pkt_encode(
                 format!("command={}", cmd).as_bytes(),
             ));
-            script.extend_from_slice(&super::pkt_encode(
+            script.extend_from_slice(&crate::pkt_encode(
                 format!("pathname={}", path).as_bytes(),
             ));
             script.extend_from_slice(b"0000");
             for chunk in body.chunks(5) {
-                script.extend_from_slice(&super::pkt_encode(chunk));
+                script.extend_from_slice(&crate::pkt_encode(chunk));
             }
             script.extend_from_slice(b"0000");
         }
         let mut input = std::io::Cursor::new(script);
         let mut output = Vec::new();
-        super::filter_process_serve(&mut input, &mut output, &warden, 64 * 1024 * 1024)
+        crate::filter_process_serve(&mut input, &mut output, &warden, 64 * 1024 * 1024)
             .expect("serve");
         // Decode the response stream back into packets.
         let mut cur = std::io::Cursor::new(output);
         let mut pkts = Vec::new();
-        while let Some(p) = super::pkt_read(&mut cur).expect("resp decode") {
+        while let Some(p) = crate::pkt_read(&mut cur).expect("resp decode") {
             pkts.push(p);
         }
-        use super::Pkt::*;
+        use crate::Pkt::*;
         // Handshake response: 4 data + flush.
         assert!(matches!(pkts[0], Data(_)));
         assert_eq!(pkts[4], Flush);
@@ -4132,12 +4132,12 @@ protected_patterns = ["secrets.json"]
     fn filter_process_rejects_bad_handshake() {
         // A client that does not identify as git-filter-client
         // must fail closed, not serve files.
-        let warden = super::DraconWarden::new().expect("create warden");
-        let mut script = super::pkt_encode(b"hello");
+        let warden = crate::DraconWarden::new().expect("create warden");
+        let mut script = crate::pkt_encode(b"hello");
         script.extend_from_slice(b"0000");
         let mut input = std::io::Cursor::new(script);
         let mut output = Vec::new();
-        let r = super::filter_process_serve(&mut input, &mut output, &warden, 1024);
+        let r = crate::filter_process_serve(&mut input, &mut output, &warden, 1024);
         assert!(r.is_err(), "bad handshake must fail closed");
         assert!(output.is_empty(), "no response after bad handshake");
     }
