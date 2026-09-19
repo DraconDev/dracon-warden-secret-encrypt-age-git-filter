@@ -365,8 +365,11 @@ fn test_filter_process_live_git_diff_and_add() {
     // 300 files: enough that per-file process startup would dominate
     // (and enough to prove the single driver serves every file).
     for i in 0..300 {
-        std::fs::write(repo.join(format!("file{:03}.txt", i)), format!("prose body {}\n", i))
-            .unwrap();
+        std::fs::write(
+            repo.join(format!("file{:03}.txt", i)),
+            format!("prose body {}\n", i),
+        )
+        .unwrap();
     }
     let add = git_cmd(&repo, &["add", "-A"]);
     assert!(

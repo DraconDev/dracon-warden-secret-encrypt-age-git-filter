@@ -1793,7 +1793,11 @@ mod tests {
                 .arg(gone)
                 .output()
                 .expect("get superseded");
-            assert!(!st.status.success(), "superseded key {} must be absent", gone);
+            assert!(
+                !st.status.success(),
+                "superseded key {} must be absent",
+                gone
+            );
         }
 
         let required = ProcessCommand::new("git")
@@ -4004,7 +4008,10 @@ protected_patterns = ["secrets.json"]
         assert_eq!(driver.trim(), "dracon-warden merge %O %A %B");
         // v0.113.13: single process driver; the superseded
         // per-file keys must be gone.
-        let process = git_in_output(repo, &["config", "--local", "--get", "filter.dracon.process"]);
+        let process = git_in_output(
+            repo,
+            &["config", "--local", "--get", "filter.dracon.process"],
+        );
         assert_eq!(process.trim(), "dracon-warden filter-process");
         for gone in ["filter.dracon.clean", "filter.dracon.smudge"] {
             let st = std::process::Command::new("git")
@@ -4013,7 +4020,11 @@ protected_patterns = ["secrets.json"]
                 .args(["config", "--local", "--get", gone])
                 .output()
                 .expect("git config --get");
-            assert!(!st.status.success(), "superseded key {} must be unset", gone);
+            assert!(
+                !st.status.success(),
+                "superseded key {} must be unset",
+                gone
+            );
         }
 
         // Second pass: already configured → no change.
@@ -4077,12 +4088,8 @@ protected_patterns = ["secrets.json"]
             ("frobnicate", "x", b"zzz"),
         ];
         for (cmd, path, body) in bodies {
-            script.extend_from_slice(&crate::pkt_encode(
-                format!("command={}", cmd).as_bytes(),
-            ));
-            script.extend_from_slice(&crate::pkt_encode(
-                format!("pathname={}", path).as_bytes(),
-            ));
+            script.extend_from_slice(&crate::pkt_encode(format!("command={}", cmd).as_bytes()));
+            script.extend_from_slice(&crate::pkt_encode(format!("pathname={}", path).as_bytes()));
             script.extend_from_slice(b"0000");
             for chunk in body.chunks(5) {
                 script.extend_from_slice(&crate::pkt_encode(chunk));

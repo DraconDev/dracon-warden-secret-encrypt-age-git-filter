@@ -1530,7 +1530,13 @@ fn ensure_repo_filter_config(repo: &Path) -> Result<bool> {
             .arg("--get")
             .arg(old_key)
             .output()
-            .with_context(|| format!("failed to read git config {} in {}", old_key, repo.display()))?;
+            .with_context(|| {
+                format!(
+                    "failed to read git config {} in {}",
+                    old_key,
+                    repo.display()
+                )
+            })?;
         if current.status.success() {
             let status = ProcessCommand::new("git")
                 .arg("-C")
@@ -1541,7 +1547,11 @@ fn ensure_repo_filter_config(repo: &Path) -> Result<bool> {
                 .arg(old_key)
                 .status()
                 .with_context(|| {
-                    format!("failed to unset git config {} in {}", old_key, repo.display())
+                    format!(
+                        "failed to unset git config {} in {}",
+                        old_key,
+                        repo.display()
+                    )
                 })?;
             if !status.success() {
                 return Err(anyhow::anyhow!(
@@ -3535,7 +3545,10 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
         "clean" => true,
         "smudge" => false,
         other => {
-            eprintln!("dracon-warden: filter-process unsupported command '{}'", other);
+            eprintln!(
+                "dracon-warden: filter-process unsupported command '{}'",
+                other
+            );
             output.write_all(&pkt_key_line("status=error"))?;
             output.write_all(b"0000")?;
             output.flush()?;
