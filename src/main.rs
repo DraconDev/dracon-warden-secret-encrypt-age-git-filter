@@ -3440,8 +3440,6 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
         output.write_all(b"0000")?;
         output.flush()?;
     }
-    output.write_all(b"0000")?;
-    output.flush()?;
     // --- Request loop until clean EOF.
     loop {
         let mut header: Vec<Vec<u8>> = Vec::new();
