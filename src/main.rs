@@ -4198,7 +4198,16 @@ case "$GIT_COMMON_DIR" in
     *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
 esac
 LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-push"
-if [ -x "$LOCAL_HOOK" ] && ! grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null; then
+# ADDED 2026-09-19 (v0.113.13): same legacy-warden skip as the
+# pre-commit wrapper — a pre-marker local hook lacks the tag-push
+# corroboration fix and re-scans history from the empty tree,
+# flagging grandfathered fixtures on every tag push (observed:
+# blocked the v0.113.13 tag push). Harden replaces it on its next
+# pass; this wrapper's own scan below already carries the fix.
+LOCAL_IS_WARDEN=0
+grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+grep -q 'Installed by: dracon-warden setup-hooks' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
     "$LOCAL_HOOK" "$@" < "$REFS_FILE" || exit $?
 fi
 
