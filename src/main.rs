@@ -1855,6 +1855,16 @@ where
     if pubkey_path.is_none() {
         eprintln!("⚠️ no public key found for repo publish; set DRACON_OWNER_PUBKEY to override");
     }
+    // ADDED 2026-09-19 (v0.113.13): refresh stale warden-owned
+    // GLOBAL hooks once per pass. The fleet runs with a global
+    // core.hooksPath whose pre-commit probe gates every commit;
+    // per-repo harden cannot leave it stale post-migration.
+    // Pure refresh (never fresh install) — no scope change.
+    match refresh_global_hooks_if_stale() {
+        Ok(true) => eprintln!("🪝 refreshed stale global warden hooks"),
+        Ok(false) => {}
+        Err(e) => eprintln!("⚠️ global hook refresh failed: {}", e),
+    }
 
     let mut changed = 0usize;
     for repo in repos {
