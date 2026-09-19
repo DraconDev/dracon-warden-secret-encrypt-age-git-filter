@@ -3498,8 +3498,9 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
             }
         }
         // Only clean/smudge were advertised; anything else (e.g.
-        // list_available_blobs) fails closed per file.
-        let direction = match command.as_str() {
+        // list_available_blobs) fails closed per file — the
+        // driver stays up to serve the rest.
+        let direction = match command {
             "clean" => true,
             "smudge" => false,
             other => {
@@ -3507,7 +3508,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
                 output.write_all(&pkt_key_line("status=error"))?;
                 output.write_all(b"0000")?;
                 output.flush()?;
-                continue;
+                return Ok(());
             }
         };
         match filter_transform_bytes(warden, direction, pathname.as_deref(), content, limit) {
