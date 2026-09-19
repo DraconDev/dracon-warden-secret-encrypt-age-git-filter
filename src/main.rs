@@ -3404,8 +3404,14 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
     // greeting — verified by byte capture). Answer with the
     // intersection we actually implement; `delay` is never
     // echoed (no deferred filtering). Then flush.
+    //
+    // A peer that advertised capabilities in phase 1 may skip
+    // straight to requests: if the section holds a `command=`
+    // line it IS the first request — serve it instead of
+    // answering negotiation.
     let mut want_clean = offered.iter().any(|l| l == b"capability=clean");
     let mut want_smudge = offered.iter().any(|l| l == b"capability=smudge");
+    let mut section: Vec<Vec<u8>> = Vec::new();
     loop {
         match pkt_read(input)? {
             None => return Ok(()),
@@ -3418,44 +3424,70 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
                 } else if norm == b"capability=smudge" {
                     want_smudge = true;
                 }
+                section.push(norm.to_vec());
             }
         }
     }
-    if want_clean {
-        output.write_all(&pkt_key_line("capability=clean"))?;
-    }
-    if want_smudge {
-        output.write_all(&pkt_key_line("capability=smudge"))?;
+    if section.iter().any(|l| l.starts_with(b"command=")) {
+        serve_one_request(input, output, warden, limit, &section)?;
+    } else {
+        if want_clean {
+            output.write_all(&pkt_key_line("capability=clean"))?;
+        }
+        if want_smudge {
+            output.write_all(&pkt_key_line("capability=smudge"))?;
+        }
+        output.write_all(b"0000")?;
+        output.flush()?;
     }
     output.write_all(b"0000")?;
     output.flush()?;
     // --- Request loop until clean EOF.
     loop {
-        let mut command: Option<String> = None;
-        let mut pathname: Option<String> = None;
+        let mut header: Vec<Vec<u8>> = Vec::new();
         loop {
             match pkt_read(input)? {
                 None => return Ok(()),
                 // Delim is a no-op separator (git 2.51 emits one
                 // around request sections); only flush ends a
-                // section. Skipping delims inside content is also
-                // safe — chunks concatenate identically.
+                // section.
                 Some(Pkt::Delim) => continue,
                 Some(Pkt::Flush) => break,
                 Some(Pkt::Data(line)) => {
-                    if let Some((k, v)) = pkt_kv(&line) {
-                        match k {
-                            "command" => command = Some(v.to_string()),
-                            "pathname" => pathname = Some(v.to_string()),
-                            _ => {}
-                        }
-                    }
+                    header.push(line.strip_suffix(b"\n").unwrap_or(&line).to_vec());
                 }
             }
         }
-        let Some(command) = command else {
-            return Err(anyhow::anyhow!("request without command"));
-        };
+        serve_one_request(input, output, warden, limit, &header)?;
+    }
+}
+
+/// Serve one request whose header lines were already collected:
+/// parse command/pathname, read content, transform, respond.
+/// Delims inside content are skipped (chunks concatenate
+/// identically); only flush ends the content section.
+fn serve_one_request<R: std::io::Read, W: std::io::Write>(
+    input: &mut R,
+    output: &mut W,
+    warden: &DraconWarden,
+    limit: usize,
+    header: &[Vec<u8>],
+) -> Result<()> {
+    let mut command: Option<&str> = None;
+    let mut pathname: Option<&str> = None;
+    for line in header {
+        if let Some((k, v)) = pkt_kv(line) {
+            match k {
+                "command" => command = Some(v),
+                "pathname" => pathname = Some(v),
+                _ => {}
+            }
+        }
+    }
+    let Some(command) = command else {
+        return Err(anyhow::anyhow!("request without command"));
+    };
+    {
         let mut content = Vec::new();
         loop {
             match pkt_read(input)? {
