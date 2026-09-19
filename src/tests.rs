@@ -4228,12 +4228,18 @@ protected_patterns = ["secrets.json"]
             pkts.push(p);
         }
         use crate::Pkt::*;
-        // Handshake response: 4 data + flush.
-        assert!(matches!(pkts[0], Data(_)));
-        assert_eq!(pkts[4], Flush);
-        // clean → success + content + flush; content identical.
+        // Handshake response: key lines until flush (shape varies
+        // with the handshake path — parse sequentially, never by
+        // fixed offset).
+        let mut i = 0;
+        while let Data(_) = &pkts[i] {
+            i += 1;
+        }
+        assert_eq!(pkts[i], Flush);
+        i += 1;
+        // clean/smudge → success + content + flush + trailing
+        // empty-list flush; error → status + flush only.
         // (Protocol key lines carry git's trailing `\n`.)
-        let mut i = 5;
         for (expect_status, expect_body) in [
             ("status=success\n", Some("plain prose, no secrets")),
             ("status=success\n", Some("plain prose, no secrets")),
@@ -4262,34 +4268,6 @@ protected_patterns = ["secrets.json"]
             }
         }
     }
-
-#[test]
-fn zz_pkt_dump() {
-    let warden = crate::DraconWarden::new().expect("create warden");
-    let mut script = Vec::new();
-    for line in ["git-filter-client", "version=2", "capability=clean"] {
-        script.extend_from_slice(&crate::pkt_encode(line.as_bytes()));
-    }
-    script.extend_from_slice(b"0000");
-    script.extend_from_slice(&crate::pkt_encode(b"command=clean"));
-    script.extend_from_slice(&crate::pkt_encode(b"pathname=x.md"));
-    script.extend_from_slice(b"0000");
-    script.extend_from_slice(&crate::pkt_encode(b"plain prose, no secrets"));
-    script.extend_from_slice(b"0000");
-    let mut input = std::io::Cursor::new(script);
-    let mut output = Vec::new();
-    crate::filter_process_serve(&mut input, &mut output, &warden, 64 * 1024 * 1024).expect("serve");
-    let mut cur = std::io::Cursor::new(&output);
-    let mut idx = 0;
-    while let Some(p) = crate::pkt_read(&mut cur).expect("decode") {
-        match p {
-            crate::Pkt::Data(d) => println!("{}: Data({:?})", idx, String::from_utf8_lossy(&d)),
-            crate::Pkt::Flush => println!("{}: Flush", idx),
-            crate::Pkt::Delim => println!("{}: Delim", idx),
-        }
-        idx += 1;
-    }
-}
 
     #[test]
     fn filter_process_rejects_bad_handshake() {
