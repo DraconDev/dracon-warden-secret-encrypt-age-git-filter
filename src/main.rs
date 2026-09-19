@@ -3374,23 +3374,45 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
 ) -> Result<()> {
     // --- Handshake: expect `git-filter-client` first, then
     // capabilities until flush. Anything else is a violation.
+    // Phase 1: client greeting (`git-filter-client`, version,
+    // flush). Some peers append capability lines here; record
+    // them but answer in phase 2.
     let mut first = true;
-    let mut want_clean = false;
-    let mut want_smudge = false;
+    let mut offered = Vec::new();
     loop {
         match pkt_read(input)? {
             None => return Err(anyhow::anyhow!("EOF during handshake")),
-            Some(Pkt::Flush) | Some(Pkt::Delim) => break,
+            Some(Pkt::Delim) => continue,
+            Some(Pkt::Flush) => break,
             Some(Pkt::Data(line)) => {
                 let norm = line.strip_suffix(b"\n").unwrap_or(&line);
                 if first && norm != b"git-filter-client" {
                     return Err(anyhow::anyhow!("not a git-filter client"));
                 }
                 first = false;
-                // Capability negotiation is by intersection: echo
-                // back only what the client asked for. Modern git
-                // (2.51) sends NO capability lines (commands arrive
-                // per file); older peers that ask get an answer.
+                offered.push(norm.to_vec());
+            }
+        }
+    }
+    for cap in ["git-filter-server", "version=2"] {
+        output.write_all(&pkt_key_line(cap))?;
+    }
+    output.write_all(b"0000")?;
+    output.flush()?;
+    // Phase 2: the client sends its capability list (modern git
+    // 2.51 sends `clean/smudge/delay` HERE, after reading the
+    // greeting — verified by byte capture). Answer with the
+    // intersection we actually implement; `delay` is never
+    // echoed (no deferred filtering). Then flush.
+    let mut want_clean = offered.iter().any(|l| l == b"capability=clean");
+    let mut want_smudge = offered.iter().any(|l| l == b"capability=smudge");
+    loop {
+        match pkt_read(input)? {
+            None => return Ok(()),
+            Some(Pkt::Delim) => continue,
+            Some(Pkt::Flush) => break,
+            Some(Pkt::Data(line)) => {
+                let norm = line.strip_suffix(b"\n").unwrap_or(&line);
                 if norm == b"capability=clean" {
                     want_clean = true;
                 } else if norm == b"capability=smudge" {
@@ -3398,9 +3420,6 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
                 }
             }
         }
-    }
-    for cap in ["git-filter-server", "version=2"] {
-        output.write_all(&pkt_key_line(cap))?;
     }
     if want_clean {
         output.write_all(&pkt_key_line("capability=clean"))?;
