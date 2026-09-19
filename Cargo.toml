@@ -1,6 +1,6 @@
 [package]
 name = "dracon-warden"
-version = "0.113.12"
+version = "0.113.13"
 edition = "2021"
 license = "AGPL-3.0-only"
 description = "Git filter encryption and repository hardening for secrets at rest"

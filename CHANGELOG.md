@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.113.13] - 2026-09-19
+
+### Added
+
+- Long-running filter process driver (`dracon-warden filter-process`, `filter.dracon.process`): one warden process serves all blobs of a git command over the pkt-line process protocol instead of one process per file. Fixes multi-minute `git diff`/`git add` stalls on firehose repos (78s `git diff` on 4k files → ~2s). Handshake (two-phase, `delay` declined), clean fail-closed / smudge passthrough via the shared `filter_transform_bytes` path, per-request size cap, stderr-gated `DRACON_FILTER_DEBUG` tracing.
+- Repo harden migrates `filter.dracon.clean/smudge` to `filter.dracon.process` (legacy keys unset only after the process key lands) and refreshes stale warden-owned hooks — including pre-marker legacy hooks — in both the repo-local dir (even under a global `core.hooksPath`, via the wrapper chain) and the global hooks dir once per pass. User hooks are never touched; a recorded foreign chain is preserved.
+
+### Fixed
+
+- Filter-process response now ends with the trailing empty key=value list the protocol requires; without it git stalls after the first file (both sides left reading).
+- Pre-commit hook probe accepts `filter.dracon.process` (legacy `clean` still accepted during migration).
+- Global pre-commit/pre-rebase wrappers no longer chain pre-marker legacy warden hooks: that generation's non-`--local` clean probe false-marked every repo as managed and blocked commits/rebases (broke 10 dracon-sync tests; would have blocked the fleet post-migration). Genuine user hooks still chain (H-10 guarantee intact).
+- Serve-response unit test parses the packet stream sequentially instead of by fixed offset (handshake shape varies with the handshake path).
 ## [0.113.12] - 2026-09-17
 
 ### Fixed
