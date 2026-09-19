@@ -3973,11 +3973,20 @@ protected_patterns = ["secrets.json"]
         let repo = td.path();
         run_git_in(repo, &["init", "-q", "-b", "main"]);
 
+        // Seed the SUPERSEDED per-file keys: the migration must
+        // unset them (v0.113.13 process driver).
+        run_git_in(
+            repo,
+            &["config", "--local", "filter.dracon.clean", "legacy"],
+        );
+        run_git_in(
+            repo,
+            &["config", "--local", "filter.dracon.smudge", "legacy"],
+        );
         let changed = ensure_repo_filter_config(repo).expect("ensure config");
         assert!(changed, "first pass must write all keys");
         for key in [
-            "filter.dracon.clean",
-            "filter.dracon.smudge",
+            "filter.dracon.process",
             "filter.dracon.required",
             "diff.dracon.textconv",
             "merge.dracon.driver",
@@ -3993,6 +4002,19 @@ protected_patterns = ["secrets.json"]
         assert_eq!(textconv.trim(), "dracon-warden filter-smudge");
         let driver = git_in_output(repo, &["config", "--local", "--get", "merge.dracon.driver"]);
         assert_eq!(driver.trim(), "dracon-warden merge %O %A %B");
+        // v0.113.13: single process driver; the superseded
+        // per-file keys must be gone.
+        let process = git_in_output(repo, &["config", "--local", "--get", "filter.dracon.process"]);
+        assert_eq!(process.trim(), "dracon-warden filter-process");
+        for gone in ["filter.dracon.clean", "filter.dracon.smudge"] {
+            let st = std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(["config", "--local", "--get", gone])
+                .output()
+                .expect("git config --get");
+            assert!(!st.status.success(), "superseded key {} must be unset", gone);
+        }
 
         // Second pass: already configured → no change.
         let changed = ensure_repo_filter_config(repo).expect("ensure config again");
