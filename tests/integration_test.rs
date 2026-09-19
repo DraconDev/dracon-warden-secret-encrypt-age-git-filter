@@ -339,3 +339,62 @@ fn test_warden_resmudge_dry_run() {
         stderr
     );
 }
+
+/// Live git through the long-running process driver (v0.113.13):
+/// `git diff` and `git add` on a repo with MANY files must flow
+/// through ONE `filter-process` invocation with content intact.
+/// Regression for the 2026-09-19 firehose stall (4092-file diff at
+/// 78s via per-file `filter-clean` spawns, starving ai-auto-writer
+/// for 2h+ behind a 30s classification budget).
+#[test]
+fn test_filter_process_live_git_diff_and_add() {
+    let tmp = create_test_repo();
+    let repo = tmp.path().join("test-repo");
+    let warden_bin = env!("CARGO_BIN_EXE_dracon-warden");
+    // Long-running driver instead of the per-file clean/smudge pair.
+    git_cmd(
+        &repo,
+        &[
+            "config",
+            "filter.dracon.process",
+            &format!("{} filter-process", warden_bin),
+        ],
+    );
+    git_cmd(&repo, &["config", "filter.dracon.required", "true"]);
+    std::fs::write(repo.join(".gitattributes"), "* filter=dracon\n").unwrap();
+    // 300 files: enough that per-file process startup would dominate
+    // (and enough to prove the single driver serves every file).
+    for i in 0..300 {
+        std::fs::write(repo.join(format!("file{:03}.txt", i)), format!("prose body {}\n", i))
+            .unwrap();
+    }
+    let add = git_cmd(&repo, &["add", "-A"]);
+    assert!(
+        add.status.success(),
+        "add through filter-process must succeed: {}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let commit = git_cmd(&repo, &["commit", "-qm", "seed"]);
+    assert!(commit.status.success());
+    // Modify every file, then diff through the driver.
+    for i in 0..300 {
+        std::fs::write(
+            repo.join(format!("file{:03}.txt", i)),
+            format!("prose body {} revised\n", i),
+        )
+        .unwrap();
+    }
+    let diff = git_cmd(&repo, &["diff", "--name-status", "HEAD"]);
+    assert!(
+        diff.status.success(),
+        "diff through filter-process must succeed: {}",
+        String::from_utf8_lossy(&diff.stderr)
+    );
+    let out = String::from_utf8_lossy(&diff.stdout);
+    assert_eq!(out.lines().count(), 300, "all 300 files must diff");
+    // Content integrity: the stored blob of an unprotected file
+    // must equal the worktree bytes (passthrough, no corruption).
+    let show = git_cmd(&repo, &["show", "HEAD:file007.txt"]);
+    assert!(show.status.success());
+    assert_eq!(show.stdout, b"prose body 7\n");
+}

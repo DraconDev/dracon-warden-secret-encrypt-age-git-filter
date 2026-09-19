@@ -3363,7 +3363,6 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
     warden: &DraconWarden,
     limit: usize,
 ) -> Result<()> {
-    use std::io::Write as _;
     // --- Handshake: expect `git-filter-client` first, then
     // capabilities until flush. Anything else is a violation.
     let mut first = true;

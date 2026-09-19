@@ -1766,35 +1766,35 @@ mod tests {
         let (_a, b, _c) = harden_repo(&repo, &sample_policy(), None, true).expect("harden");
         assert!(b);
 
-        let clean = ProcessCommand::new("git")
+        // v0.113.13: single long-running process driver; the
+        // per-file keys must be absent.
+        let process = ProcessCommand::new("git")
             .arg("-C")
             .arg(&repo)
             .arg("config")
             .arg("--local")
             .arg("--get")
-            .arg("filter.dracon.clean")
+            .arg("filter.dracon.process")
             .output()
-            .expect("get clean");
-        assert!(clean.status.success());
+            .expect("get process");
+        assert!(process.status.success());
         assert_eq!(
-            String::from_utf8_lossy(&clean.stdout).trim(),
-            "dracon-warden filter-clean %f"
+            String::from_utf8_lossy(&process.stdout).trim(),
+            "dracon-warden filter-process"
         );
 
-        let smudge = ProcessCommand::new("git")
-            .arg("-C")
-            .arg(&repo)
-            .arg("config")
-            .arg("--local")
-            .arg("--get")
-            .arg("filter.dracon.smudge")
-            .output()
-            .expect("get smudge");
-        assert!(smudge.status.success());
-        assert_eq!(
-            String::from_utf8_lossy(&smudge.stdout).trim(),
-            "dracon-warden filter-smudge %f"
-        );
+        for gone in ["filter.dracon.clean", "filter.dracon.smudge"] {
+            let st = ProcessCommand::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .arg("config")
+                .arg("--local")
+                .arg("--get")
+                .arg(gone)
+                .output()
+                .expect("get superseded");
+            assert!(!st.status.success(), "superseded key {} must be absent", gone);
+        }
 
         let required = ProcessCommand::new("git")
             .arg("-C")
