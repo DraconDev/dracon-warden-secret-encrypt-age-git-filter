@@ -3417,7 +3417,12 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
         loop {
             match pkt_read(input)? {
                 None => return Ok(()),
-                Some(Pkt::Flush) | Some(Pkt::Delim) => break,
+                // Delim is a no-op separator (git 2.51 emits one
+                // around request sections); only flush ends a
+                // section. Skipping delims inside content is also
+                // safe — chunks concatenate identically.
+                Some(Pkt::Delim) => continue,
+                Some(Pkt::Flush) => break,
                 Some(Pkt::Data(line)) => {
                     if let Some((k, v)) = pkt_kv(&line) {
                         match k {
@@ -3436,7 +3441,8 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
         loop {
             match pkt_read(input)? {
                 None => return Err(anyhow::anyhow!("EOF mid-content")),
-                Some(Pkt::Flush) | Some(Pkt::Delim) => break,
+                Some(Pkt::Delim) => continue,
+                Some(Pkt::Flush) => break,
                 Some(Pkt::Data(chunk)) => content.extend_from_slice(&chunk),
             }
         }
