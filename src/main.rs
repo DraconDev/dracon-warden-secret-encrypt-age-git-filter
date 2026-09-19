@@ -3526,6 +3526,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     }
     output.flush()?;
     Ok(())
+}
 
 /// Git merge driver implementation (`dracon-warden merge %O %A %B`).
 ///
