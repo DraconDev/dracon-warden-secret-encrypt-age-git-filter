@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.113.14] - 2026-09-19
+
+### Added
+
+- Persistent `git cat-file --batch` index session for the `filter-process` driver: one batch child serves the driver's whole lifetime instead of one `git cat-file` spawn per clean request (~10-50ms each). Per-file cost drops to two stats + a pipe round-trip (~0.2ms). On 1000-file firehose diffs this removes 15-50s of serialized spawn tax that kept blowing the sync daemon's 30s classification budget (ai-auto-writer: classification flapped at 28-72s, commits stalled to ~1/hr). Outcome-for-outcome with the one-shot path: `index.lock` present drops the batch and goes fresh (also more correct — no torn-index reads mid-add); index mtime moves respawn the snapshot; hangs (5s) kill and degrade to fresh; newline pathnames skip. One-shot filters keep the legacy spawn.
+
 ### Fixed
 
-- Global pre-push wrapper no longer chains pre-marker legacy warden hooks (same false-managed block class as the pre-commit/pre-rebase skip in 0.113.13: the legacy local hook lacks the tag-push corroboration fix and re-scans history from the empty tree, flagging grandfathered fixtures — observed blocking the v0.113.13 tag push). Ships in the next release; fleet-local legacy hooks are already replaced by 0.113.13 harden.
+- Global pre-push wrapper no longer chains pre-marker legacy warden hooks (same false-managed block class as the pre-commit/pre-rebase skip in 0.113.13: the legacy local hook lacks the tag-push corroboration fix and re-scans history from the empty tree, flagging grandfathered fixtures — observed blocking the v0.113.13 tag push). Fleet-local legacy hooks are already replaced by 0.113.13 harden.
 ## [0.113.13] - 2026-09-19
 
 ### Added
