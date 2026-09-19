@@ -3534,6 +3534,122 @@ protected_patterns = ["secrets.json"]
         );
     }
 
+    // ---- legacy-warden hook handling (v0.113.13) ----
+    // The pre-marker generation probes `filter.dracon.clean`
+    // WITHOUT --local, so the machine-global key false-marks every
+    // repo as managed and blocks the operation. Harden replaces
+    // legacy hooks with the current template; the global wrapper
+    // must not execute them meanwhile (but must still chain real
+    // user hooks — the H-10 guarantee).
+
+    /// Minimal pre-marker legacy warden hook: warden's signature,
+    /// no v1 marker, exits 1 like the ancient template probe.
+    fn legacy_warden_hook_stub() -> &'static str {
+        "#!/bin/sh\n# Dracon Warden \u{2014} pre-commit hook\n# Installed by: dracon-warden setup-hooks\necho LEGACY-RAN\nexit 1\n"
+    }
+
+    #[test]
+    fn is_legacy_warden_hook_matrix() {
+        let td = TestDir::new("legacy_matrix");
+        let marker_hook = td.path().join("marked");
+        fs::write(
+            &marker_hook,
+            "#!/bin/sh\n# dracon-warden-managed-hook-v1\n# Installed by: dracon-warden setup-hooks\n",
+        )
+        .expect("write marked");
+        assert!(!is_legacy_warden_hook(&marker_hook));
+        assert!(is_warden_hook(&marker_hook));
+
+        let legacy_hook = td.path().join("legacy");
+        fs::write(&legacy_hook, legacy_warden_hook_stub()).expect("write legacy");
+        assert!(is_legacy_warden_hook(&legacy_hook));
+        assert!(!is_warden_hook(&legacy_hook));
+
+        let user_hook = td.path().join("user");
+        fs::write(&user_hook, "#!/bin/sh\nexit 0\n").expect("write user");
+        assert!(!is_legacy_warden_hook(&user_hook));
+        assert!(!is_warden_hook(&user_hook));
+
+        assert!(!is_legacy_warden_hook(&td.path().join("missing")));
+    }
+
+    #[test]
+    fn refresh_warden_hook_if_stale_matrix() {
+        let td = TestDir::new("refresh_matrix");
+        // Stale marker hook (old body) is refreshed.
+        let stale = td.path().join("stale");
+        fs::write(
+            &stale,
+            "#!/bin/sh\n# dracon-warden-managed-hook-v1\nold body\n",
+        )
+        .expect("write stale");
+        assert!(refresh_warden_hook_if_stale(&stale, PRE_COMMIT_HOOK).expect("refresh stale"));
+        assert_eq!(
+            fs::read_to_string(&stale).expect("read refreshed"),
+            render_hook(PRE_COMMIT_HOOK, None)
+        );
+        // Second pass is a no-op.
+        assert!(!refresh_warden_hook_if_stale(&stale, PRE_COMMIT_HOOK).expect("refresh fresh"));
+        // Legacy hook is replaced with the current template.
+        let legacy = td.path().join("legacy");
+        fs::write(&legacy, legacy_warden_hook_stub()).expect("write legacy");
+        assert!(refresh_warden_hook_if_stale(&legacy, PRE_COMMIT_HOOK).expect("refresh legacy"));
+        assert!(is_warden_hook(&legacy));
+        // Foreign user hook is never touched.
+        let user = td.path().join("user");
+        fs::write(&user, "#!/bin/sh\nexit 0\n").expect("write user");
+        assert!(!refresh_warden_hook_if_stale(&user, PRE_COMMIT_HOOK).expect("refresh user"));
+        assert_eq!(fs::read_to_string(&user).expect("read user"), "#!/bin/sh\nexit 0\n");
+        // Missing path is a no-op.
+        assert!(!refresh_warden_hook_if_stale(
+            &td.path().join("missing"),
+            PRE_COMMIT_HOOK
+        )
+        .expect("refresh missing"));
+    }
+
+    #[test]
+    fn pre_commit_wrapper_skips_legacy_warden_local_hook() {
+        let (td, hook_path) = make_repo_with_hook("chain_commit_legacy", "pre-commit", PRE_COMMIT_HOOK);
+        let repo = td.path();
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
+
+        // Pre-marker legacy hook that would exit 1 if executed.
+        let local_hook = repo.join(".git/hooks/pre-commit");
+        fs::write(&local_hook, legacy_warden_hook_stub()).expect("write legacy local hook");
+        chmod_755(&local_hook);
+
+        let (status, text) = run_hook_args(repo, &hook_path, &[]);
+        assert!(
+            status.success(),
+            "legacy warden hook must be skipped, not executed: {text}"
+        );
+        assert!(
+            !text.contains("LEGACY-RAN"),
+            "legacy hook output must be absent: {text}"
+        );
+    }
+
+    #[test]
+    fn pre_commit_wrapper_still_chains_user_local_hook() {
+        let (td, hook_path) = make_repo_with_hook("chain_commit_user", "pre-commit", PRE_COMMIT_HOOK);
+        let repo = td.path();
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
+
+        // Genuine user hook (no warden signature) must still chain (H-10).
+        let local_hook = repo.join(".git/hooks/pre-commit");
+        fs::write(
+            &local_hook,
+            "#!/bin/sh\necho USER-RAN\nexit 3\n",
+        )
+        .expect("write user local hook");
+        chmod_755(&local_hook);
+
+        let (status, text) = run_hook_args(repo, &hook_path, &[]);
+        assert_eq!(status.code(), Some(3), "user hook failure must propagate: {text}");
+        assert!(text.contains("USER-RAN"), "user hook must have run: {text}");
+    }
+
     // ---- pre-rebase (H-11, M-15) ----
 
     #[test]
