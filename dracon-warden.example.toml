@@ -44,6 +44,37 @@ protected_patterns = []
 # Cargo.lock, events jsonl) — e.g. ["Cargo.lock", "*.pub"].
 plaintext_patterns = []
 
+# ADDED 2026-09-27 (audit decision D2) — binary carve-out.
+#
+# The eager-source-encryption catch-all (`* filter=dracon`) routes EVERY
+# file through the filter, and the filter refuses to clean anything over
+# `filter_max_bytes` rather than commit it unencrypted. Combined, that
+# meant a single 20 MiB screenshot made `git add` fail outright, with a
+# message claiming the file "would be committed UNENCRYPTED" — for a file
+# that was never a secret. The obvious "fix" for an operator is to turn
+# the filter off, which would strip the protection from everything.
+#
+# These patterns are emitted as `-filter` carve-outs in the managed
+# .gitattributes block, and the oversize refusal honours the same list, so
+# binary media and archives are committed as-is no matter their size.
+# They carry no greppable secret material and are not reviewable in a
+# diff, so filtering them buys nothing.
+#
+# Omit this key to use the shipped defaults (images, video/audio,
+# archives, compiled artefacts, pdf). Set it to an explicit list to
+# REPLACE the defaults, or `[]` to disable the carve-out entirely and
+# restore the hard failure for every oversized file.
+#
+# SECURITY NOTE: a file under one of these patterns is never scanned, so a
+# secret placed in e.g. `notes.png` is NOT detected. Keep genuinely
+# sensitive directories under `protected_patterns` instead — protected
+# patterns are applied AFTER these carve-outs, so they still win.
+#
+# Left commented out on purpose: the key is an Option, so omitting it uses
+# the shipped defaults. An explicit `[]` here would DISABLE the carve-out
+# and bring back the hard failure this key exists to remove.
+# binary_filter_exempt_patterns = ["*.png", "*.jpg", "*.mp4", "*.zip"]
+
 # Glob patterns for hygiene checks (files that should NOT exist in repo).
 # These are the shipped defaults: Pi harness state, browser trace logs, and
 # regeneratable frontend build caches stay machine-local. Set an explicit list

@@ -937,9 +937,11 @@ mod tests {
             let policy: WardenPolicy =
                 toml::from_str(&format!("filter_max_bytes = {limit}")).unwrap();
             assert_eq!(policy.filter_limit().unwrap(), limit);
-            assert!(filter_clean_refusal_with_limit(true, limit, None, limit).is_none());
-            assert!(filter_clean_refusal_with_limit(true, limit + 1, None, limit).is_some());
-            assert!(filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit).is_some());
+            assert!(filter_clean_refusal_with_limit(true, limit, None, limit, &[]).is_none());
+            assert!(filter_clean_refusal_with_limit(true, limit + 1, None, limit, &[]).is_some());
+            assert!(
+                filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit, &[]).is_some()
+            );
         }
         for limit in [
             0,
@@ -2453,6 +2455,9 @@ watch_roots = ["/tmp/test"]
             discover_roots: vec![],
             allow_v1_fallback: false,
             filter_max_bytes: None,
+            // ADDED 2026-09-27 (audit decision D2): new field on the
+            // exhaustive policy initializers in this module.
+            binary_filter_exempt_patterns: None,
         };
 
         // Effective roots still includes p1 (backwards compat)
@@ -2493,6 +2498,9 @@ watch_roots = ["/tmp/test"]
             discover_roots: vec![],
             allow_v1_fallback: false,
             filter_max_bytes: None,
+            // ADDED 2026-09-27 (audit decision D2): new field on the
+            // exhaustive policy initializers in this module.
+            binary_filter_exempt_patterns: None,
         };
 
         // Effective roots uses p_new (the canonical key), not p_old
@@ -2528,6 +2536,9 @@ watch_roots = ["/tmp/test"]
             discover_roots: vec![],
             allow_v1_fallback: false,
             filter_max_bytes: None,
+            // ADDED 2026-09-27 (audit decision D2): new field on the
+            // exhaustive policy initializers in this module.
+            binary_filter_exempt_patterns: None,
         };
 
         assert!(
@@ -4552,5 +4563,204 @@ mod filter_process_oversize_tests {
         );
         // Protocol still terminates: trailing empty status list.
         assert_eq!(rest[rest.len() - 1], Flush);
+    }
+}
+
+/// ADDED 2026-09-27 (audit decision D2). Before the binary carve-out, the
+/// 2026-09-16 eager-source-encryption catch-all (`* filter=dracon`) plus the
+/// unconditional oversize clean refusal meant a single 20 MiB screenshot made
+/// `git add` fail outright, with a message claiming the file "would be
+/// committed UNENCRYPTED" — for a file that was never a secret. These pin
+/// both halves of the fix and, just as importantly, pin that the carve-out
+/// did NOT weaken the guard for anything a secret could plausibly hide in.
+mod binary_carve_out_tests {
+    use crate::*;
+
+    const LIMIT: usize = 10 * 1024 * 1024;
+    const OVER: usize = 20 * 1024 * 1024;
+
+    fn exempt() -> Vec<String> {
+        default_binary_filter_exempt_patterns()
+    }
+
+    // --- the size guard itself -----------------------------------------
+
+    #[test]
+    fn oversize_binary_extension_is_not_refused() {
+        for path in [
+            "assets/screenshot.png",
+            "docs/diagram.JPG",
+            "media/clip.mp4",
+            "dist/bundle.zip",
+            "nested/deep/photo.webp",
+        ] {
+            let reason = filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt());
+            assert!(
+                reason.is_none(),
+                "a >limit binary should be addable again, got: {reason:?} ({path})"
+            );
+        }
+    }
+
+    #[test]
+    fn oversize_text_and_secret_paths_still_fail_closed() {
+        for path in [
+            "src/main.rs",
+            "notes/notes.txt",
+            "data/dump.json",
+            "secrets/archive.txt",
+            "config/app.conf",
+            "no-extension",
+        ] {
+            let reason = filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt());
+            assert!(
+                reason.is_some(),
+                "a >limit {path} must still be refused — the carve-out is binary-only"
+            );
+        }
+    }
+
+    /// A protected path keeps the filter even when its extension is exempt:
+    /// the carve-out only relaxes the SIZE guard, never the path gate.
+    #[test]
+    fn oversize_protected_path_with_binary_extension_is_still_filtered() {
+        // Size guard does not fire for `secrets/dump.png` …
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("secrets/dump.png"),
+            LIMIT,
+            &exempt()
+        )
+        .is_none());
+        // … but the .gitattributes ordering must still give `secrets/**`
+        // the filter, so the file is scanned rather than skipped.
+        let policy = WardenPolicy {
+            protected_patterns: vec!["secrets/**".into()],
+            ..Default::default()
+        };
+        let block = build_gitattributes_block(&policy).expect("block");
+        let binary_line = block
+            .lines()
+            .position(|l| l == "*.png -filter")
+            .expect("binary carve-out emitted");
+        let protected_line = block
+            .lines()
+            .position(|l| l.starts_with("secrets/** filter=dracon"))
+            .expect("protected line emitted");
+        assert!(
+            protected_line > binary_line,
+            "protected patterns must come LAST so git's last-match-wins gives \
+             secrets/** the filter (protected_line={protected_line}, binary_line={binary_line})"
+        );
+    }
+
+    #[test]
+    fn unknown_extension_is_not_exempt() {
+        // `.bin` is exempt but `.weirdext` is not — the carve-out is an
+        // explicit allowlist, not a "looks binary" heuristic.
+        assert!(
+            filter_clean_refusal_with_limit(true, OVER, Some("a/b.bin"), LIMIT, &exempt())
+                .is_none()
+        );
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("a/b.weirdext"),
+            LIMIT,
+            &exempt()
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn an_empty_exempt_list_restores_the_hard_failure() {
+        // An operator who sets `binary_filter_exempt_patterns = []` opts
+        // back out; the guard must then behave exactly as it did before.
+        assert!(filter_clean_refusal_with_limit(true, OVER, Some("a/b.png"), LIMIT, &[]).is_some());
+    }
+
+    #[test]
+    fn smudge_direction_is_never_refused() {
+        assert!(
+            filter_clean_refusal_with_limit(false, OVER, Some("a/b.png"), LIMIT, &exempt())
+                .is_none()
+        );
+    }
+
+    // --- the generated .gitattributes block ----------------------------
+
+    #[test]
+    fn gitattributes_emits_binary_carveouts_after_the_catchall() {
+        let block = build_gitattributes_block(&WardenPolicy::default()).expect("block");
+        assert!(block.contains("* filter=dracon"));
+        for pat in ["*.png", "*.mp4", "*.zip", "*.pdf", "*.wasm"] {
+            assert!(
+                block.contains(&format!("{pat} -filter")),
+                "missing carve-out for {pat}"
+            );
+        }
+        let catchall = block.lines().position(|l| l == "* filter=dracon").unwrap();
+        let first_carveout = block.lines().position(|l| l == "*.png -filter").unwrap();
+        assert!(
+            first_carveout > catchall,
+            "carve-outs must follow the catch-all to win git's last-match rule"
+        );
+    }
+
+    #[test]
+    fn policy_can_override_or_disable_the_defaults() {
+        let custom = WardenPolicy {
+            binary_filter_exempt_patterns: Some(vec!["*.blend".into()]),
+            ..Default::default()
+        };
+        let block = build_gitattributes_block(&custom).expect("block");
+        assert!(block.contains("*.blend -filter"));
+        assert!(
+            !block.contains("*.png -filter"),
+            "an explicit list REPLACES the defaults, it does not extend them"
+        );
+
+        let none = WardenPolicy {
+            binary_filter_exempt_patterns: Some(vec![]),
+            ..Default::default()
+        };
+        let block = build_gitattributes_block(&none).expect("block");
+        assert!(!block.contains("*.png -filter"));
+    }
+
+    /// End-to-end through git: with the managed block applied, git itself
+    /// must not route a large screenshot through the filter.
+    #[test]
+    fn git_does_not_route_binary_files_through_the_filter() {
+        let block = build_gitattributes_block(&WardenPolicy::default()).expect("block");
+        // Self-contained: this module does not import the private helpers
+        // of the inner `tests` module, so it drives git directly.
+        let td = tempfile::TempDir::new().expect("temp dir");
+        let repo = td.path();
+        let git = |args: &[&str]| -> String {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo)
+                .output()
+                .expect("git");
+            String::from_utf8_lossy(&out.stdout).to_string()
+        };
+        git(&["init", "-q", "-b", "main"]);
+        fs::write(repo.join(".gitattributes"), &block).expect("write gitattributes");
+        // `git check-attr` prints the attribute VALUE, not "set": the
+        // catch-all resolves to `dracon` and the carve-out to `unset`.
+        for (path, expected) in [
+            ("assets/shot.png", "unset"),
+            ("src/main.rs", "dracon"),
+            ("secrets/a.key", "dracon"),
+        ] {
+            let out = git(&["check-attr", "filter", "--", path]);
+            let value = out.split_whitespace().last().unwrap_or("");
+            assert_eq!(
+                value, expected,
+                "git check-attr filter for {path} was {value}, expected {expected}"
+            );
+        }
     }
 }

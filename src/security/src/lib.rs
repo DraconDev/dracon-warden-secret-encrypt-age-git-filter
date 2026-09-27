@@ -20,6 +20,7 @@ pub mod modules;
 
 pub use modules::environment::EnvironmentManager;
 pub use modules::filter::is_hatched;
+pub use modules::filter::path_matches_any_pattern;
 pub use modules::keys::RepoKey;
 pub use modules::keys::TeamKey;
 pub use modules::scanner::SecretFinding;

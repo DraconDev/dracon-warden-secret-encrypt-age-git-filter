@@ -100,6 +100,23 @@ pub fn path_is_protected(path_str: &str, protected_patterns: &[String]) -> bool 
         .any(|pattern| git_attribute_pattern_matches(pattern, path_str))
 }
 
+/// ADDED 2026-09-27 (audit decision D2): true when `path_str` matches any
+/// gitattributes-style pattern in `patterns`.
+///
+/// Exposed so the warden binary can apply the SAME matcher the generated
+/// .gitattributes block implies, rather than a second, subtly different
+/// implementation. `path_is_protected` cannot be reused for this: an empty
+/// pattern list there means "scan everything" (legacy), whereas an empty
+/// list here must mean "nothing is exempt".
+pub fn path_matches_any_pattern(path_str: &str, patterns: &[String]) -> bool {
+    if patterns.is_empty() || path_str.is_empty() {
+        return false;
+    }
+    patterns
+        .iter()
+        .any(|pattern| git_attribute_pattern_matches(pattern, path_str))
+}
+
 impl WardenSecurity {
     pub fn smart_clean(&self, content: &str) -> Result<String> {
         let scanner = SecretScanner::new()?;

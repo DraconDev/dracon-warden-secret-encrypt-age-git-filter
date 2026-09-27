@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
 #[cfg(test)]
 use dracon_security_kit::clear_managed_patterns_override;
+use dracon_security_kit::path_matches_any_pattern;
 use dracon_security_kit::set_managed_patterns;
 pub(crate) use dracon_security_kit::DraconWarden;
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -371,6 +372,47 @@ fn default_hygiene_patterns() -> Vec<String> {
     ]
 }
 
+/// ADDED 2026-09-27 (audit decision D2). Binary media and archives that
+/// routinely exceed `filter_max_bytes` (10 MiB by default). Before this,
+/// the 2026-09-16 eager-source-encryption catch-all (`* filter=dracon`)
+/// combined with the unconditional oversize clean refusal meant a single
+/// 20 MiB screenshot made `git add` fail outright, with a message about
+/// the file "being committed UNENCRYPTED" — for a file that was never a
+/// secret. That is the worst possible failure mode for a filter: it
+/// pushes the operator toward disabling the filter, which would remove
+/// the protection from everything else too.
+///
+/// These extensions carry no greppable secret material, are already
+/// unreadable without a decoder, and are not meaningfully reviewable in a
+/// diff, so routing them through the filter buys nothing. They are
+/// emitted as `-filter` carve-outs in the managed .gitattributes block
+/// (placed BEFORE the protected-pattern lines so an explicitly protected
+/// path still wins on git's last-match-wins rule) and the oversize clean
+/// refusal honours the same list, so a stale or hand-edited
+/// .gitattributes cannot reintroduce the hard failure.
+fn default_binary_filter_exempt_patterns() -> Vec<String> {
+    [
+        // images
+        // git attributes are CASE-SENSITIVE, and macOS/Windows tooling
+        // routinely produces `.PNG`/`.JPG`, so the common upper-case forms
+        // are listed explicitly. The filter-side matcher uses the same
+        // case-sensitive rule, keeping the generated attributes and the
+        // in-filter exemption in agreement.
+        "*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.gif", "*.GIF", "*.webp",
+        "*.WEBP", "*.avif", "*.bmp", "*.tiff", "*.tif", "*.ico", "*.ICO", "*.heic", "*.psd",
+        // video / audio
+        "*.mp4", "*.mov", "*.mkv", "*.webm", "*.avi", "*.mp3", "*.wav", "*.flac", "*.ogg", "*.m4a",
+        // archives
+        "*.zip", "*.gz", "*.tgz", "*.bz2", "*.xz", "*.7z", "*.tar", "*.zst",
+        // compiled artefacts and opaque documents
+        "*.pdf", "*.wasm", "*.so", "*.dylib", "*.dll", "*.exe", "*.bin", "*.o", "*.a", "*.class",
+        "*.jar", "*.pyc", "*.sqlite", "*.db",
+    ]
+    .iter()
+    .map(|p| (*p).to_owned())
+    .collect()
+}
+
 fn expand_tilde(raw: &str) -> PathBuf {
     let Some(rest) = raw.strip_prefix('~') else {
         return PathBuf::from(raw);
@@ -401,6 +443,13 @@ pub(crate) struct WardenPolicy {
     filter_max_bytes: Option<usize>,
     #[serde(default)]
     plaintext_patterns: Vec<String>,
+    /// ADDED 2026-09-27 (audit decision D2): glob patterns for binary
+    /// media/archives that bypass the filter entirely. `None` (the
+    /// default) uses `default_binary_filter_exempt_patterns()`; an
+    /// explicit list REPLACES the defaults, so `[]` disables the
+    /// carve-out entirely and restores the hard oversize failure.
+    #[serde(default)]
+    binary_filter_exempt_patterns: Option<Vec<String>>,
     #[serde(default = "default_hygiene_patterns")]
     hygiene_patterns: Vec<String>,
     /// Canonical: list of directories to scan for git repos.
@@ -445,6 +494,13 @@ impl WardenPolicy {
             FILTER_IO_HARD_MAX_BYTES
         );
         Ok(limit)
+    }
+
+    /// Patterns whose files never reach the filter.
+    pub(crate) fn binary_exempt_patterns(&self) -> Vec<String> {
+        self.binary_filter_exempt_patterns
+            .clone()
+            .unwrap_or_else(default_binary_filter_exempt_patterns)
     }
 
     pub(crate) fn validate(&self) -> Result<()> {
@@ -814,6 +870,15 @@ pub(crate) fn build_gitattributes_block(policy: &WardenPolicy) -> Result<String>
     // lines below (and `-filter` carve-outs) override this line per
     // gitattributes last-match-wins.
     lines.push("* filter=dracon".to_string());
+    // ADDED 2026-09-27 (audit decision D2): binary carve-outs, emitted
+    // immediately after the catch-all and BEFORE the protected-pattern
+    // lines. gitattributes is last-match-wins, so this ordering means an
+    // explicitly protected path (`secrets/*.png`) still gets the filter,
+    // while an ordinary `assets/*.png` does not. Without this, a single
+    // screenshot over `filter_max_bytes` made `git add` fail outright.
+    for p in policy.binary_exempt_patterns() {
+        lines.push(format!("{} -filter", p));
+    }
     let mut plaintext_patterns = BTreeSet::new();
     for p in &policy.plaintext_patterns {
         plaintext_patterns.insert(p.clone());
@@ -3032,6 +3097,20 @@ fn configured_filter_limit() -> Result<usize> {
     }
 }
 
+/// ADDED 2026-09-27 (audit decision D2): the binary carve-out list, read
+/// from the same policy that supplied the size limit. Falls back to the
+/// shipped defaults when no policy is installed, matching
+/// `configured_filter_limit`'s legacy behaviour.
+fn configured_binary_exempt_patterns() -> Vec<String> {
+    match resolve_policy_path_local() {
+        Ok(path) => match WardenPolicy::load(&path) {
+            Ok(policy) => policy.binary_exempt_patterns(),
+            Err(_) => default_binary_filter_exempt_patterns(),
+        },
+        Err(_) => default_binary_filter_exempt_patterns(),
+    }
+}
+
 fn read_filter_input(reader: impl Read, limit: usize) -> Result<Vec<u8>> {
     let mut input = Vec::new();
     // Read one sentinel byte beyond the bound, never unbounded stdin.
@@ -3099,7 +3178,13 @@ fn filter_clean_refusal_reason(
     input_len: usize,
     path: Option<&str>,
 ) -> Option<String> {
-    filter_clean_refusal_with_limit(is_clean, input_len, path, STREAM_IO_MAX_BYTES)
+    filter_clean_refusal_with_limit(
+        is_clean,
+        input_len,
+        path,
+        STREAM_IO_MAX_BYTES,
+        &default_binary_filter_exempt_patterns(),
+    )
 }
 
 fn filter_clean_refusal_with_limit(
@@ -3107,16 +3192,36 @@ fn filter_clean_refusal_with_limit(
     input_len: usize,
     path: Option<&str>,
     limit: usize,
+    binary_exempt: &[String],
 ) -> Option<String> {
     if !is_clean {
         return None;
     }
     if input_len > limit {
-        return Some(format!(
-            "dracon-warden: refusing to clean {} bytes (limit {} bytes): the file would be committed UNENCRYPTED. Encrypt it out-of-band (dracon-warden encrypt-file) or .gitignore it.",
-            input_len,
-            limit
-        ));
+        // ADDED 2026-09-27 (audit decision D2): a known-binary path is
+        // not refused for being oversized. The managed .gitattributes
+        // already emits `-filter` for these, so git should never invoke
+        // clean on them; this keeps a stale or hand-edited
+        // .gitattributes from turning a large screenshot into a hard
+        // `git add` failure with a message about committing plaintext,
+        // which is the failure mode that pushes operators toward
+        // disabling the filter for everything.
+        //
+        // Only the SIZE guard is exempted. A protected path with a
+        // binary extension is still filtered and still scanned — an
+        // oversize secret under `secrets/` keeps failing closed — and
+        // every other oversize path (text, source, unknown extension)
+        // still refuses.
+        let exempt = path.is_some_and(|p| {
+            !binary_exempt.is_empty() && path_matches_any_pattern(p, binary_exempt)
+        });
+        if !exempt {
+            return Some(format!(
+                "dracon-warden: refusing to clean {} bytes (limit {} bytes): the file would be committed UNENCRYPTED. Encrypt it out-of-band (dracon-warden encrypt-file) or .gitignore it. Binary media and archives are exempt via binary_filter_exempt_patterns.",
+                input_len,
+                limit
+            ));
+        }
     }
     if let Some(p) = path {
         let p_buf = std::path::PathBuf::from(p);
@@ -3515,7 +3620,13 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
     // in the clean direction via the shared predicate. Previously
     // each guard wrote the input back to stdout and exited 0 —
     // committing the file UNENCRYPTED with no warning.
-    if let Some(reason) = filter_clean_refusal_with_limit(is_clean, input.len(), path, limit) {
+    if let Some(reason) = filter_clean_refusal_with_limit(
+        is_clean,
+        input.len(),
+        path,
+        limit,
+        &configured_binary_exempt_patterns(),
+    ) {
         eprintln!("{}", reason);
         return Err(anyhow::anyhow!("{}", reason));
     }
@@ -3576,7 +3687,13 @@ fn filter_transform_bytes(
     limit: usize,
     lookup: &mut IndexLookup,
 ) -> Result<Vec<u8>> {
-    if let Some(reason) = filter_clean_refusal_with_limit(is_clean, input.len(), path, limit) {
+    if let Some(reason) = filter_clean_refusal_with_limit(
+        is_clean,
+        input.len(),
+        path,
+        limit,
+        &configured_binary_exempt_patterns(),
+    ) {
         eprintln!("{}", reason);
         return Err(anyhow::anyhow!("{}", reason));
     }
@@ -3984,7 +4101,13 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
         // Same two decisions `filter_transform_bytes` / `run_filter` make,
         // in the same order.
         if direction {
-            let reason = filter_clean_refusal_with_limit(true, cap, pathname, limit)
+            let reason = filter_clean_refusal_with_limit(
+                true,
+                cap,
+                pathname,
+                limit,
+                &configured_binary_exempt_patterns(),
+            )
                 .unwrap_or_else(|| {
                     format!(
                         "dracon-warden: refusing to clean more than {} bytes (the file would be committed UNENCRYPTED)",
