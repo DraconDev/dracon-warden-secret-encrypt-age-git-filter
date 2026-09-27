@@ -3097,18 +3097,51 @@ fn configured_filter_limit() -> Result<usize> {
     }
 }
 
-/// ADDED 2026-09-27 (audit decision D2): the binary carve-out list, read
-/// from the same policy that supplied the size limit. Falls back to the
-/// shipped defaults when no policy is installed, matching
-/// `configured_filter_limit`'s legacy behaviour.
-fn configured_binary_exempt_patterns() -> Vec<String> {
-    match resolve_policy_path_local() {
-        Ok(path) => match WardenPolicy::load(&path) {
-            Ok(policy) => policy.binary_exempt_patterns(),
-            Err(_) => default_binary_filter_exempt_patterns(),
-        },
-        Err(_) => default_binary_filter_exempt_patterns(),
-    }
+/// Every input the clean-direction size guard needs, resolved ONCE
+/// per process from a single policy load.
+///
+/// ADDED 2026-09-27 (audit decision D2 follow-up): the first cut of the
+/// carve-out called `WardenPolicy::load` — a file read plus a TOML
+/// parse — once per request inside the `filter-process` request loop.
+/// That driver is the hot path (one process serves an entire firehose
+/// `git diff`), so that turned a per-file config load into the new
+/// steady-state cost of the whole driver. `configured_filter_limit`
+/// was already resolved once by the caller; the other two inputs now
+/// ride along with it instead of being re-read per file.
+struct CleanGuard {
+    limit: usize,
+    /// Globs whose files are exempt from the SIZE guard only.
+    binary_exempt: Vec<String>,
+    /// The policy's `protected_patterns`. Consulted here with the
+    /// explicit `path_matches_any_pattern` matcher, NOT with
+    /// `path_is_protected`: an empty `protected_patterns` means
+    /// "scan everything" to `path_is_protected` (legacy) but must mean
+    /// "nothing is protected" to this gate, or every binary would be
+    /// exempt by default and the carve-out would stop being opt-in per
+    /// directory.
+    protected: Vec<String>,
+}
+
+fn configured_clean_guard() -> Result<CleanGuard> {
+    let Ok(path) = resolve_policy_path_local() else {
+        // Preserve legacy scan-everything behavior without an
+        // installed policy, matching `configured_filter_limit`.
+        return Ok(CleanGuard {
+            limit: STREAM_IO_MAX_BYTES,
+            binary_exempt: default_binary_filter_exempt_patterns(),
+            protected: Vec::new(),
+        });
+    };
+    // A policy that exists but does not parse is a hard error, exactly
+    // as it is for `configured_filter_limit`: silently falling back to
+    // defaults would re-arm the carve-out on a repo whose operator
+    // explicitly turned it off.
+    let policy = WardenPolicy::load(&path)?;
+    Ok(CleanGuard {
+        limit: policy.filter_limit()?,
+        binary_exempt: policy.binary_exempt_patterns(),
+        protected: policy.protected_patterns.clone(),
+    })
 }
 
 fn read_filter_input(reader: impl Read, limit: usize) -> Result<Vec<u8>> {
@@ -3184,6 +3217,9 @@ fn filter_clean_refusal_reason(
         path,
         STREAM_IO_MAX_BYTES,
         &default_binary_filter_exempt_patterns(),
+        // No policy in this test-only wrapper: nothing is protected,
+        // which is the shipped default.
+        &[],
     )
 }
 
@@ -3193,6 +3229,7 @@ fn filter_clean_refusal_with_limit(
     path: Option<&str>,
     limit: usize,
     binary_exempt: &[String],
+    protected: &[String],
 ) -> Option<String> {
     if !is_clean {
         return None;
@@ -3207,13 +3244,25 @@ fn filter_clean_refusal_with_limit(
         // which is the failure mode that pushes operators toward
         // disabling the filter for everything.
         //
-        // Only the SIZE guard is exempted. A protected path with a
-        // binary extension is still filtered and still scanned — an
-        // oversize secret under `secrets/` keeps failing closed — and
-        // every other oversize path (text, source, unknown extension)
-        // still refuses.
+        // FIXED 2026-09-27 (audit round 1, HIGH): the exemption
+        // consulted only the extension list, so an oversize file under
+        // a PROTECTED directory — `secrets/big.png` — passed through
+        // unencrypted AND unscanned, a fail-open the pre-change code
+        // did not have. The .gitattributes ordering does not save it:
+        // the protected line does win there, which means git DOES
+        // route the file here, and this function then waved it through.
+        // A protected path is now never exempt, so an operator who
+        // listed `secrets/**` gets a hard failure for an oversize
+        // secret regardless of what it is named.
+        //
+        // Only the SIZE guard is exempted. Every other oversize path
+        // (text, source, unknown extension, anything protected) still
+        // refuses, and the path-shape guards below still apply to an
+        // exempt path.
         let exempt = path.is_some_and(|p| {
-            !binary_exempt.is_empty() && path_matches_any_pattern(p, binary_exempt)
+            !binary_exempt.is_empty()
+                && path_matches_any_pattern(p, binary_exempt)
+                && !path_matches_any_pattern(p, protected)
         });
         if !exempt {
             return Some(format!(
@@ -3612,7 +3661,8 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
     // daemon (junk-runner, 2026-08-09). See
     // docs/design/warden-filter-protected-patterns-wiring-2026-08-09.md.
     wire_managed_patterns_from_policy();
-    let limit = configured_filter_limit()?;
+    let guard = configured_clean_guard()?;
+    let limit = guard.limit;
     let mut stdin = std::io::stdin().lock();
     let input = read_filter_input(&mut stdin, limit)?;
     // CHANGED 2026-07-21 (v0.112.32, audit M31/F4.5): all three
@@ -3625,14 +3675,18 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
         input.len(),
         path,
         limit,
-        &configured_binary_exempt_patterns(),
+        &guard.binary_exempt,
+        &guard.protected,
     ) {
         eprintln!("{}", reason);
         return Err(anyhow::anyhow!("{}", reason));
     }
     if input.len() > limit {
-        // Smudge-only passthrough: preserve the full ciphertext without
-        // allocating the unbounded remainder. Clean never reaches this path.
+        // Oversize passthrough. The clean direction reaches it only for
+        // a size-exempt path (see the binary carve-out above); smudge
+        // reaches it for any file. Either way the full content must be
+        // preserved, so the bounded prefix is written and the unbounded
+        // remainder is copied without ever being buffered.
         let mut stdout = std::io::stdout().lock();
         stdout.write_all(&input)?;
         std::io::copy(&mut stdin, &mut stdout)?;
@@ -3665,7 +3719,7 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
         is_clean,
         path,
         input,
-        limit,
+        &guard,
         &mut IndexLookup::OneShot,
     )?;
     std::io::stdout().write_all(&output)?;
@@ -3684,22 +3738,26 @@ fn filter_transform_bytes(
     is_clean: bool,
     path: Option<&str>,
     input: Vec<u8>,
-    limit: usize,
+    guard: &CleanGuard,
     lookup: &mut IndexLookup,
 ) -> Result<Vec<u8>> {
+    let limit = guard.limit;
     if let Some(reason) = filter_clean_refusal_with_limit(
         is_clean,
         input.len(),
         path,
         limit,
-        &configured_binary_exempt_patterns(),
+        &guard.binary_exempt,
+        &guard.protected,
     ) {
         eprintln!("{}", reason);
         return Err(anyhow::anyhow!("{}", reason));
     }
     if input.len() > limit {
-        // Smudge-only passthrough (clean never reaches here — the
-        // refusal above fails it closed).
+        // Oversize passthrough. Only reachable from the clean direction
+        // for a size-exempt path, and from smudge for anything; the
+        // whole blob is already in `input` here, so it is returned
+        // intact.
         return Ok(input);
     }
     if let Some(p) = path {
@@ -3834,8 +3892,8 @@ fn run_filter_process() -> i32 {
     veprintln!(2, "start");
     wire_managed_patterns_from_policy();
     veprintln!(2, "patterns wired");
-    let limit = match configured_filter_limit() {
-        Ok(l) => l,
+    let guard = match configured_clean_guard() {
+        Ok(g) => g,
         Err(e) => {
             eprintln!("dracon-warden: filter-process config failed: {}", e);
             return 1;
@@ -3853,7 +3911,7 @@ fn run_filter_process() -> i32 {
     veprintln!(2, "warden constructed");
     let mut input = std::io::BufReader::new(std::io::stdin());
     let mut output = std::io::BufWriter::new(std::io::stdout());
-    if let Err(e) = filter_process_serve(&mut input, &mut output, &warden, limit) {
+    if let Err(e) = filter_process_serve(&mut input, &mut output, &warden, &guard) {
         eprintln!("dracon-warden: filter-process error: {}", e);
         return 1;
     }
@@ -3864,7 +3922,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
     input: &mut R,
     output: &mut W,
     warden: &DraconWarden,
-    limit: usize,
+    guard: &CleanGuard,
 ) -> Result<()> {
     // --- Handshake: expect `git-filter-client` first, then
     // capabilities until flush. Anything else is a violation.
@@ -3936,7 +3994,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
     let mut lookup = IndexLookup::Batch(IndexBatch::new());
     if section.iter().any(|l| l.starts_with(b"command=")) {
         veprintln!(2, "phase-2 section was a request, serving directly");
-        serve_one_request(input, output, warden, limit, &section, &mut lookup)?;
+        serve_one_request(input, output, warden, guard, &section, &mut lookup)?;
     } else {
         if want_clean {
             output.write_all(&pkt_key_line("capability=clean"))?;
@@ -3963,7 +4021,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
                 }
             }
         }
-        serve_one_request(input, output, warden, limit, &header, &mut lookup)?;
+        serve_one_request(input, output, warden, guard, &header, &mut lookup)?;
     }
 }
 
@@ -3975,10 +4033,11 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     input: &mut R,
     output: &mut W,
     warden: &DraconWarden,
-    limit: usize,
+    guard: &CleanGuard,
     header: &[Vec<u8>],
     lookup: &mut IndexLookup,
 ) -> Result<()> {
+    let limit = guard.limit;
     let mut command: Option<&str> = None;
     let mut pathname: Option<&str> = None;
     for line in header {
@@ -4032,9 +4091,34 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     //     tail, so the protocol stays in sync and the ciphertext is
     //     preserved in full without ever being fully buffered.
     let cap = limit.saturating_add(1);
+    // FIXED 2026-09-27 (audit round 1, MED): whether an oversize clean
+    // of THIS path would be permitted has to be settled HERE, from the
+    // header, before the body loop runs. The loop drops everything past
+    // `cap` for the clean direction (a refusal must be able to abort the
+    // add, so nothing may reach `output` before the decision), so by the
+    // time the oversize branch is reached the tail is already gone and
+    // the passthrough could not be emitted.
+    //
+    // `limit + 1` as the length forces the size branch to be taken, so
+    // a `None` here means "size is the only thing that could refuse, and
+    // it is waived" — the path-shape guards below are still live.
+    let clean_passthrough = direction == Some(true)
+        && filter_clean_refusal_with_limit(
+            true,
+            limit.saturating_add(1),
+            pathname,
+            limit,
+            &guard.binary_exempt,
+            &guard.protected,
+        )
+        .is_none();
+    // A clean passthrough is streamed exactly like smudge: the bytes past
+    // the bound must reach the output, and they can only be framed as
+    // they arrive.
+    let streamable = direction == Some(false) || clean_passthrough;
     let mut content: Vec<u8> = Vec::new();
     let mut oversized = false;
-    // Set once the smudge passthrough starts, so the buffered prefix is
+    // Set once the passthrough starts, so the buffered prefix is
     // flushed exactly once.
     let mut passthrough_started = false;
     loop {
@@ -4061,9 +4145,9 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
                 if !oversized {
                     continue;
                 }
-                if direction != Some(false) {
-                    // clean + unsupported: drain the rest to keep the
-                    // protocol in sync, but never emit it.
+                if !streamable {
+                    // clean (not exempt) + unsupported: drain the rest to
+                    // keep the protocol in sync, but never emit it.
                     continue;
                 }
                 if !passthrough_started {
@@ -4098,30 +4182,40 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
         return Ok(());
     };
     if oversized {
-        // Same two decisions `filter_transform_bytes` / `run_filter` make,
-        // in the same order.
-        if direction {
+        // FIXED 2026-09-27 (audit round 1, MED): the clean branch used
+        // to `unwrap_or_else` a hard refusal, discarding the `None` case
+        // — so a size-exempt binary was refused here even though the
+        // one-shot path passed it through, and the three entry points
+        // disagreed. `filter.dracon.process` is the driver warden itself
+        // installs, i.e. the path every hardened repo uses, so that made
+        // the stale-`.gitattributes` case the common one. Both
+        // directions now fall through to the same passthrough below; the
+        // exemption was already decided from the header, before the
+        // body was consumed.
+        if direction && !clean_passthrough {
             let reason = filter_clean_refusal_with_limit(
                 true,
                 cap,
                 pathname,
                 limit,
-                &configured_binary_exempt_patterns(),
+                &guard.binary_exempt,
+                &guard.protected,
             )
-                .unwrap_or_else(|| {
-                    format!(
-                        "dracon-warden: refusing to clean more than {} bytes (the file would be committed UNENCRYPTED)",
-                        limit
-                    )
-                });
+            .unwrap_or_else(|| {
+                format!(
+                    "dracon-warden: refusing to clean more than {} bytes (the file would be committed UNENCRYPTED)",
+                    limit
+                )
+            });
             eprintln!("{}", reason);
             output.write_all(&pkt_key_line("status=error"))?;
             output.write_all(b"0000")?;
             output.flush()?;
             return Ok(());
         }
-        // Smudge: flush the buffered prefix (unless it already went out in
-        // the loop), then the mandatory empty terminator list.
+        // Smudge, or an exempt clean: flush the buffered prefix (unless
+        // it already went out in the loop), then the mandatory empty
+        // terminator list.
         if !passthrough_started {
             output.write_all(&pkt_key_line("status=success"))?;
             output.write_all(b"0000")?;
@@ -4135,7 +4229,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
         return Ok(());
     }
     let t1 = std::time::Instant::now();
-    let r = filter_transform_bytes(warden, direction, pathname, content, limit, lookup);
+    let r = filter_transform_bytes(warden, direction, pathname, content, guard, lookup);
     veprintln!(2, "transform done in {:?}", t1.elapsed());
     match r {
         Ok(bytes) => {
