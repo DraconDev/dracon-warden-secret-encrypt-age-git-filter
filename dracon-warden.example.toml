@@ -68,7 +68,10 @@ plaintext_patterns = []
 # SECURITY NOTE: a file under one of these patterns is never scanned, so a
 # secret placed in e.g. `notes.png` is NOT detected. Keep genuinely
 # sensitive directories under `protected_patterns` instead — protected
-# patterns are applied AFTER these carve-outs, so they still win.
+# patterns are applied AFTER these carve-outs, so they still win in
+# .gitattributes, and the filter itself refuses to let an oversize file
+# through a protected path: an oversize `secrets/big.png` fails closed
+# rather than passing through unencrypted and unscanned.
 #
 # Left commented out on purpose: the key is an Option, so omitting it uses
 # the shipped defaults. An explicit `[]` here would DISABLE the carve-out

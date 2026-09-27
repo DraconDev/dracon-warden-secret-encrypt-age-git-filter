@@ -937,10 +937,10 @@ mod tests {
             let policy: WardenPolicy =
                 toml::from_str(&format!("filter_max_bytes = {limit}")).unwrap();
             assert_eq!(policy.filter_limit().unwrap(), limit);
-            assert!(filter_clean_refusal_with_limit(true, limit, None, limit, &[]).is_none());
-            assert!(filter_clean_refusal_with_limit(true, limit + 1, None, limit, &[]).is_some());
+            assert!(filter_clean_refusal_with_limit(true, limit, None, limit, &[], &[]).is_none());
+            assert!(filter_clean_refusal_with_limit(true, limit + 1, None, limit, &[], &[]).is_some());
             assert!(
-                filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit, &[]).is_some()
+                filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit, &[], &[]).is_some()
             );
         }
         for limit in [
@@ -4262,7 +4262,7 @@ protected_patterns = ["secrets.json"]
         }
         let mut input = std::io::Cursor::new(script);
         let mut output = Vec::new();
-        crate::filter_process_serve(&mut input, &mut output, &warden, 64 * 1024 * 1024)
+        crate::filter_process_serve(&mut input, &mut output, &warden, &test_guard(64 * 1024 * 1024))
             .expect("serve");
         // Decode the response stream back into packets.
         let mut cur = std::io::Cursor::new(output);
@@ -4325,7 +4325,7 @@ protected_patterns = ["secrets.json"]
         script.extend_from_slice(b"0000");
         let mut input = std::io::Cursor::new(script);
         let mut output = Vec::new();
-        let r = crate::filter_process_serve(&mut input, &mut output, &warden, 1024);
+        let r = crate::filter_process_serve(&mut input, &mut output, &warden, &test_guard(1024));
         assert!(r.is_err(), "bad handshake must fail closed");
         assert!(output.is_empty(), "no response after bad handshake");
     }
@@ -4431,7 +4431,7 @@ protected_patterns = ["secrets.json"]
             true,
             Some("untracked.txt"),
             input.clone(),
-            1024 * 1024,
+            &test_guard(1024 * 1024),
             &mut batch,
         )
         .expect("prime batch");
@@ -4441,7 +4441,7 @@ protected_patterns = ["secrets.json"]
             true,
             Some("tracked.txt"),
             input.clone(),
-            1024 * 1024,
+            &test_guard(1024 * 1024),
             &mut batch,
         )
         .expect("batch transform");
@@ -4450,7 +4450,7 @@ protected_patterns = ["secrets.json"]
             true,
             Some("tracked.txt"),
             input.clone(),
-            1024 * 1024,
+            &test_guard(1024 * 1024),
             &mut crate::IndexLookup::OneShot,
         )
         .expect("oneshot transform");
@@ -4491,7 +4491,13 @@ mod filter_process_oversize_tests {
         script.extend_from_slice(b"0000");
         let mut input = std::io::Cursor::new(script);
         let mut output = Vec::new();
-        crate::filter_process_serve(&mut input, &mut output, &warden, limit).expect("serve");
+        crate::filter_process_serve(
+            &mut input,
+            &mut output,
+            &warden,
+            &crate::test_guard(limit),
+        )
+        .expect("serve");
         let mut cur = std::io::Cursor::new(output);
         let mut pkts = Vec::new();
         while let Some(p) = crate::pkt_read(&mut cur).expect("resp decode") {
@@ -4594,7 +4600,7 @@ mod binary_carve_out_tests {
             "dist/bundle.zip",
             "nested/deep/photo.webp",
         ] {
-            let reason = filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt());
+            let reason = filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[]);
             assert!(
                 reason.is_none(),
                 "a >limit binary should be addable again, got: {reason:?} ({path})"
@@ -4612,7 +4618,7 @@ mod binary_carve_out_tests {
             "config/app.conf",
             "no-extension",
         ] {
-            let reason = filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt());
+            let reason = filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[]);
             assert!(
                 reason.is_some(),
                 "a >limit {path} must still be refused — the carve-out is binary-only"
@@ -4620,23 +4626,70 @@ mod binary_carve_out_tests {
         }
     }
 
-    /// A protected path keeps the filter even when its extension is exempt:
-    /// the carve-out only relaxes the SIZE guard, never the path gate.
+    /// ADDED 2026-09-27 (audit round 1, HIGH): a protected path is never
+    /// exempt, even when its extension is on the carve-out list.
+    ///
+    /// The first cut of D2 asserted the OPPOSITE — that the size guard
+    /// does not fire for `secrets/dump.png` — which encoded a fail-open:
+    /// the protected `.gitattributes` line does win, so git DOES route
+    /// that file through the filter, and the filter then waved an
+    /// oversize file through unencrypted AND unscanned. Pre-change every
+    /// oversize clean refused. Both halves are now pinned.
     #[test]
-    fn oversize_protected_path_with_binary_extension_is_still_filtered() {
-        // Size guard does not fire for `secrets/dump.png` …
+    fn oversize_protected_path_with_binary_extension_still_fails_closed() {
+        let protected = vec!["secrets/**".to_string()];
+
+        // Unprotected: the carve-out applies (the D2 fix itself).
         assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("assets/dump.png"),
+            LIMIT,
+            &exempt(),
+            &[]
+        )
+        .is_none());
+
+        // Same extension, same size, but under a protected directory:
+        // the operator said "this path is sensitive", and that wins.
+        let reason = filter_clean_refusal_with_limit(
             true,
             OVER,
             Some("secrets/dump.png"),
             LIMIT,
-            &exempt()
-        )
-        .is_none());
-        // … but the .gitattributes ordering must still give `secrets/**`
-        // the filter, so the file is scanned rather than skipped.
+            &exempt(),
+            &protected,
+        );
+        assert!(
+            reason.is_some(),
+            "an oversize file under protected_patterns must fail closed, \
+             not pass through unencrypted and unscanned"
+        );
+
+        // Every entry point that can reach the filter must agree, so the
+        // check is repeated through the pure transform the one-shot
+        // entry point and the driver both call.
+        let guard = CleanGuard {
+            limit: LIMIT,
+            binary_exempt: exempt(),
+            protected: protected.clone(),
+        };
+        for path in ["secrets/dump.png", "secrets/deep/nested/a.png"] {
+            let err = filter_transform_bytes(
+                &DraconWarden::new().expect("warden"),
+                true,
+                Some(path),
+                vec![0u8; LIMIT + 1],
+                &guard,
+                &mut IndexLookup::OneShot,
+            );
+            assert!(err.is_err(), "{path} must be refused by the transform");
+        }
+
+        // And the .gitattributes ordering must still give `secrets/**`
+        // the filter, so the file is routed here in the first place.
         let policy = WardenPolicy {
-            protected_patterns: vec!["secrets/**".into()],
+            protected_patterns: protected.clone(),
             ..Default::default()
         };
         let block = build_gitattributes_block(&policy).expect("block");
@@ -4660,7 +4713,7 @@ mod binary_carve_out_tests {
         // `.bin` is exempt but `.weirdext` is not — the carve-out is an
         // explicit allowlist, not a "looks binary" heuristic.
         assert!(
-            filter_clean_refusal_with_limit(true, OVER, Some("a/b.bin"), LIMIT, &exempt())
+            filter_clean_refusal_with_limit(true, OVER, Some("a/b.bin"), LIMIT, &exempt(), &[])
                 .is_none()
         );
         assert!(filter_clean_refusal_with_limit(
@@ -4668,7 +4721,8 @@ mod binary_carve_out_tests {
             OVER,
             Some("a/b.weirdext"),
             LIMIT,
-            &exempt()
+            &exempt(),
+            &[]
         )
         .is_some());
     }
@@ -4677,13 +4731,13 @@ mod binary_carve_out_tests {
     fn an_empty_exempt_list_restores_the_hard_failure() {
         // An operator who sets `binary_filter_exempt_patterns = []` opts
         // back out; the guard must then behave exactly as it did before.
-        assert!(filter_clean_refusal_with_limit(true, OVER, Some("a/b.png"), LIMIT, &[]).is_some());
+        assert!(filter_clean_refusal_with_limit(true, OVER, Some("a/b.png"), LIMIT, &[], &[]).is_some());
     }
 
     #[test]
     fn smudge_direction_is_never_refused() {
         assert!(
-            filter_clean_refusal_with_limit(false, OVER, Some("a/b.png"), LIMIT, &exempt())
+            filter_clean_refusal_with_limit(false, OVER, Some("a/b.png"), LIMIT, &exempt(), &[])
                 .is_none()
         );
     }
@@ -4727,6 +4781,144 @@ mod binary_carve_out_tests {
         };
         let block = build_gitattributes_block(&none).expect("block");
         assert!(!block.contains("*.png -filter"));
+    }
+
+    /// ADDED 2026-09-27 (audit round 1, MED): the `filter-process`
+    /// driver is what warden itself installs
+    /// (`filter.dracon.process`), so its clean branch is the path every
+    /// hardened repo actually takes. The first cut of D2 computed the
+    /// refusal with the new carve-out and then discarded the `None` case
+    /// via `unwrap_or_else`, so a size-exempt binary was refused there
+    /// while the one-shot path passed it through — the three entry points
+    /// disagreed, and the user-visible failure D2 set out to remove
+    /// survived on a stale `.gitattributes`.
+    ///
+    /// Drives the real pkt-line protocol in-process (no second binary,
+    /// no 20 MiB fixture): a small `limit` exercises exactly the same
+    /// code path as the production one.
+    mod filter_process_passthrough {
+        use super::*;
+
+        const LIMIT: usize = 1024;
+        const OVER: usize = 8 * 1024;
+        // A single repeated byte: the response is re-assembled from
+        // binary-safe frames, and a uniform payload makes a framing bug
+        // obvious instead of looking like plausible data.
+        const FILLER: u8 = b'A';
+
+        fn guard(protected: Vec<String>) -> CleanGuard {
+            CleanGuard {
+                limit: LIMIT,
+                binary_exempt: default_binary_filter_exempt_patterns(),
+                protected,
+            }
+        }
+
+        /// Handshake + one clean request carrying `len` filler bytes.
+        fn clean_request(path: &str, len: usize) -> Vec<u8> {
+            let mut input = Vec::new();
+            input.extend(pkt_key_line("git-filter-client"));
+            input.extend(pkt_key_line("capability=clean"));
+            input.extend(b"0000");
+            input.extend(pkt_key_line("command=clean"));
+            input.extend(pkt_key_line(&format!("pathname={path}")));
+            input.extend(b"0000");
+            // Chained in frames small enough to cross the bound in the
+            // middle of a packet, which is the case the streaming
+            // decision has to get right.
+            let body = vec![FILLER; len];
+            for frame in body.chunks(300) {
+                input.extend(pkt_encode(frame));
+            }
+            input.extend(b"0000");
+            input
+        }
+
+        /// `(status, re-assembled content)` from one response.
+        ///
+        /// Decodes with the crate's own `pkt_read` — the same parser
+        /// production uses — rather than a second hand-rolled hex reader,
+        /// so a framing regression cannot hide behind a test-only parser.
+        fn decode(output: &[u8]) -> (String, Vec<u8>) {
+            let mut cur = std::io::Cursor::new(output);
+            let mut status = String::new();
+            let mut content = Vec::new();
+            // Frames before the status are the handshake reply
+            // (`git-filter-server`, `version=2`); frames after it are
+            // the blob.
+            let mut seen_status = false;
+            while let Some(p) = crate::pkt_read(&mut cur).expect("decode response") {
+                let Pkt::Data(payload) = p else { continue };
+                if !seen_status {
+                    if payload.starts_with(b"status=") {
+                        status = String::from_utf8_lossy(&payload)
+                            .trim()
+                            .trim_start_matches("status=")
+                            .to_string();
+                        seen_status = true;
+                    }
+                    continue;
+                }
+                content.extend_from_slice(&payload);
+            }
+            (status, content)
+        }
+
+        fn run(path: &str, len: usize, guard: &CleanGuard) -> (String, Vec<u8>) {
+            let mut output: Vec<u8> = Vec::new();
+            filter_process_serve(
+                &mut std::io::Cursor::new(clean_request(path, len)),
+                &mut output,
+                &DraconWarden::new().expect("warden"),
+                guard,
+            )
+            .expect("serve");
+            decode(&output)
+        }
+
+        #[test]
+        fn oversize_exempt_binary_passes_through_intact() {
+            let (status, content) = run("assets/shot.png", OVER, &guard(vec![]));
+            assert_eq!(status, "success", "an oversize binary must not be refused");
+            assert_eq!(
+                content.len(),
+                OVER,
+                "the WHOLE blob must survive: the passthrough decision is made \
+                 from the header, and the bytes past the bound are streamed \
+                 rather than dropped by the clean-direction drain"
+            );
+            assert!(content.iter().all(|b| *b == FILLER));
+        }
+
+        #[test]
+        fn oversize_text_still_refused() {
+            let (status, content) = run("notes/big.txt", OVER, &guard(vec![]));
+            assert_eq!(status, "error", "a >limit text path must still fail closed");
+            assert!(content.is_empty(), "a refused blob must emit no content");
+        }
+
+        /// The round-1 HIGH finding, through the entry point that matters.
+        #[test]
+        fn oversize_protected_binary_still_refused() {
+            let g = guard(vec!["secrets/**".to_string()]);
+            let (status, content) = run("secrets/dump.png", OVER, &g);
+            assert_eq!(
+                status, "error",
+                "an oversize file under protected_patterns must fail closed \
+                 even though *.png is on the carve-out list"
+            );
+            assert!(content.is_empty());
+        }
+
+        /// A non-oversize binary still goes through the real transform,
+        /// so the passthrough did not turn the carve-out into a blanket
+        /// "never scan images".
+        #[test]
+        fn small_binary_still_takes_the_normal_clean_path() {
+            let (status, content) = run("assets/small.png", LIMIT / 2, &guard(vec![]));
+            assert_eq!(status, "success");
+            assert_eq!(content.len(), LIMIT / 2);
+        }
     }
 
     /// End-to-end through git: with the managed block applied, git itself

@@ -3223,6 +3223,18 @@ fn filter_clean_refusal_reason(
     )
 }
 
+/// A `CleanGuard` for tests that only care about the size limit: the
+/// shipped carve-out defaults and no protected patterns (the default
+/// configuration). Mirrors what the old bare-`limit` call sites meant.
+#[cfg(test)]
+pub(crate) fn test_guard(limit: usize) -> CleanGuard {
+    CleanGuard {
+        limit,
+        binary_exempt: default_binary_filter_exempt_patterns(),
+        protected: Vec::new(),
+    }
+}
+
 fn filter_clean_refusal_with_limit(
     is_clean: bool,
     input_len: usize,
