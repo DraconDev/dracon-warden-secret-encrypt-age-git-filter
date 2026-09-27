@@ -1266,7 +1266,17 @@ impl WardenSecurity {
     }
 
     /// Recursively list files and check for ignored files (using whitelist)
-    pub fn scan_dir(&self, dir: &Path) -> Result<Vec<PathBuf>> {
+    ///
+    /// FIXED 2026-09-27 (audit rework round 4, F84): this was a `&self`
+    /// method, but `self` was used ONLY by the recursive call, which
+    /// clippy flags as `only_used_in_recursion` on the pinned MSRV
+    /// toolchain (1.89.0) and not on stable — so F84's CI change turned
+    /// a green job red. The walk uses no instance state at all, so it is
+    /// an associated function now. It had exactly one caller, the
+    /// recursion itself, so nothing else needed updating. This is a
+    /// signature change on a published crate (`dracon-security`), but the
+    /// method was stateless and unreachable from outside the walk.
+    pub fn scan_dir(dir: &Path) -> Result<Vec<PathBuf>> {
         let mut files = Vec::new();
 
         if dir.is_dir() {
@@ -1283,7 +1293,7 @@ impl WardenSecurity {
                     {
                         continue;
                     }
-                    if let Ok(sub) = self.scan_dir(&path) {
+                    if let Ok(sub) = Self::scan_dir(&path) {
                         files.extend(sub);
                     }
                 } else {

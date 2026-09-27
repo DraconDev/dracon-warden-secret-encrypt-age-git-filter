@@ -3349,7 +3349,10 @@ impl IndexBatch {
                 (blob.len() <= limit).then_some(blob)
             }
             Err(_) => {
-                veprintln!(2, "index-batch: response timeout/disconnect, dropping batch");
+                veprintln!(
+                    2,
+                    "index-batch: response timeout/disconnect, dropping batch"
+                );
                 self.live = None;
                 None
             }
@@ -3802,7 +3805,12 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
             }
         }
     }
-    veprintln!(2, "handshake done clean={} smudge={}", want_clean, want_smudge);
+    veprintln!(
+        2,
+        "handshake done clean={} smudge={}",
+        want_clean,
+        want_smudge
+    );
     // One batch session for the driver's whole lifetime (v0.113.14):
     // per-file spawns serialize into tens of seconds on firehose
     // repos. Created up front; resolution is lazy inside (first
