@@ -2,6 +2,8 @@
 name = "dracon-security"
 version = "0.3.7"
 edition = "2021"
+# See dracon-sync/Cargo.toml — workspace-wide MSRV, audit F84.
+rust-version = "1.89"
 license = "AGPL-3.0-only"
 description = "Secret scanning and age-based encryption primitives used by Dracon tooling"
 repository = "https://github.com/DraconDev/dracon-utilities"
