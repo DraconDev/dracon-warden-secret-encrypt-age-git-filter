@@ -58,6 +58,11 @@ cd "$TMP"
 
 # 1. NON-protected path, Tier-2-only content: the clean filter must pass
 #    the file through unchanged (no DRACON_SECRET tag).
+# shellcheck disable=SC2094
+# SC2094 is a FALSE POSITIVE here and is disabled deliberately: the
+# redirection is INPUT only (`< work/notes.txt` feeds the filter's
+# stdin). The filter writes to stdout, which is captured in $OUT.
+# No file is both read and written in the same pipeline.
 OUT="$(DRACON_WARDEN_POLICY="$TMP/policy.toml" "$BIN" filter-clean work/notes.txt < work/notes.txt 2>/dev/null)"
 if [[ "$OUT" == *"DRACON_SECRET"* ]] || [[ "$OUT" != "$TIER2" ]]; then
     echo "✗ FAIL: non-protected notes.txt was secret-scanned/encrypted — protected_patterns not wired (the 2026-08-09 wedge class)." >&2
@@ -67,6 +72,11 @@ fi
 # 1b. NON-protected path, Tier-1 content: the structured token MUST be
 #     encrypted even though the path is unprotected (2026-09-16 eager
 #     source encryption). A pre-Tier-1 binary passes it through -> FAIL.
+# shellcheck disable=SC2094
+# SC2094 is a FALSE POSITIVE here and is disabled deliberately: the
+# redirection is INPUT only (`< work/notes.txt` feeds the filter's
+# stdin). The filter writes to stdout, which is captured in $OUT.
+# No file is both read and written in the same pipeline.
 OUT1B="$(DRACON_WARDEN_POLICY="$TMP/policy.toml" "$BIN" filter-clean work/token.txt < work/token.txt 2>/dev/null)"
 if [[ "$OUT1B" != *"DRACON_SECRET"* ]] || [[ "$OUT1B" == *"$TIER1"* ]]; then
     echo "✗ FAIL: Tier-1 token in non-protected token.txt was NOT encrypted — eager source encryption missing." >&2
@@ -80,6 +90,11 @@ fi
 #    on protected files (empty OUT2 — e.g. no recipients configured) passed
 #    both `[[ ]]` tests (empty is not sk-*) and reported "✓ OK". An errored
 #    filter is a FAIL: check the exit code FIRST, then tag presence.
+# shellcheck disable=SC2094
+# SC2094 is a FALSE POSITIVE here and is disabled deliberately: the
+# redirection is INPUT only (`< work/notes.txt` feeds the filter's
+# stdin). The filter writes to stdout, which is captured in $OUT.
+# No file is both read and written in the same pipeline.
 if OUT2="$(DRACON_WARDEN_POLICY="$TMP/policy.toml" "$BIN" filter-clean work/key.pem < work/key.pem 2>/dev/null)"; then
     :
 else
