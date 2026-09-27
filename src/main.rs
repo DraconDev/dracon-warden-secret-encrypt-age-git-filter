@@ -3142,15 +3142,15 @@ fn filter_clean_refusal_with_limit(
 /// Read stage zero without invoking filters, writing the index, or falling back
 /// to HEAD (which can differ from the staged content). Missing/unmerged entries
 /// and Git failures simply disable reuse. Bound both time and captured bytes.
-//
-// FIXED 2026-09-27 (audit F95): this file had a local `macro_rules! fdbg`
-// whose name shadowed the std `dbg!` macro, and which gated its output on a
-// DRACON_FILTER_DEBUG=1 environment variable — a SECOND, undocumented way to
-// turn on diagnostics alongside the CLI's own `-v`/`-vv` verbosity flag. The
-// 14 call sites now use the existing `veprintln!(2, ...)` helper, so all of
-// warden's diagnostics share one gate, and the confusingly-named duplicate
-// macro is gone.
-
+///
+/// FIXED 2026-09-27 (audit F95): this file had a local `macro_rules! fdbg`
+/// whose name shadowed the std `dbg!` macro, and which gated its output on a
+/// `DRACON_FILTER_DEBUG=1` environment variable — a second, undocumented way to
+/// turn on diagnostics alongside the CLI's own `-v`/`-vv` verbosity flag. The
+/// driver is spawned by git rather than by a shell the operator controls, so
+/// that env var was effectively unsettable on the real path. All 14 call sites
+/// now use the existing `veprintln!(2, ...)` helper, so every warden
+/// diagnostic shares one gate.
 fn indexed_filter_blob(path: &str, limit: usize) -> Option<Vec<u8>> {
     use std::process::Stdio;
     let capture = tempfile::NamedTempFile::new().ok()?;
