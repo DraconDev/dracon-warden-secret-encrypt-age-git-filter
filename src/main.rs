@@ -3615,13 +3615,31 @@ fn filter_transform_bytes(
 /// as a section boundary like flush). Max payload 65516 bytes.
 const PKT_MAX_PAYLOAD: usize = 65516;
 
+/// Largest total packet length expressible in the 4-hex-digit pkt-line
+/// header. A payload of exactly 0x10000 - 4 bytes would need five digits.
+const PKT_MAX_TOTAL_LEN: usize = 0xFFFF;
+
 fn pkt_encode(payload: &[u8]) -> Vec<u8> {
     if payload.is_empty() {
         return b"0000".to_vec();
     }
-    let mut out = Vec::with_capacity(payload.len() + 4);
-    out.extend_from_slice(format!("{:04x}", payload.len() + 4).as_bytes());
-    out.extend_from_slice(payload);
+    // FIXED 2026-09-27 (audit F96): `format!("{:04x}", n)` does not
+    // TRUNCATE — for n >= 0x10000 it emits five digits, producing a
+    // five-character length header that desynchronises the whole
+    // pkt-line stream ("bad packet length" on the next read). Every
+    // production caller chunks at PKT_MAX_PAYLOAD so it never bit, but
+    // the helper is reachable from tests and any future caller, so the
+    // bound is now enforced here rather than left to convention.
+    let take = payload.len().min(PKT_MAX_TOTAL_LEN - 4);
+    if take != payload.len() {
+        debug_assert!(
+            false,
+            "pkt_encode called with a payload larger than the pkt-line maximum; truncating"
+        );
+    }
+    let mut out = Vec::with_capacity(take + 4);
+    out.extend_from_slice(format!("{:04x}", take + 4).as_bytes());
+    out.extend_from_slice(&payload[..take]);
     out
 }
 
@@ -3900,26 +3918,48 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
             Some(Pkt::Delim) => continue,
             Some(Pkt::Flush) => break,
             Some(Pkt::Data(chunk)) => {
-                if oversized {
-                    if direction != Some(false) {
-                        continue; // clean + unsupported: drain, keep the protocol in sync
-                    }
-                    if !passthrough_started {
-                        output.write_all(&content)?;
-                        passthrough_started = true;
-                    }
-                    output.write_all(&chunk)?;
-                    continue;
-                }
-                if content.len() + chunk.len() > cap {
+                let already_oversized = oversized;
+                // Bytes of THIS chunk that make it past the bound.
+                let accepted = if already_oversized {
+                    0
+                } else if content.len() + chunk.len() > cap {
                     // Keep exactly `cap` bytes so the oversize decision sees
                     // the same length the one-shot path would have.
                     let take = cap.saturating_sub(content.len());
                     content.extend_from_slice(&chunk[..take]);
                     oversized = true;
+                    take
+                } else {
+                    content.extend_from_slice(&chunk);
+                    chunk.len()
+                };
+                if !oversized {
                     continue;
                 }
-                content.extend_from_slice(&chunk);
+                if direction != Some(false) {
+                    // clean + unsupported: drain the rest to keep the
+                    // protocol in sync, but never emit it.
+                    continue;
+                }
+                if !passthrough_started {
+                    // pkt-line response shape: status list, content,
+                    // trailing empty list. The status MUST precede any
+                    // content or git treats the stream as malformed.
+                    output.write_all(&pkt_key_line("status=success"))?;
+                    output.write_all(b"0000")?;
+                    for framed in content.chunks(PKT_MAX_PAYLOAD) {
+                        output.write_all(&pkt_encode(framed))?;
+                    }
+                    passthrough_started = true;
+                }
+                // pkt-line is binary-safe: the 4-byte header is hex, the
+                // payload is raw, so ciphertext streams through unchanged
+                // once framed. The tail of the chunk that crossed the
+                // bound (`chunk[accepted..]`) belongs here too — dropping
+                // it would silently truncate every oversized smudge.
+                for framed in chunk[accepted..].chunks(PKT_MAX_PAYLOAD) {
+                    output.write_all(&pkt_encode(framed))?;
+                }
             }
         }
     }
@@ -3952,7 +3992,11 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
         // Smudge: flush the buffered prefix (unless it already went out in
         // the loop), then the mandatory empty terminator list.
         if !passthrough_started {
-            output.write_all(&content)?;
+            output.write_all(&pkt_key_line("status=success"))?;
+            output.write_all(b"0000")?;
+            for framed in content.chunks(PKT_MAX_PAYLOAD) {
+                output.write_all(&pkt_encode(framed))?;
+            }
         }
         output.write_all(b"0000")?;
         output.write_all(b"0000")?;

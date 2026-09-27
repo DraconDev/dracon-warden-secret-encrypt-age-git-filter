@@ -4472,7 +4472,9 @@ mod filter_process_oversize_tests {
         script.extend_from_slice(&crate::pkt_encode(format!("command={}", cmd).as_bytes()));
         script.extend_from_slice(&crate::pkt_encode(b"pathname=notes/prose.md"));
         script.extend_from_slice(b"0000");
-        for chunk in body.chunks(64 * 1024) {
+        // 16 KiB packets: comfortably inside the 4-hex-digit pkt-line
+        // header limit (0xFFFF) while still forcing many packets.
+        for chunk in body.chunks(16 * 1024) {
             script.extend_from_slice(&crate::pkt_encode(chunk));
         }
         script.extend_from_slice(b"0000");
@@ -4536,7 +4538,18 @@ mod filter_process_oversize_tests {
                 Delim => continue,
             }
         }
-        assert_eq!(got, body, "smudge passthrough must preserve every byte");
+        assert_eq!(
+            got.len(),
+            body.len(),
+            "smudge passthrough length mismatch (got {} of {} bytes)",
+            got.len(),
+            body.len()
+        );
+        assert!(
+            got == body,
+            "smudge passthrough must preserve every byte (first difference at {:?})",
+            got.iter().zip(body.iter()).position(|(a, b)| a != b)
+        );
         // Protocol still terminates: trailing empty status list.
         assert_eq!(rest[rest.len() - 1], Flush);
     }
