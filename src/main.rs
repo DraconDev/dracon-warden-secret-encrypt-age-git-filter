@@ -3317,7 +3317,7 @@ impl IndexBatch {
         };
         let dir = dir?;
         if dir.join("index.lock").exists() {
-            fdbg!("index-batch: index.lock present, skipping lookup");
+            veprintln!(2, "index-batch: index.lock present, skipping lookup");
             self.live = None;
             return None;
         }
@@ -3325,7 +3325,7 @@ impl IndexBatch {
             .and_then(|m| m.modified())
             .ok();
         if self.live.as_ref().is_some_and(|l| l.index_mtime != mtime) {
-            fdbg!("index-batch: index moved, respawning");
+            veprintln!(2, "index-batch: index moved, respawning");
             self.live = None;
         }
         if self.live.is_none() && !self.spawn(&dir, mtime) {
@@ -3339,7 +3339,7 @@ impl IndexBatch {
             .and_then(|()| std::io::Write::flush(&mut live.stdin))
             .is_err()
         {
-            fdbg!("index-batch: query write failed, dropping batch");
+            veprintln!(2, "index-batch: query write failed, dropping batch");
             self.live = None;
             return None;
         }
@@ -3352,7 +3352,7 @@ impl IndexBatch {
                 (blob.len() <= limit).then_some(blob)
             }
             Err(_) => {
-                fdbg!("index-batch: response timeout/disconnect, dropping batch");
+                veprintln!(2, "index-batch: response timeout/disconnect, dropping batch");
                 self.live = None;
                 None
             }
@@ -3376,7 +3376,7 @@ impl IndexBatch {
         {
             Ok(c) => c,
             Err(e) => {
-                fdbg!("index-batch: spawn failed: {}", e);
+                veprintln!(2, "index-batch: spawn failed: {}", e);
                 return false;
             }
         };
@@ -3390,7 +3390,7 @@ impl IndexBatch {
         };
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || index_batch_reader(stdout, tx));
-        fdbg!("index-batch: spawned for {}", dir.display());
+        veprintln!(2, "index-batch: spawned for {}", dir.display());
         self.live = Some(LiveBatch {
             child,
             stdin,
@@ -3689,9 +3689,9 @@ fn pkt_key_line(s: &str) -> Vec<u8> {
 /// failure). Permanent: the driver is otherwise a black box when
 /// git reports "remote end hung up".
 fn run_filter_process() -> i32 {
-    fdbg!("start");
+    veprintln!(2, "start");
     wire_managed_patterns_from_policy();
-    fdbg!("patterns wired");
+    veprintln!(2, "patterns wired");
     let limit = match configured_filter_limit() {
         Ok(l) => l,
         Err(e) => {
@@ -3708,7 +3708,7 @@ fn run_filter_process() -> i32 {
             return 1;
         }
     };
-    fdbg!("warden constructed");
+    veprintln!(2, "warden constructed");
     let mut input = std::io::BufReader::new(std::io::stdin());
     let mut output = std::io::BufWriter::new(std::io::stdout());
     if let Err(e) = filter_process_serve(&mut input, &mut output, &warden, limit) {
@@ -3780,7 +3780,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
             }
         }
     }
-    fdbg!("handshake done clean={} smudge={}", want_clean, want_smudge);
+    veprintln!(2, "handshake done clean={} smudge={}", want_clean, want_smudge);
     // One batch session for the driver's whole lifetime (v0.113.14):
     // per-file spawns serialize into tens of seconds on firehose
     // repos. Created up front; resolution is lazy inside (first
@@ -3788,7 +3788,7 @@ fn filter_process_serve<R: std::io::Read, W: std::io::Write>(
     // silently and take fresh encryption per file).
     let mut lookup = IndexLookup::Batch(IndexBatch::new());
     if section.iter().any(|l| l.starts_with(b"command=")) {
-        fdbg!("phase-2 section was a request, serving directly");
+        veprintln!(2, "phase-2 section was a request, serving directly");
         serve_one_request(input, output, warden, limit, &section, &mut lookup)?;
     } else {
         if want_clean {
@@ -3846,7 +3846,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     let Some(command) = command else {
         return Err(anyhow::anyhow!("request without command"));
     };
-    fdbg!("request command={} pathname={:?}", command, pathname);
+    veprintln!(2, "request command={} pathname={:?}", command, pathname);
     let t0 = std::time::Instant::now();
     let mut content = Vec::new();
     loop {
@@ -3857,7 +3857,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
             Some(Pkt::Data(chunk)) => content.extend_from_slice(&chunk),
         }
     }
-    fdbg!("content {} bytes in {:?}", content.len(), t0.elapsed());
+    veprintln!(2, "content {} bytes in {:?}", content.len(), t0.elapsed());
     // Only clean/smudge were advertised; anything else (e.g.
     // list_available_blobs) fails closed per file — the
     // driver stays up to serve the rest.
@@ -3877,7 +3877,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     };
     let t1 = std::time::Instant::now();
     let r = filter_transform_bytes(warden, direction, pathname, content, limit, lookup);
-    fdbg!("transform done in {:?}", t1.elapsed());
+    veprintln!(2, "transform done in {:?}", t1.elapsed());
     match r {
         Ok(bytes) => {
             // Response shape per gitattributes(5) long-running
