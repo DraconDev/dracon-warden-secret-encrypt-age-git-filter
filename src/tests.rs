@@ -4447,3 +4447,97 @@ protected_patterns = ["secrets.json"]
         assert_eq!(via_batch, input, "unprotected content passes through");
     }
 }
+
+/// ADDED 2026-09-27 (audit F96): the packet loop used to buffer the
+/// whole blob before `filter_transform_bytes` consulted `limit`, so a
+/// repo-controlled multi-GB blob drove unbounded RSS in the filter
+/// driver. These tests pin the bounded behaviour: the clean direction
+/// fails CLOSED and writes nothing, and the smudge direction
+/// passthroughs the full body byte-identically (streaming, so nothing
+/// is lost) while still terminating the protocol correctly.
+#[cfg(test)]
+mod filter_process_oversize_tests {
+    fn drive(cmd: &str, body: &[u8], limit: usize) -> Vec<crate::Pkt> {
+        let warden = crate::DraconWarden::new().expect("create warden");
+        let mut script = Vec::new();
+        for line in [
+            "git-filter-client",
+            "version=2",
+            "capability=clean",
+            "capability=smudge",
+        ] {
+            script.extend_from_slice(&crate::pkt_encode(line.as_bytes()));
+        }
+        script.extend_from_slice(b"0000");
+        script.extend_from_slice(&crate::pkt_encode(format!("command={}", cmd).as_bytes()));
+        script.extend_from_slice(&crate::pkt_encode(b"pathname=notes/prose.md"));
+        script.extend_from_slice(b"0000");
+        for chunk in body.chunks(64 * 1024) {
+            script.extend_from_slice(&crate::pkt_encode(chunk));
+        }
+        script.extend_from_slice(b"0000");
+        let mut input = std::io::Cursor::new(script);
+        let mut output = Vec::new();
+        crate::filter_process_serve(&mut input, &mut output, &warden, limit).expect("serve");
+        let mut cur = std::io::Cursor::new(output);
+        let mut pkts = Vec::new();
+        while let Some(p) = crate::pkt_read(&mut cur).expect("resp decode") {
+            pkts.push(p);
+        }
+        pkts
+    }
+
+    /// Skip the handshake response and return the per-request packets.
+    fn after_handshake(pkts: &[crate::Pkt]) -> &[crate::Pkt] {
+        use crate::Pkt::*;
+        let mut i = 0;
+        while let Data(_) = &pkts[i] {
+            i += 1;
+        }
+        assert_eq!(pkts[i], Flush);
+        &pkts[i + 1..]
+    }
+
+    #[test]
+    fn clean_oversize_fails_closed_and_writes_no_content() {
+        let body = vec![b'x'; 200_000];
+        let pkts = drive("clean", &body, 1024);
+        let rest = after_handshake(&pkts);
+        use crate::Pkt::*;
+        match &rest[0] {
+            Data(s) => assert_eq!(String::from_utf8_lossy(s), "status=error\n"),
+            other => panic!("expected error status, got {:?}", other),
+        }
+        // No content may follow: a passthrough here would commit the
+        // file UNENCRYPTED, which is the whole point of the guard.
+        assert!(
+            !rest.iter().any(|p| matches!(p, Data(d) if d.len() > 64)),
+            "oversize clean must not emit content: {:?}",
+            rest
+        );
+    }
+
+    #[test]
+    fn smudge_oversize_passthroughs_every_byte() {
+        let body: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+        let pkts = drive("smudge", &body, 1024);
+        let rest = after_handshake(&pkts);
+        use crate::Pkt::*;
+        match &rest[0] {
+            Data(s) => assert_eq!(String::from_utf8_lossy(s), "status=success\n"),
+            other => panic!("expected success status, got {:?}", other),
+        }
+        // Everything after the status-list terminator is the body.
+        let mut got = Vec::new();
+        for p in &rest[2..] {
+            match p {
+                Data(chunk) => got.extend_from_slice(chunk),
+                Flush => break,
+                Delim => continue,
+            }
+        }
+        assert_eq!(got, body, "smudge passthrough must preserve every byte");
+        // Protocol still terminates: trailing empty status list.
+        assert_eq!(rest[rest.len() - 1], Flush);
+    }
+}

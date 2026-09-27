@@ -3142,17 +3142,14 @@ fn filter_clean_refusal_with_limit(
 /// Read stage zero without invoking filters, writing the index, or falling back
 /// to HEAD (which can differ from the staged content). Missing/unmerged entries
 /// and Git failures simply disable reuse. Bound both time and captured bytes.
-macro_rules! fdbg {
-    ($($arg:tt)*) => {
-        if std::env::var("DRACON_FILTER_DEBUG").as_deref() == Ok("1") {
-            eprintln!("[filter-process {}] {}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis()).unwrap_or(0),
-                format!($($arg)*));
-        }
-    };
-}
+//
+// FIXED 2026-09-27 (audit F95): this file had a local `macro_rules! fdbg`
+// whose name shadowed the std `dbg!` macro, and which gated its output on a
+// DRACON_FILTER_DEBUG=1 environment variable — a SECOND, undocumented way to
+// turn on diagnostics alongside the CLI's own `-v`/`-vv` verbosity flag. The
+// 14 call sites now use the existing `veprintln!(2, ...)` helper, so all of
+// warden's diagnostics share one gate, and the confusingly-named duplicate
+// macro is gone.
 
 fn indexed_filter_blob(path: &str, limit: usize) -> Option<Vec<u8>> {
     use std::process::Stdio;
@@ -3684,10 +3681,17 @@ fn pkt_key_line(s: &str) -> Vec<u8> {
 /// responses on stdout, exits 0 on clean EOF. Returns the process
 /// exit code (0 = clean EOF; 1 = handshake violation, I/O error,
 /// or config failure — all fail closed: git aborts the operation).
-/// Timestamped trace line for filter-process forensics, gated on
-/// `DRACON_FILTER_DEBUG=1` (stderr — git surfaces driver stderr on
+/// Timestamped trace line for filter-process forensics, gated on the
+/// CLI's `-vv` verbosity flag (stderr — git surfaces driver stderr on
 /// failure). Permanent: the driver is otherwise a black box when
 /// git reports "remote end hung up".
+///
+/// CHANGED 2026-09-27 (audit F95): the trace used to be gated on the
+/// `DRACON_FILTER_DEBUG=1` environment variable instead. The driver is
+/// spawned by git, not by a shell the operator controls, so that env
+/// var was effectively unsettable on the real path — the tracing it
+/// documents was unreachable in production. All warden's diagnostics
+/// now share the `-v`/`-vv` flag that the CLI already documents.
 fn run_filter_process() -> i32 {
     veprintln!(2, "start");
     wire_managed_patterns_from_policy();
@@ -3846,35 +3850,115 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     let Some(command) = command else {
         return Err(anyhow::anyhow!("request without command"));
     };
-    veprintln!(2, "request command={} pathname={:?}", command, pathname);
-    let t0 = std::time::Instant::now();
-    let mut content = Vec::new();
-    loop {
-        match pkt_read(input)? {
-            None => return Err(anyhow::anyhow!("EOF mid-content")),
-            Some(Pkt::Delim) => continue,
-            Some(Pkt::Flush) => break,
-            Some(Pkt::Data(chunk)) => content.extend_from_slice(&chunk),
-        }
-    }
-    veprintln!(2, "content {} bytes in {:?}", content.len(), t0.elapsed());
     // Only clean/smudge were advertised; anything else (e.g.
     // list_available_blobs) fails closed per file — the
-    // driver stays up to serve the rest.
+    // driver stays up to serve the rest. The decision is made from the
+    // HEADER (before the body), but the body is still drained below in
+    // every case: the pkt-line protocol is positional, so returning
+    // early would leave the next request misaligned.
     let direction = match command {
-        "clean" => true,
-        "smudge" => false,
+        "clean" => Some(true),
+        "smudge" => Some(false),
         other => {
             eprintln!(
                 "dracon-warden: filter-process unsupported command '{}'",
                 other
             );
+            None
+        }
+    };
+    veprintln!(2, "request command={} pathname={:?}", command, pathname);
+    let t0 = std::time::Instant::now();
+    // FIXED 2026-09-27 (audit F96): this loop used to
+    // `content.extend_from_slice(&chunk)` with no length check, so the
+    // WHOLE blob was resident in RAM before `filter_transform_bytes`
+    // ever consulted `limit`. The one-shot path this replaced
+    // deliberately caps its read at `limit + 1` via `reader.take()` and
+    // streams the remainder; the bound was lost in the v0.113.13
+    // migration, so a repo-controlled multi-GB blob in any repo with
+    // `* filter=dracon` drove unbounded RSS in a security-critical
+    // process (and the code even documented the asymmetry).
+    //
+    // Bounded accumulation:
+    //   * up to `limit + 1` bytes are buffered, mirroring read_filter_input;
+    //   * the clean direction NEVER streams early — a clean refusal must
+    //     be able to abort the add, so nothing may reach `output` before
+    //     the decision. Packets past the bound are drained and dropped.
+    //   * the smudge direction streams the remainder straight through as it
+    //     arrives, exactly like the one-shot `std::io::copy(&mut stdin, ..)`
+    //     tail, so the protocol stays in sync and the ciphertext is
+    //     preserved in full without ever being fully buffered.
+    let cap = limit.saturating_add(1);
+    let mut content: Vec<u8> = Vec::new();
+    let mut oversized = false;
+    // Set once the smudge passthrough starts, so the buffered prefix is
+    // flushed exactly once.
+    let mut passthrough_started = false;
+    loop {
+        match pkt_read(input)? {
+            None => return Err(anyhow::anyhow!("EOF mid-content")),
+            Some(Pkt::Delim) => continue,
+            Some(Pkt::Flush) => break,
+            Some(Pkt::Data(chunk)) => {
+                if oversized {
+                    if direction != Some(false) {
+                        continue; // clean + unsupported: drain, keep the protocol in sync
+                    }
+                    if !passthrough_started {
+                        output.write_all(&content)?;
+                        passthrough_started = true;
+                    }
+                    output.write_all(&chunk)?;
+                    continue;
+                }
+                if content.len() + chunk.len() > cap {
+                    // Keep exactly `cap` bytes so the oversize decision sees
+                    // the same length the one-shot path would have.
+                    let take = cap.saturating_sub(content.len());
+                    content.extend_from_slice(&chunk[..take]);
+                    oversized = true;
+                    continue;
+                }
+                content.extend_from_slice(&chunk);
+            }
+        }
+    }
+    veprintln!(2, "content {} bytes in {:?}", content.len(), t0.elapsed());
+    // Unsupported command: the body above has been drained, so the
+    // protocol is still in sync. Fail closed for this file only.
+    let Some(direction) = direction else {
+        output.write_all(&pkt_key_line("status=error"))?;
+        output.write_all(b"0000")?;
+        output.flush()?;
+        return Ok(());
+    };
+    if oversized {
+        // Same two decisions `filter_transform_bytes` / `run_filter` make,
+        // in the same order.
+        if direction {
+            let reason = filter_clean_refusal_with_limit(true, cap, pathname, limit)
+                .unwrap_or_else(|| {
+                    format!(
+                        "dracon-warden: refusing to clean more than {} bytes (the file would be committed UNENCRYPTED)",
+                        limit
+                    )
+                });
+            eprintln!("{}", reason);
             output.write_all(&pkt_key_line("status=error"))?;
             output.write_all(b"0000")?;
             output.flush()?;
             return Ok(());
         }
-    };
+        // Smudge: flush the buffered prefix (unless it already went out in
+        // the loop), then the mandatory empty terminator list.
+        if !passthrough_started {
+            output.write_all(&content)?;
+        }
+        output.write_all(b"0000")?;
+        output.write_all(b"0000")?;
+        output.flush()?;
+        return Ok(());
+    }
     let t1 = std::time::Instant::now();
     let r = filter_transform_bytes(warden, direction, pathname, content, limit, lookup);
     veprintln!(2, "transform done in {:?}", t1.elapsed());
