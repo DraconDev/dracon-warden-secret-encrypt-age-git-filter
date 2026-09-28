@@ -3825,8 +3825,9 @@ const PKT_MAX_TOTAL_LEN: usize = 0xFFFF;
 /// operator's own setting (raising `filter_max_bytes` raises this with
 /// it) while leaving room for the case the carve-out exists for: a
 /// multi-megabyte screenshot or archive several times the scan limit.
-/// At the policy maximum of 64 MiB the worst case is 256 MiB resident,
-/// once, for a single blob, in the driver process.
+/// At the policy maximum of 64 MiB the bound is 256 MiB for one blob;
+/// `Vec` growth doubles, so a request that reaches the bound can hold
+/// roughly 1.5x that for the duration of the last reallocation.
 fn passthrough_ceiling_bytes(limit: usize) -> usize {
     limit.saturating_mul(4).max(STREAM_IO_MAX_BYTES)
 }
@@ -4157,8 +4158,9 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     //
     // Measured against real git 2.51.2: the long-running filter protocol
     // makes git write the ENTIRE request before it reads ANY response
-    // (the one-shot clean/smudge path does read concurrently — verified
-    // both ways). So a driver that streams the response as it consumes
+    // (the one-shot clean/smudge path is not affected — a 12 MiB
+    // oversize smudge streams through `std::io::copy` there without
+    // stalling). So a driver that streams the response as it consumes
     // the request deadlocks as soon as the response outgrows the 64 KiB
     // pipe buffer while the request still has bytes to write: git blocks
     // in write(), the driver blocks in write(), and the operation hangs
