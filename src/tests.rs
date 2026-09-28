@@ -4814,13 +4814,14 @@ mod binary_carve_out_tests {
             }
         }
 
-        /// Handshake + one clean request carrying `len` filler bytes.
-        fn clean_request(path: &str, len: usize) -> Vec<u8> {
+        /// Handshake + one request carrying `len` filler bytes.
+        fn request(command: &str, path: &str, len: usize) -> Vec<u8> {
             let mut input = Vec::new();
             input.extend(pkt_key_line("git-filter-client"));
             input.extend(pkt_key_line("capability=clean"));
+            input.extend(pkt_key_line("capability=smudge"));
             input.extend(b"0000");
-            input.extend(pkt_key_line("command=clean"));
+            input.extend(pkt_key_line(&format!("command={command}")));
             input.extend(pkt_key_line(&format!("pathname={path}")));
             input.extend(b"0000");
             // Chained in frames small enough to cross the bound in the
@@ -4832,6 +4833,10 @@ mod binary_carve_out_tests {
             }
             input.extend(b"0000");
             input
+        }
+
+        fn clean_request(path: &str, len: usize) -> Vec<u8> {
+            request("clean", path, len)
         }
 
         /// `(status, re-assembled content)` from one response.
@@ -4918,6 +4923,83 @@ mod binary_carve_out_tests {
             let (status, content) = run("assets/small.png", LIMIT / 2, &guard(vec![]));
             assert_eq!(status, "success");
             assert_eq!(content.len(), LIMIT / 2);
+        }
+
+        /// ADDED 2026-09-27 (audit round 2, HIGH): the ceiling that
+        /// bounds the deferred passthrough.
+        ///
+        /// The driver cannot relay a response while git is still writing
+        /// the request (git writes the whole request before reading, so
+        /// an early response deadlocks both pipes), which is why the blob
+        /// is buffered. The buffer needs an operator-visible bound, and a
+        /// blob past it must fail loudly for this file — never be relayed
+        /// truncated.
+        #[test]
+        fn oversize_passthrough_is_bounded_and_never_truncated() {
+            let ceiling = passthrough_ceiling_bytes(LIMIT);
+            assert_eq!(
+                ceiling,
+                (LIMIT * 4).max(STREAM_IO_MAX_BYTES),
+                "the ceiling is a small multiple of the operator's own limit, \
+                 with a floor so a deliberately small limit still has room"
+            );
+            // Just inside the ceiling: relayed in full.
+            let (status, content) = run("assets/edge.png", ceiling, &guard(vec![]));
+            assert_eq!(status, "success");
+            assert_eq!(content.len(), ceiling, "the boundary blob is relayed whole");
+
+            // Past the ceiling: refused, with no partial content that git
+            // could store as if it were the file.
+            let (status, content) = run("assets/huge.png", ceiling + 4096, &guard(vec![]));
+            assert_eq!(status, "error", "a blob past the ceiling must fail closed");
+            assert!(
+                content.is_empty(),
+                "an over-ceiling blob must emit no content, got {} bytes",
+                content.len()
+            );
+
+            // Same bound in the smudge direction, where the old code
+            // streamed the tail (the deadlock the fix removed).
+            let mut output: Vec<u8> = Vec::new();
+            filter_process_serve(
+                &mut std::io::Cursor::new(request("smudge", "assets/huge.png", ceiling + 4096)),
+                &mut output,
+                &DraconWarden::new().expect("warden"),
+                &guard(vec![]),
+            )
+            .expect("serve");
+            let (status, content) = decode(&output);
+            assert_eq!(status, "error");
+            assert!(content.is_empty());
+        }
+
+        /// The floor keeps a deliberately small `filter_max_bytes` from
+        /// turning the ceiling into a hair-trigger, and the multiple keeps
+        /// the memory bound tied to the operator's own setting. The
+        /// production bound is 4x a validated limit (max 64 MiB), i.e. at
+        /// most 256 MiB resident for one blob; the saturating multiply
+        /// means a nonsense limit can never wrap into a smaller bound.
+        #[test]
+        fn passthrough_ceiling_scales_with_the_configured_limit() {
+            assert_eq!(
+                passthrough_ceiling_bytes(10 * 1024 * 1024),
+                40 * 1024 * 1024
+            );
+            assert_eq!(
+                passthrough_ceiling_bytes(64 * 1024 * 1024),
+                256 * 1024 * 1024,
+                "the policy maximum limit must still give a bounded ceiling"
+            );
+            assert_eq!(
+                passthrough_ceiling_bytes(1),
+                STREAM_IO_MAX_BYTES,
+                "a tiny limit must still leave room for a passthrough"
+            );
+            assert_eq!(
+                passthrough_ceiling_bytes(usize::MAX / 2),
+                usize::MAX,
+                "the multiply saturates instead of wrapping into a smaller bound"
+            );
         }
     }
 
