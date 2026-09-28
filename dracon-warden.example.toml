@@ -55,15 +55,32 @@ plaintext_patterns = []
 # the filter off, which would strip the protection from everything.
 #
 # These patterns are emitted as `-filter` carve-outs in the managed
-# .gitattributes block, and the oversize refusal honours the same list, so
-# binary media and archives are committed as-is no matter their size.
-# They carry no greppable secret material and are not reviewable in a
-# diff, so filtering them buys nothing.
+# .gitattributes block, and the oversize refusal honours the same list in
+# the `filter-process` driver, so binary media and archives are committed
+# as-is no matter their size. They carry no greppable secret material and
+# are not reviewable in a diff, so filtering them buys nothing.
 #
 # Omit this key to use the shipped defaults (images, video/audio,
 # archives, compiled artefacts, pdf). Set it to an explicit list to
 # REPLACE the defaults, or `[]` to disable the carve-out entirely and
 # restore the hard failure for every oversized file.
+#
+# SIZE CEILING: git's long-running filter protocol has no flow control, so
+# the driver must hold an oversize blob until the request ends before it
+# can answer (streaming it back deadlocks both pipes). That buffer is
+# bounded at 4x filter_max_bytes — raise filter_max_bytes to raise it with
+# it. A blob past the ceiling is refused with an explicit message rather
+# than relayed truncated, so .gitignore anything that legitimately exceeds
+# it.
+#
+# ENTRY POINTS: the in-filter exemption needs the pathname, which git
+# supplies over `filter.dracon.process` (what `dracon-warden once`
+# installs) and which `dracon-warden filter-clean <path>` accepts as an
+# argument. A repo still configured with the older one-shot
+# filter.dracon.clean/smudge pair gets NO pathname (verified on git
+# 2.51.2), so there the guard stays closed: the `-filter` lines in the
+# managed block are the mechanism there, so run `dracon-warden once` to
+# migrate the repo.
 #
 # SECURITY NOTE: a file under one of these patterns is never scanned, so a
 # secret placed in e.g. `notes.png` is NOT detected. Keep genuinely
