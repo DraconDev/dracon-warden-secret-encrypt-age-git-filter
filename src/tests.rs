@@ -4814,13 +4814,14 @@ mod binary_carve_out_tests {
             }
         }
 
-        /// Handshake + one clean request carrying `len` filler bytes.
-        fn clean_request(path: &str, len: usize) -> Vec<u8> {
+        /// Handshake + one request carrying `len` filler bytes.
+        fn request(command: &str, path: &str, len: usize) -> Vec<u8> {
             let mut input = Vec::new();
             input.extend(pkt_key_line("git-filter-client"));
             input.extend(pkt_key_line("capability=clean"));
+            input.extend(pkt_key_line("capability=smudge"));
             input.extend(b"0000");
-            input.extend(pkt_key_line("command=clean"));
+            input.extend(pkt_key_line(&format!("command={command}")));
             input.extend(pkt_key_line(&format!("pathname={path}")));
             input.extend(b"0000");
             // Chained in frames small enough to cross the bound in the
@@ -4832,6 +4833,10 @@ mod binary_carve_out_tests {
             }
             input.extend(b"0000");
             input
+        }
+
+        fn clean_request(path: &str, len: usize) -> Vec<u8> {
+            request("clean", path, len)
         }
 
         /// `(status, re-assembled content)` from one response.
@@ -4934,8 +4939,9 @@ mod binary_carve_out_tests {
             let ceiling = passthrough_ceiling_bytes(LIMIT);
             assert_eq!(
                 ceiling,
-                LIMIT * 4,
-                "the ceiling is a small multiple of the operator's own limit"
+                (LIMIT * 4).max(STREAM_IO_MAX_BYTES),
+                "the ceiling is a small multiple of the operator's own limit, \
+                 with a floor so a deliberately small limit still has room"
             );
             // Just inside the ceiling: relayed in full.
             let (status, content) = run("assets/edge.png", ceiling, &guard(vec![]));
@@ -4954,13 +4960,9 @@ mod binary_carve_out_tests {
 
             // Same bound in the smudge direction, where the old code
             // streamed the tail (the deadlock the fix removed).
-            let mut script = clean_request("assets/huge.png", ceiling + 4096);
-            // Re-label the request as a smudge (same body, other command).
-            let smudge = String::from_utf8_lossy(&script)
-                .replace("command=clean", "command=smudge");
             let mut output: Vec<u8> = Vec::new();
             filter_process_serve(
-                &mut std::io::Cursor::new(smudge.into_bytes()),
+                &mut std::io::Cursor::new(request("smudge", "assets/huge.png", ceiling + 4096)),
                 &mut output,
                 &DraconWarden::new().expect("warden"),
                 &guard(vec![]),
@@ -4973,18 +4975,30 @@ mod binary_carve_out_tests {
 
         /// The floor keeps a deliberately small `filter_max_bytes` from
         /// turning the ceiling into a hair-trigger, and the multiple keeps
-        /// the memory bound tied to the operator's own setting.
+        /// the memory bound tied to the operator's own setting. The
+        /// production bound is 4x a validated limit (max 64 MiB), i.e. at
+        /// most 256 MiB resident for one blob; the saturating multiply
+        /// means a nonsense limit can never wrap into a smaller bound.
         #[test]
         fn passthrough_ceiling_scales_with_the_configured_limit() {
-            assert_eq!(passthrough_ceiling_bytes(10 * 1024 * 1024), 40 * 1024 * 1024);
-            assert_eq!(passthrough_ceiling_bytes(64 * 1024 * 1024), 256 * 1024 * 1024);
-            assert!(
-                passthrough_ceiling_bytes(1) > 1,
+            assert_eq!(
+                passthrough_ceiling_bytes(10 * 1024 * 1024),
+                40 * 1024 * 1024
+            );
+            assert_eq!(
+                passthrough_ceiling_bytes(64 * 1024 * 1024),
+                256 * 1024 * 1024,
+                "the policy maximum limit must still give a bounded ceiling"
+            );
+            assert_eq!(
+                passthrough_ceiling_bytes(1),
+                STREAM_IO_MAX_BYTES,
                 "a tiny limit must still leave room for a passthrough"
             );
-            assert!(
-                passthrough_ceiling_bytes(usize::MAX / 2) < usize::MAX,
-                "the ceiling must never overflow into a nonsense bound"
+            assert_eq!(
+                passthrough_ceiling_bytes(usize::MAX / 2),
+                usize::MAX,
+                "the multiply saturates instead of wrapping into a smaller bound"
             );
         }
     }
