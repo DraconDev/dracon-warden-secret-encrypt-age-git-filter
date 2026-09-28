@@ -332,18 +332,10 @@ impl WardenSecurity {
             .collect()
     }
 
-    fn contains_any_secret_tag(&self, content: &str) -> bool {
-        self.secret_tag_prefixes()
-            .iter()
-            .any(|prefix| content.contains(prefix))
-    }
-
-    fn count_secret_tags(&self, content: &str) -> usize {
-        self.secret_tag_prefixes()
-            .iter()
-            .map(|prefix| content.matches(prefix).count())
-            .sum()
-    }
+    // REMOVED 2026-09-27 (D3) with `decrypt_file`, their only caller:
+    // `contains_any_secret_tag` and `count_secret_tags`. The smudge path
+    // uses `decrypt_whole_file_tag` / `smart_smudge` directly and never
+    // needed the text-level prefix scan.
 
     /// Trim trailing line-ending artifacts (`\r`/`\n`) from the end of
     /// a whole-file secret tag. ADDED 2026-08-09 (audit MEDIUM): the
@@ -1460,6 +1452,53 @@ impl DraconWarden {
 mod tests {
     use super::*;
     use crate::modules::filter::path_is_protected;
+
+    /// REMOVED-API tripwire (2026-09-27, D3).
+    ///
+    /// A removal has no positive test: there is nothing left to call.
+    /// What can regress is the API coming BACK, or the breaking version
+    /// bump being dropped, so both are asserted from the crate's own
+    /// source and manifest. The assert is on the DEFINITION form
+    /// (`pub fn name` / `fn name(`), not the bare identifier, because the
+    /// historical notes that explain why these were removed mention the
+    /// names by design.
+    #[test]
+    fn d3_removed_apis_stay_removed() {
+        const LIB: &str = include_str!("lib.rs");
+        const FILTER: &str = include_str!("modules/filter.rs");
+        const TEAM: &str = include_str!("modules/team.rs");
+        const MANIFEST: &str = include_str!("../Cargo.toml");
+
+        // Search only the PRODUCTION half of lib.rs: this test names the
+        // removed functions in its own needle table, so a whole-file scan
+        // would match this test instead of a real definition.
+        let lib_prod = LIB.split("mod tests {").next().unwrap_or(LIB);
+
+        for (source, name, definition) in [
+            (FILTER, "decrypt_path", "pub fn decrypt_path"),
+            (lib_prod, "decrypt_file", "fn decrypt_file("),
+            (TEAM, "revoke_recipient", "pub fn revoke_recipient"),
+            // The private helpers existed only for `decrypt_file`.
+            (lib_prod, "contains_any_secret_tag", "fn contains_any_secret_tag"),
+            (lib_prod, "count_secret_tags", "fn count_secret_tags"),
+        ] {
+            assert!(
+                !source.contains(definition),
+                "{name} was removed in dracon-security 0.4.0 (D3) — it had no \
+                 reachable caller; do not reintroduce it without the audit's say"
+            );
+        }
+        // The doc line that advertised recipient revocation went with it.
+        assert!(
+            !lib_prod.contains("Revoke a recipient's access to this repo"),
+            "the TeamManager API doc must not advertise the removed revocation entry point"
+        );
+        // A removal is a breaking change: the manifest must still be 0.4.x.
+        assert!(
+            MANIFEST.contains("version = \"0.4.0\""),
+            "dracon-security must stay on the 0.4 line that declares the D3 break"
+        );
+    }
 
     #[test]
     fn test_managed_patterns_override_roundtrip() {
