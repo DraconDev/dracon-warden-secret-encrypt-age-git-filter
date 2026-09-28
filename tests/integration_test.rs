@@ -512,18 +512,21 @@ filter_max_bytes = 10485760
 
         let mut stdout = child.stdout.take().unwrap();
         let mut raw = Vec::new();
-        let read_ok = std::thread::spawn(move || stdout.read_to_end(&mut raw))
-            .join()
-            .map(|r| r.is_ok())
-            .unwrap_or(false)
-            && child.wait().map(|s| s.success()).unwrap_or(false);
-        assert!(read_ok, "the driver must exit 0 at clean EOF");
+        // Safe to read on this thread: the request is already fully
+        // written, so the driver is producing its response and closes
+        // stdout at clean EOF.
+        stdout.read_to_end(&mut raw).expect("read the driver response");
+        assert!(
+            child.wait().map(|s| s.success()).unwrap_or(false),
+            "the driver must exit 0 at clean EOF"
+        );
 
         // Decode: key lines up to the first flush, then the content.
         let (mut status, mut content) = (String::new(), Vec::new());
+        let total = raw.len();
         let mut cur = std::io::Cursor::new(raw);
         let mut seen_status = false;
-        while cur.position() < raw.len() as u64 {
+        while cur.position() < total as u64 {
             let mut hdr = [0u8; 4];
             if std::io::Read::read_exact(&mut cur, &mut hdr).is_err() {
                 break;
