@@ -1479,7 +1479,11 @@ mod tests {
             (lib_prod, "decrypt_file", "fn decrypt_file("),
             (TEAM, "revoke_recipient", "pub fn revoke_recipient"),
             // The private helpers existed only for `decrypt_file`.
-            (lib_prod, "contains_any_secret_tag", "fn contains_any_secret_tag"),
+            (
+                lib_prod,
+                "contains_any_secret_tag",
+                "fn contains_any_secret_tag",
+            ),
             (lib_prod, "count_secret_tags", "fn count_secret_tags"),
         ] {
             assert!(
