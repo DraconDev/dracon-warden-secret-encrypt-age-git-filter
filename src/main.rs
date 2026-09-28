@@ -3809,6 +3809,28 @@ const PKT_MAX_PAYLOAD: usize = 65516;
 /// header. A payload of exactly 0x10000 - 4 bytes would need five digits.
 const PKT_MAX_TOTAL_LEN: usize = 0xFFFF;
 
+/// ADDED 2026-09-27 (audit round 2): hard ceiling on a blob the
+/// long-running driver will relay untouched (a size-exempt clean, or an
+/// oversize smudge).
+///
+/// Git's long-running filter protocol gives the driver no flow control:
+/// git writes the entire request before reading any of the response, so
+/// the response cannot be produced while the request is still arriving
+/// (that deadlocks the pipe — see the comment at the accumulation loop).
+/// The blob must therefore be held in memory until the request ends, and
+/// that hold needs an operator-visible bound rather than trusting a
+/// repo-controlled file size.
+///
+/// Four times `filter_max_bytes` keeps the memory ceiling tied to the
+/// operator's own setting (raising `filter_max_bytes` raises this with
+/// it) while leaving room for the case the carve-out exists for: a
+/// multi-megabyte screenshot or archive several times the scan limit.
+/// At the policy maximum of 64 MiB the worst case is 256 MiB resident,
+/// once, for a single blob, in the driver process.
+fn passthrough_ceiling_bytes(limit: usize) -> usize {
+    limit.saturating_mul(4).max(STREAM_IO_MAX_BYTES)
+}
+
 fn pkt_encode(payload: &[u8]) -> Vec<u8> {
     if payload.is_empty() {
         return b"0000".to_vec();
@@ -4095,13 +4117,16 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
     //
     // Bounded accumulation:
     //   * up to `limit + 1` bytes are buffered, mirroring read_filter_input;
-    //   * the clean direction NEVER streams early — a clean refusal must
-    //     be able to abort the add, so nothing may reach `output` before
-    //     the decision. Packets past the bound are drained and dropped.
-    //   * the smudge direction streams the remainder straight through as it
-    //     arrives, exactly like the one-shot `std::io::copy(&mut stdin, ..)`
-    //     tail, so the protocol stays in sync and the ciphertext is
-    //     preserved in full without ever being fully buffered.
+    //   * the clean direction NEVER relays early — a clean refusal must be
+    //     able to abort the add, and nothing may reach `output` before the
+    //     decision. Packets past the bound are drained and dropped unless
+    //     the header already waived the size guard.
+    //   * a waived/oversize relay (smudge, or a size-exempt clean) is
+    //     buffered up to `passthrough_ceiling_bytes(limit)` and written
+    //     only after the request ends — writing early deadlocks against
+    //     git, which writes the whole request before it reads. Past the
+    //     ceiling the body is drained and dropped and the file is
+    //     reported as an error, never as a truncated blob.
     let cap = limit.saturating_add(1);
     // FIXED 2026-09-27 (audit round 1, MED): whether an oversize clean
     // of THIS path would be permitted has to be settled HERE, from the
@@ -4124,15 +4149,39 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
             &guard.protected,
         )
         .is_none();
-    // A clean passthrough is streamed exactly like smudge: the bytes past
-    // the bound must reach the output, and they can only be framed as
-    // they arrive.
-    let streamable = direction == Some(false) || clean_passthrough;
+    // A clean passthrough is handled exactly like smudge: the bytes past
+    // the bound must reach the output, so they cannot simply be dropped.
+    let deferred = direction == Some(false) || clean_passthrough;
+    // ADDED 2026-09-27 (audit round 2, HIGH): the response may NOT be
+    // written while the request is still arriving.
+    //
+    // Measured against real git 2.51.2: the long-running filter protocol
+    // makes git write the ENTIRE request before it reads ANY response
+    // (the one-shot clean/smudge path does read concurrently — verified
+    // both ways). So a driver that streams the response as it consumes
+    // the request deadlocks as soon as the response outgrows the 64 KiB
+    // pipe buffer while the request still has bytes to write: git blocks
+    // in write(), the driver blocks in write(), and the operation hangs
+    // FOREVER. Measured with a 10 MiB limit: an oversize blob 1 KiB over
+    // the limit completed, 640 KiB over the limit hung (wchan
+    // `anon_pipe_write` on git, driver blocked in write). That is
+    // precisely D2's headline case — a 20 MiB screenshot — so the
+    // carve-out traded a loud refusal for a silent hang.
+    //
+    // The pkt-line protocol has no flow control, so the only correct
+    // shape is: consume the whole request, THEN emit the response. The
+    // body is therefore buffered up to `ceiling` and the response is
+    // written after the terminating flush. Memory stays bounded (the
+    // ceiling is a small multiple of the operator's own
+    // `filter_max_bytes`); a blob beyond the ceiling keeps the stream in
+    // sync by draining-and-dropping and is reported as an error rather
+    // than silently truncated.
+    let ceiling = passthrough_ceiling_bytes(limit);
     let mut content: Vec<u8> = Vec::new();
     let mut oversized = false;
-    // Set once the passthrough starts, so the buffered prefix is
-    // flushed exactly once.
-    let mut passthrough_started = false;
+    // Set once a deferred passthrough has buffered more than `ceiling`
+    // bytes; the rest of the body is drained and dropped.
+    let mut overflowed = false;
     loop {
         match pkt_read(input)? {
             None => return Err(anyhow::anyhow!("EOF mid-content")),
@@ -4157,34 +4206,49 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
                 if !oversized {
                     continue;
                 }
-                if !streamable {
+                if !deferred {
                     // clean (not exempt) + unsupported: drain the rest to
                     // keep the protocol in sync, but never emit it.
                     continue;
                 }
-                if !passthrough_started {
-                    // pkt-line response shape: status list, content,
-                    // trailing empty list. The status MUST precede any
-                    // content or git treats the stream as malformed.
-                    output.write_all(&pkt_key_line("status=success"))?;
-                    output.write_all(b"0000")?;
-                    for framed in content.chunks(PKT_MAX_PAYLOAD) {
-                        output.write_all(&pkt_encode(framed))?;
+                // The tail of the chunk that crossed the bound
+                // (`chunk[accepted..]`) belongs to the deferred body too —
+                // dropping it would silently truncate every oversize blob.
+                if !overflowed {
+                    let tail = &chunk[accepted..];
+                    if content.len() + tail.len() <= ceiling {
+                        content.extend_from_slice(tail);
+                    } else {
+                        // Past the ceiling: stop buffering, keep draining
+                        // so the stream stays in sync, and fail the file
+                        // below. The buffered prefix is never emitted, so
+                        // there is no truncated content in the object
+                        // store.
+                        overflowed = true;
                     }
-                    passthrough_started = true;
-                }
-                // pkt-line is binary-safe: the 4-byte header is hex, the
-                // payload is raw, so ciphertext streams through unchanged
-                // once framed. The tail of the chunk that crossed the
-                // bound (`chunk[accepted..]`) belongs here too — dropping
-                // it would silently truncate every oversized smudge.
-                for framed in chunk[accepted..].chunks(PKT_MAX_PAYLOAD) {
-                    output.write_all(&pkt_encode(framed))?;
                 }
             }
         }
     }
     veprintln!(2, "content {} bytes in {:?}", content.len(), t0.elapsed());
+    if overflowed {
+        // Every direction: a blob larger than the passthrough ceiling
+        // cannot be relayed without risking the pipe deadlock above, and
+        // a partial relay would corrupt the object. Report it per file;
+        // the driver stays up for the rest of the command.
+        let reason = format!(
+            "dracon-warden: refusing to relay {} (> {} byte passthrough ceiling = 4x filter_max_bytes): \
+             git's long-running filter protocol has no flow control, so a blob this large cannot be \
+             streamed back without deadlocking the pipe. .gitignore it, or raise filter_max_bytes.",
+            content.len().saturating_add(1),
+            ceiling
+        );
+        eprintln!("{}", reason);
+        output.write_all(&pkt_key_line("status=error"))?;
+        output.write_all(b"0000")?;
+        output.flush()?;
+        return Ok(());
+    }
     // Unsupported command: the body above has been drained, so the
     // protocol is still in sync. Fail closed for this file only.
     let Some(direction) = direction else {
@@ -4225,15 +4289,14 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
             output.flush()?;
             return Ok(());
         }
-        // Smudge, or an exempt clean: flush the buffered prefix (unless
-        // it already went out in the loop), then the mandatory empty
-        // terminator list.
-        if !passthrough_started {
-            output.write_all(&pkt_key_line("status=success"))?;
-            output.write_all(b"0000")?;
-            for framed in content.chunks(PKT_MAX_PAYLOAD) {
-                output.write_all(&pkt_encode(framed))?;
-            }
+        // Smudge, or an exempt clean: the whole blob is buffered (the
+        // request has been fully consumed by now, so writing cannot
+        // deadlock), then the pkt-line response shape: status list,
+        // content, mandatory empty terminator lists.
+        output.write_all(&pkt_key_line("status=success"))?;
+        output.write_all(b"0000")?;
+        for framed in content.chunks(PKT_MAX_PAYLOAD) {
+            output.write_all(&pkt_encode(framed))?;
         }
         output.write_all(b"0000")?;
         output.write_all(b"0000")?;
