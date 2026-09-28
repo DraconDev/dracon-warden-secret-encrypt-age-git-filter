@@ -4919,6 +4919,74 @@ mod binary_carve_out_tests {
             assert_eq!(status, "success");
             assert_eq!(content.len(), LIMIT / 2);
         }
+
+        /// ADDED 2026-09-27 (audit round 2, HIGH): the ceiling that
+        /// bounds the deferred passthrough.
+        ///
+        /// The driver cannot relay a response while git is still writing
+        /// the request (git writes the whole request before reading, so
+        /// an early response deadlocks both pipes), which is why the blob
+        /// is buffered. The buffer needs an operator-visible bound, and a
+        /// blob past it must fail loudly for this file — never be relayed
+        /// truncated.
+        #[test]
+        fn oversize_passthrough_is_bounded_and_never_truncated() {
+            let ceiling = passthrough_ceiling_bytes(LIMIT);
+            assert_eq!(
+                ceiling,
+                LIMIT * 4,
+                "the ceiling is a small multiple of the operator's own limit"
+            );
+            // Just inside the ceiling: relayed in full.
+            let (status, content) = run("assets/edge.png", ceiling, &guard(vec![]));
+            assert_eq!(status, "success");
+            assert_eq!(content.len(), ceiling, "the boundary blob is relayed whole");
+
+            // Past the ceiling: refused, with no partial content that git
+            // could store as if it were the file.
+            let (status, content) = run("assets/huge.png", ceiling + 4096, &guard(vec![]));
+            assert_eq!(status, "error", "a blob past the ceiling must fail closed");
+            assert!(
+                content.is_empty(),
+                "an over-ceiling blob must emit no content, got {} bytes",
+                content.len()
+            );
+
+            // Same bound in the smudge direction, where the old code
+            // streamed the tail (the deadlock the fix removed).
+            let mut script = clean_request("assets/huge.png", ceiling + 4096);
+            // Re-label the request as a smudge (same body, other command).
+            let smudge = String::from_utf8_lossy(&script)
+                .replace("command=clean", "command=smudge");
+            let mut output: Vec<u8> = Vec::new();
+            filter_process_serve(
+                &mut std::io::Cursor::new(smudge.into_bytes()),
+                &mut output,
+                &DraconWarden::new().expect("warden"),
+                &guard(vec![]),
+            )
+            .expect("serve");
+            let (status, content) = decode(&output);
+            assert_eq!(status, "error");
+            assert!(content.is_empty());
+        }
+
+        /// The floor keeps a deliberately small `filter_max_bytes` from
+        /// turning the ceiling into a hair-trigger, and the multiple keeps
+        /// the memory bound tied to the operator's own setting.
+        #[test]
+        fn passthrough_ceiling_scales_with_the_configured_limit() {
+            assert_eq!(passthrough_ceiling_bytes(10 * 1024 * 1024), 40 * 1024 * 1024);
+            assert_eq!(passthrough_ceiling_bytes(64 * 1024 * 1024), 256 * 1024 * 1024);
+            assert!(
+                passthrough_ceiling_bytes(1) > 1,
+                "a tiny limit must still leave room for a passthrough"
+            );
+            assert!(
+                passthrough_ceiling_bytes(usize::MAX / 2) < usize::MAX,
+                "the ceiling must never overflow into a nonsense bound"
+            );
+        }
     }
 
     /// End-to-end through git: with the managed block applied, git itself
