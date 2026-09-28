@@ -401,3 +401,188 @@ fn test_filter_process_live_git_diff_and_add() {
     assert!(show.status.success());
     assert_eq!(show.stdout, b"prose body 7\n");
 }
+
+/// pkt-line framing, written out rather than imported: an integration
+/// test must exercise the same wire format the driver parses, and
+/// `pkt_encode` is not reachable from this crate's integration target.
+fn pkt(payload: &[u8]) -> Vec<u8> {
+    let mut out = format!("{:04x}", payload.len() + 4).into_bytes();
+    out.extend_from_slice(payload);
+    out
+}
+
+fn pkt_line(text: &str) -> Vec<u8> {
+    pkt(format!("{text}\n").as_bytes())
+}
+
+/// D2 (audit round 2, HIGH): an oversize size-exempt binary must be
+/// addable again through the REAL driver, with real pipes, driven the way
+/// git drives it.
+///
+/// The first cut of the fix streamed the passthrough back as the request
+/// arrived. Git's long-running filter protocol has no flow control — it
+/// writes the entire request before reading any of the response — so the
+/// two sides deadlocked as soon as the response outgrew the 64 KiB pipe
+/// buffer while the request still had bytes to write, and `git add` hung
+/// forever. Measured on real git 2.51.2 with a 10 MiB limit: a blob 1 KiB
+/// over the limit completed, 640 KiB over the limit hung. An in-process
+/// test over a `Cursor` cannot see that (no pipe, no blocking), which is
+/// why this test drives the real binary over real pipes and only starts
+/// reading after the whole request is written, exactly like git.
+#[test]
+fn test_filter_process_oversize_binary_passthrough_survives_real_pipes() {
+    let tmp = tempfile::tempdir().unwrap();
+    // `filter_max_bytes` is validated to a 10 MiB floor, so the smallest
+    // honest reproduction is a ~11 MiB blob: a 1 MiB over-limit margin is
+    // 16x the pipe buffer that used to deadlock the pair.
+    let policy = tmp.path().join("warden.toml");
+    std::fs::write(
+        &policy,
+        r#"
+protected_patterns = []
+repo_roots = []
+filter_max_bytes = 10485760
+"#,
+    )
+    .unwrap();
+    let empty_global_gitconfig = tmp.path().join("gitconfig");
+    std::fs::write(&empty_global_gitconfig, "").unwrap();
+
+    let blob: Vec<u8> = (0..11 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
+
+    /// One pkt-line session: handshake, one request, decode the response.
+    /// `response` is `(status, content)`; `None` means the driver never
+    /// answered within the deadline (the deadlock signature).
+    fn drive(
+        warden_bin: &str,
+        policy: &std::path::Path,
+        gitconfig: &std::path::Path,
+        command: &str,
+        pathname: &str,
+        body: &[u8],
+    ) -> (String, Vec<u8>) {
+        use std::io::{Read, Write};
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let mut child = std::process::Command::new(warden_bin)
+            .arg("filter-process")
+            .env("DRACON_WARDEN_POLICY", policy)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", gitconfig)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+
+        // Git's exact request shape: key lines, a flush, the body in
+        // frames, then the terminating flush. Frames stay under the
+        // 4-hex-digit pkt-line maximum (0xfff0 total).
+        let mut request = Vec::new();
+        request.extend(pkt_line("git-filter-client"));
+        request.extend(pkt_line("version=2"));
+        request.extend(pkt_line("capability=clean"));
+        request.extend(pkt_line("capability=smudge"));
+        request.extend(b"0000");
+        request.extend(pkt_line(&format!("command={command}")));
+        request.extend(pkt_line(&format!("pathname={pathname}")));
+        request.extend(b"0000");
+        for frame in body.chunks(32 * 1024) {
+            request.extend(pkt(frame));
+        }
+        request.extend(b"0000");
+
+        // The whole point: the request goes out in full BEFORE any
+        // response byte is read. If the driver answers early on a large
+        // blob, this write never completes and the pipes deadlock.
+        let (tx, rx) = mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            let res = stdin.write_all(&request).and_then(|_| stdin.flush());
+            let _ = tx.send(res.is_ok());
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_secs(60)).unwrap_or(false),
+            "the driver never drained the request: it answered before the \
+             request was written, which deadlocks against real git \
+             (pkt-line has no flow control)"
+        );
+        writer.join().unwrap();
+
+        let mut stdout = child.stdout.take().unwrap();
+        let mut raw = Vec::new();
+        let read_ok = std::thread::spawn(move || stdout.read_to_end(&mut raw))
+            .join()
+            .map(|r| r.is_ok())
+            .unwrap_or(false)
+            && child.wait().map(|s| s.success()).unwrap_or(false);
+        assert!(read_ok, "the driver must exit 0 at clean EOF");
+
+        // Decode: key lines up to the first flush, then the content.
+        let (mut status, mut content) = (String::new(), Vec::new());
+        let mut cur = std::io::Cursor::new(raw);
+        let mut seen_status = false;
+        while cur.position() < raw.len() as u64 {
+            let mut hdr = [0u8; 4];
+            if std::io::Read::read_exact(&mut cur, &mut hdr).is_err() {
+                break;
+            }
+            if &hdr == b"0000" {
+                if seen_status {
+                    // Content terminator, then the trailing empty list.
+                    continue;
+                }
+                continue;
+            }
+            if &hdr == b"0001" {
+                continue;
+            }
+            let len = usize::from_str_radix(std::str::from_utf8(&hdr).unwrap(), 16).unwrap();
+            let mut payload = vec![0u8; len - 4];
+            std::io::Read::read_exact(&mut cur, &mut payload).unwrap();
+            if !seen_status {
+                let line = String::from_utf8_lossy(&payload);
+                if let Some(rest) = line.trim().strip_prefix("status=") {
+                    status = rest.to_string();
+                    seen_status = true;
+                }
+                continue;
+            }
+            content.extend_from_slice(&payload);
+        }
+        (status, content)
+    }
+
+    let bin = env!("CARGO_BIN_EXE_dracon-warden");
+
+    // 1. The D2 goal: an oversize, size-exempt binary is relayed whole.
+    let (status, content) = drive(
+        bin,
+        &policy,
+        &empty_global_gitconfig,
+        "clean",
+        "assets/screenshot.png",
+        &blob,
+    );
+    assert_eq!(status, "success", "a >limit binary must not be refused");
+    assert_eq!(
+        content.len(),
+        blob.len(),
+        "the whole blob must come back: no truncation, no dropped tail"
+    );
+    assert!(content == blob, "relayed content must be byte-identical");
+
+    // 2. The guard the carve-out must not weaken: a >limit TEXT path
+    //    still fails closed, with no content.
+    let (status, content) = drive(
+        bin,
+        &policy,
+        &empty_global_gitconfig,
+        "clean",
+        "notes/dump.txt",
+        &blob,
+    );
+    assert_eq!(status, "error", "a >limit text path must still fail closed");
+    assert!(content.is_empty(), "a refusal must emit no content");
+}
