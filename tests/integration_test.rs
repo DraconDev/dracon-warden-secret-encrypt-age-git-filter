@@ -515,7 +515,9 @@ filter_max_bytes = 10485760
         // Safe to read on this thread: the request is already fully
         // written, so the driver is producing its response and closes
         // stdout at clean EOF.
-        stdout.read_to_end(&mut raw).expect("read the driver response");
+        stdout
+            .read_to_end(&mut raw)
+            .expect("read the driver response");
         assert!(
             child.wait().map(|s| s.success()).unwrap_or(false),
             "the driver must exit 0 at clean EOF"

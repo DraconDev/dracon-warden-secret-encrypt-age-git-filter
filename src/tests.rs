@@ -938,9 +938,12 @@ mod tests {
                 toml::from_str(&format!("filter_max_bytes = {limit}")).unwrap();
             assert_eq!(policy.filter_limit().unwrap(), limit);
             assert!(filter_clean_refusal_with_limit(true, limit, None, limit, &[], &[]).is_none());
-            assert!(filter_clean_refusal_with_limit(true, limit + 1, None, limit, &[], &[]).is_some());
             assert!(
-                filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit, &[], &[]).is_some()
+                filter_clean_refusal_with_limit(true, limit + 1, None, limit, &[], &[]).is_some()
+            );
+            assert!(
+                filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit, &[], &[])
+                    .is_some()
             );
         }
         for limit in [
@@ -4262,8 +4265,13 @@ protected_patterns = ["secrets.json"]
         }
         let mut input = std::io::Cursor::new(script);
         let mut output = Vec::new();
-        crate::filter_process_serve(&mut input, &mut output, &warden, &test_guard(64 * 1024 * 1024))
-            .expect("serve");
+        crate::filter_process_serve(
+            &mut input,
+            &mut output,
+            &warden,
+            &test_guard(64 * 1024 * 1024),
+        )
+        .expect("serve");
         // Decode the response stream back into packets.
         let mut cur = std::io::Cursor::new(output);
         let mut pkts = Vec::new();
@@ -4491,13 +4499,8 @@ mod filter_process_oversize_tests {
         script.extend_from_slice(b"0000");
         let mut input = std::io::Cursor::new(script);
         let mut output = Vec::new();
-        crate::filter_process_serve(
-            &mut input,
-            &mut output,
-            &warden,
-            &crate::test_guard(limit),
-        )
-        .expect("serve");
+        crate::filter_process_serve(&mut input, &mut output, &warden, &crate::test_guard(limit))
+            .expect("serve");
         let mut cur = std::io::Cursor::new(output);
         let mut pkts = Vec::new();
         while let Some(p) = crate::pkt_read(&mut cur).expect("resp decode") {
@@ -4600,7 +4603,8 @@ mod binary_carve_out_tests {
             "dist/bundle.zip",
             "nested/deep/photo.webp",
         ] {
-            let reason = filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[]);
+            let reason =
+                filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[]);
             assert!(
                 reason.is_none(),
                 "a >limit binary should be addable again, got: {reason:?} ({path})"
@@ -4618,7 +4622,8 @@ mod binary_carve_out_tests {
             "config/app.conf",
             "no-extension",
         ] {
-            let reason = filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[]);
+            let reason =
+                filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[]);
             assert!(
                 reason.is_some(),
                 "a >limit {path} must still be refused — the carve-out is binary-only"
@@ -4712,10 +4717,15 @@ mod binary_carve_out_tests {
     fn unknown_extension_is_not_exempt() {
         // `.bin` is exempt but `.weirdext` is not — the carve-out is an
         // explicit allowlist, not a "looks binary" heuristic.
-        assert!(
-            filter_clean_refusal_with_limit(true, OVER, Some("a/b.bin"), LIMIT, &exempt(), &[])
-                .is_none()
-        );
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("a/b.bin"),
+            LIMIT,
+            &exempt(),
+            &[]
+        )
+        .is_none());
         assert!(filter_clean_refusal_with_limit(
             true,
             OVER,
@@ -4731,15 +4741,22 @@ mod binary_carve_out_tests {
     fn an_empty_exempt_list_restores_the_hard_failure() {
         // An operator who sets `binary_filter_exempt_patterns = []` opts
         // back out; the guard must then behave exactly as it did before.
-        assert!(filter_clean_refusal_with_limit(true, OVER, Some("a/b.png"), LIMIT, &[], &[]).is_some());
+        assert!(
+            filter_clean_refusal_with_limit(true, OVER, Some("a/b.png"), LIMIT, &[], &[]).is_some()
+        );
     }
 
     #[test]
     fn smudge_direction_is_never_refused() {
-        assert!(
-            filter_clean_refusal_with_limit(false, OVER, Some("a/b.png"), LIMIT, &exempt(), &[])
-                .is_none()
-        );
+        assert!(filter_clean_refusal_with_limit(
+            false,
+            OVER,
+            Some("a/b.png"),
+            LIMIT,
+            &exempt(),
+            &[]
+        )
+        .is_none());
     }
 
     // --- the generated .gitattributes block ----------------------------
