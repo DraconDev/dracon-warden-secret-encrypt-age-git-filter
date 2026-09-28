@@ -415,60 +415,6 @@ impl WardenSecurity {
         Ok(result)
     }
 
-    pub fn decrypt_path(&self, root: &Path, recursive: bool, dry_run: bool) -> Result<usize> {
-        let mut total_restored = 0;
-        let mut walk_errors = 0;
-
-        if !root.exists() {
-            return Err(anyhow::anyhow!("Path does not exist: {:?}", root));
-        }
-
-        // FDRACONWARDEN-003 (2026-07-18): refuse to follow symlinks
-        // during the recursive walk. A symlink inside the repo
-        // pointing outside could cause dr-walk to read or overwrite
-        // a path the operator didn't authorise.
-        let walker = walkdir::WalkDir::new(root)
-            .follow_links(false)
-            .max_depth(if recursive { usize::MAX } else { 1 })
-            .into_iter()
-            .filter_entry(|e| {
-                let name = e.file_name().to_string_lossy();
-                if e.path() == root {
-                    return true;
-                }
-                !name.starts_with('.') || name == ".env"
-            });
-
-        for entry in walker {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(e) => {
-                    eprintln!(
-                        "⚠️ walk error during secret restore at {}: {}",
-                        root.display(),
-                        e
-                    );
-                    walk_errors += 1;
-                    continue;
-                }
-            };
-            if entry.file_type().is_file() {
-                if let Ok(count) = self.decrypt_file(entry.path(), dry_run) {
-                    total_restored += count;
-                }
-            }
-        }
-
-        if walk_errors > 0 {
-            return Err(anyhow::anyhow!(
-                "decrypt_path completed with {} walk error(s)",
-                walk_errors
-            ));
-        }
-
-        Ok(total_restored)
-    }
-
     pub fn migrate_markers_in_path(
         &self,
         root: &Path,

@@ -281,56 +281,6 @@ impl WardenSecurity {
         Ok(team_name.to_string())
     }
 
-    pub fn revoke_recipient(&self, public_key_str: &str) -> Result<()> {
-        // SAFETY: Refuse to revoke ANY master identity key.
-        for id in &self.master_identities {
-            if id.to_public().to_string() == public_key_str {
-                return Err(anyhow::anyhow!(
-                    "🛡️ SAFETY TRIGGERED: Refusing to revoke a Master Identity key.\n\
-                     Master identities must be managed MANUALLY via the filesystem to prevent lockout."
-                ));
-            }
-        }
-
-        let repo_root = self.get_repo_root()?;
-        let search_paths = vec![
-            repo_root.join(".dracon").join("data").join("keys"),
-            repo_root.join(".git").join("arcane").join("keys"),
-        ];
-
-        let mut removed_count = 0;
-        for dir in search_paths {
-            if dir.exists() {
-                for entry in fs::read_dir(dir)? {
-                    let entry = entry?;
-                    let path = entry.path();
-                    if let Ok(content) = fs::read_to_string(&path) {
-                        if content.contains(public_key_str) {
-                            if let Err(e) = fs::remove_file(&path) {
-                                eprintln!("⚠️ failed to remove {}: {}", path.display(), e);
-                            }
-
-                            let age_path = path.with_extension("age");
-                            if age_path.exists() {
-                                if let Err(e) = fs::remove_file(&age_path) {
-                                    eprintln!("⚠️ failed to remove {}: {}", age_path.display(), e);
-                                }
-                            }
-
-                            removed_count += 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        if removed_count > 0 {
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("No files found for this recipient"))
-        }
-    }
-
     pub fn list_authorized_recipients(&self) -> Result<Vec<(String, String)>> {
         // Reuse the same trust classifier as encryption. A listing must not
         // present contributor-added files as authorized when gather would

@@ -1,6 +1,11 @@
 [package]
 name = "dracon-security"
-version = "0.3.7"
+# 0.4.0 (2026-09-27, D3): BREAKING — removed the unreachable public APIs
+# `WardenSecurity::decrypt_path` (with the private `decrypt_file` it
+# solely called) and `TeamManager::revoke_recipient`, plus the doc line
+# that advertised recipient revocation. For a 0.x crate the MINOR is the
+# breaking axis, so the removal moves 0.3 -> 0.4 (not a patch).
+version = "0.4.0"
 edition = "2021"
 # See dracon-sync/Cargo.toml — workspace-wide MSRV, audit F84.
 rust-version = "1.89"
@@ -8,7 +13,7 @@ license = "AGPL-3.0-only"
 description = "Secret scanning and age-based encryption primitives used by Dracon tooling"
 repository = "https://github.com/DraconDev/dracon-utilities"
 homepage = "https://github.com/DraconDev/dracon-utilities"
-documentation = "https://docs.rs/dracon-security/0.3.0"
+documentation = "https://docs.rs/dracon-security"
 
 [dependencies]
 log = "0.4"

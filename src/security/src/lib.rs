@@ -836,7 +836,6 @@ impl WardenSecurity {
     /// Add a new team member by encrypting the repo key for them
     /// Create an Invite for a user to join a Team
     /// Accept a Team Invite
-    /// Revoke a recipient's access to this repo by removing their key files
     /// List all authorized recipients in the current repository
     /// List all team members (aliases)
     ///
@@ -1130,58 +1129,6 @@ impl WardenSecurity {
         None
     }
 
-    /// In-situ Smudge: Decrypt REDACTED_REGEX tags back to plaintext.
-    /// Git Clean Filter: Encrypt stdin -> stdout
-    /// V2 Upgrade: Encrypts to ALL known public keys (User + Machines + Teams)
-    /// Recursive disk-wide decryption: Replaces all [*_SECRET:...] tags with plaintext in-place.
-    fn decrypt_file(&self, path: &Path, dry_run: bool) -> Result<usize> {
-        // ADDED 2026-07-21 (v0.112.32, audit H9/F4.2): whole-file
-        // secret tag (binary-safe path) — decrypt to RAW BYTES.
-        // The String-based `smart_smudge` path below corrupts
-        // non-UTF-8 payloads via `from_utf8_lossy` (U+FFFD).
-        if let Ok(raw) = std::fs::read(path) {
-            if let Some(Ok(plaintext)) = self.decrypt_whole_file_tag(&raw) {
-                if plaintext != raw {
-                    if !dry_run {
-                        std::fs::write(path, &plaintext)?;
-                        println!("  🔓 Restored whole-file secret in {:?}", path);
-                    } else {
-                        println!("  [dry-run] Would restore whole-file secret in {:?}", path);
-                    }
-                    return Ok(1);
-                }
-                return Ok(0);
-            }
-        }
-
-        let content = match std::fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(_) => return Ok(0),
-        };
-
-        if !self.contains_any_secret_tag(&content) {
-            return Ok(0);
-        }
-
-        let smudged = self.smart_smudge(&content)?;
-        if smudged == content {
-            return Ok(0);
-        }
-
-        // Count how many tags were replaced
-        let tag_count = self.count_secret_tags(&content);
-
-        if !dry_run {
-            // Write back to disk
-            std::fs::write(path, smudged)?;
-            println!("  🔓 Restored {} secrets in {:?}", tag_count, path);
-        } else {
-            println!("  🔍 Would restore {} secrets in {:?}", tag_count, path);
-        }
-
-        Ok(tag_count)
-    }
-
     /// Migrate secret marker prefixes in-place without touching encrypted payload bytes.
     /// Example: `[OLD_MARKER:...]` -> `[DRACON_SECRET:...]`.
     /// Git Smudge Filter: Decrypt stdin/file -> stdout
@@ -1426,9 +1373,10 @@ impl WardenSecurity {
 /// U+FFFD and silently corrupting whole-file-encrypted BINARY secrets
 /// (DER keys, SQLite, .kdbx); the corrupted worktree file was then
 /// re-encrypted into git history by the next clean. The v0.112.32
-/// `decrypt_whole_file_tag` helper was only wired into
-/// `decrypt_file`, which the binary never calls — this
-/// is the path `main.rs:run_filter` actually reaches.
+/// `decrypt_whole_file_tag` helper was at that point wired only into
+/// the recursive `decrypt_file` walk (REMOVED 2026-09-27, D3, with its
+/// sole caller `decrypt_path` — neither was reachable from the binary),
+/// so this is the path `main.rs:run_filter` actually reaches.
 fn smudge_with_security(security: &WardenSecurity, bytes: &[u8]) -> Result<Vec<u8>> {
     if let Some(result) = security.decrypt_whole_file_tag(bytes) {
         return match result {

@@ -40,8 +40,10 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "ti
 # `path` works for both the monorepo workspace build and the
 # standalone dracon-warden repo (src/security is tracked inside it).
 # Keep `version` so a future crates.io publish can revert to the
-# registry form by dropping `path`.
-dracon-security-kit = { package = "dracon-security", version = "0.3.7", path = "src/security" }
+# registry form by dropping `path`. Bumped to 0.4.0 with the crate's D3
+# breaking removal (the version MUST match the path dependency, or cargo
+# refuses the build).
+dracon-security-kit = { package = "dracon-security", version = "0.4.0", path = "src/security" }
 
 tempfile = "3"
 
