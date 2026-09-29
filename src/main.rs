@@ -4826,6 +4826,85 @@ grep -q "filter=dracon" "$REPO/.gitattributes" 2>/dev/null && MANAGED=1
 [ -d "$REPO/.dracon" ] && MANAGED=1
 [ "$MANAGED" -eq 0 ] && exit 0
 
+# ----- (1.5) machine-local files must not be TRACKED (2026-09-28) --------
+# Ignore rules cannot express this rule, because the failure mode IS the
+# tracked file: `.gitignore` only governs UNTRACKED paths, so a path that was
+# tracked when the ignore rule landed keeps being committed forever. The
+# fleet hit this repeatedly:
+#   * `.pi-glla/active.jsonl`  - the 2026-08-16 ignore rule was inert; 1027
+#     revisions of a 4.3 MB log in one repo, and 9.83 GiB of new blobs in
+#     pi-goal-list-loop-audit in 30 days (97.5% of that repo's growth).
+#   * `.pi/chrome-screenshots/` + `audit-*/screenshots/` - same inert-ignore
+#     class; 2.50 GiB in hellhunter, the exact recurrence AGENTS.md predicted
+#     when it recorded deathrun's 2.85 GiB frame-dump bloat.
+#   * `findings.baseline.md` - the audit guard's baseline COPY of the ledger,
+#     byte-identical to findings.md (measured 2026-09-28: both 2,044,799
+#     bytes) and re-committed on every audit run, 42 times in 24h in
+#     hellhunter. The guard needs the file on DISK; it never needed it in git.
+#   * `scratch/`, `screenshots/`, `audit-evidence/` - regenerable working
+#     material, not deliverables. AGENTS.md is explicit that the .md REPORTS
+#     are the deliverable and the captured frames are regeneratable on
+#     demand; those three trees were 417 MB on disk in hellhunter alone and
+#     regrew 0.59 GiB in 24h.
+#
+# Placement: after the MANAGED gate, so it only applies to warden-managed
+# repos. Both the platform's `.githooks/pre-commit` and the shared nested
+# hook (`web/scripts/git-hooks/pre-commit-shared.sh`) chain to THIS hook
+# explicitly, because their own `core.hooksPath` shadows it - so this one
+# block covers every repo on the machine.
+#
+# GRANDFATHERING, deliberately: the durable GLLA record surface stays
+# tracked - `audit-loop/**/*.md` (the curated ledger, its baseline is
+# exempt above, and dated scout reports), `archive/`, `reviews/`, and
+# `ledger-segments/`. Only unambiguous machine-local state and regenerable
+# frames are refused. Fix a refusal once, forward-only, with
+# `git rm --cached -- <path>`; history is never rewritten here.
+machine_local_violations=0
+staged_names="$(git -C "$REPO" diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)"
+if [ -n "$staged_names" ]; then
+    while IFS= read -r staged_path; do
+        [ -n "$staged_path" ] || continue
+        case "$staged_path" in
+            # Durable record surface - intentionally tracked.
+            .pi-glla/audit-loop/*.md|*/.pi-glla/audit-loop/*.md|\
+            .pi-glla/archive/*|.pi-glla/archive|*/.pi-glla/archive/*|\
+            .pi-glla/reviews/*|.pi-glla/reviews|*/.pi-glla/reviews/*|\
+            .pi-glla/ledger-segments/*|.pi-glla/ledger-segments|*/.pi-glla/ledger-segments/*) continue ;;
+            # Machine-local loop state, regeneratable frame dumps, the
+            # ledger's baseline copy, and the loop scratch/evidence trees.
+            .pi-glla/active.jsonl|*/.pi-glla/active.jsonl|\
+            .pi-glla/audits.jsonl|*/.pi-glla/audits.jsonl|\
+            .pi-glla/owner.json|*/.pi-glla/owner.json|\
+            .pi-glla/session-owner.json|*/.pi-glla/session-owner.json|\
+            .pi-glla/update-check.json|*/.pi-glla/update-check.json|\
+            .pi-glla/pending-approval-renders.json|*/.pi-glla/pending-approval-renders.json|\
+            .pi-glla/compactor-jobs/*|.pi-glla/compactor-jobs|*/.pi-glla/compactor-jobs/*|\
+            .pi-glla/scratch/*|.pi-glla/scratch|*/.pi-glla/scratch/*|\
+            .pi/chrome-screenshots/*|.pi/chrome-screenshots|*/.pi/chrome-screenshots/*|\
+            audit-*/screenshots/*|*/audit-*/screenshots/*|\
+            .pi-glla/audit-loop/findings.baseline.md|*/.pi-glla/audit-loop/findings.baseline.md|\
+            scratch/*|scratch|*/scratch/*|\
+            screenshots/*|screenshots|*/screenshots/*|\
+            audit-evidence/*|audit-evidence|*/audit-evidence/*)
+                echo "machine-local file is staged: $staged_path" >&2
+                echo "   This is loop bookkeeping, a regeneratable frame dump, or" >&2
+                echo "   working material - not repository content. Warden's ignore" >&2
+                echo "   rule never took effect because the file was already tracked." >&2
+                echo "   Fix once, forward-only:" >&2
+                echo "     git rm --cached -- '$staged_path'" >&2
+                echo "   History is not rewritten here; only future commits stop." >&2
+                machine_local_violations=$((machine_local_violations + 1))
+                ;;
+        esac
+    done <<EOF
+$staged_names
+EOF
+fi
+if [ "$machine_local_violations" -gt 0 ]; then
+    echo "pre-commit: $machine_local_violations machine-local file(s) blocked." >&2
+    exit 1
+fi
+
 # Check .gitattributes has filter=dracon patterns
 if ! grep -q "filter=dracon" "$REPO/.gitattributes" 2>/dev/null; then
     echo "❌ Warden filter missing from .gitattributes."
