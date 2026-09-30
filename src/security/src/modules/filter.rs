@@ -118,9 +118,10 @@ pub fn path_matches_any_pattern(path_str: &str, patterns: &[String]) -> bool {
 }
 
 /// ADDED 2026-09-30: true when `filename` (basename, not a path) is an LLM
-/// conversation/session export: Muse `conversation-<ts>.txt`, Pi
-/// `pi-session-<ts>_<uuid>.html`, and the same prefixes with the other dump
-/// extensions the exporters can produce.
+/// conversation/session export: Muse `conversation-<ts>.txt` and
+/// `trajectory-<ts>.json` (`muse export` default, RAW transcript),
+/// Pi `pi-session-<ts>_<uuid>.html`, Codex `rollout-<ts>-<uuid>.jsonl`,
+/// and the same prefixes with the sibling dump extensions.
 ///
 /// These dumps carry pasted secrets, credentials, internal paths, and PII in
 /// free prose, so they get whole-file age encryption rather than inline
@@ -128,13 +129,22 @@ pub fn path_matches_any_pattern(path_str: &str, patterns: &[String]) -> bool {
 /// bill on a multi-MB HTML dump. The extension gate is load-bearing:
 /// `pi-session-retention-purge.service` is a systemd unit that shares the
 /// `pi-session-` prefix but must stay plaintext source, and likewise a
-/// hypothetical `conversation-service.rs` — only the dump extensions match.
+/// hypothetical `conversation-service.rs` or a deploy `rollout-plan.md` —
+/// only the dump extensions match, and `rollout-` is transcript-only
+/// (`.json`/`.jsonl`) because deploy rollout docs share the prefix.
 /// Keep in agreement with the warden binary's
 /// `default_conversation_protected_patterns` (a cross-crate test pins it).
 pub fn is_llm_conversation_dump(filename: &str) -> bool {
-    const DUMP_EXTS: [&str; 4] = [".txt", ".md", ".json", ".html"];
-    let prefix_ok = filename.starts_with("conversation-") || filename.starts_with("pi-session-");
-    prefix_ok && DUMP_EXTS.iter().any(|ext| filename.ends_with(ext))
+    const TEXT_DUMP_EXTS: [&str; 4] = [".txt", ".md", ".json", ".html"];
+    const TRANSCRIPT_EXTS: [&str; 2] = [".json", ".jsonl"];
+    // Codex session transcripts: data formats only, never prose/docs.
+    if filename.starts_with("rollout-") {
+        return TRANSCRIPT_EXTS.iter().any(|ext| filename.ends_with(ext));
+    }
+    let prefix_ok = filename.starts_with("conversation-")
+        || filename.starts_with("pi-session-")
+        || filename.starts_with("trajectory-");
+    prefix_ok && TEXT_DUMP_EXTS.iter().any(|ext| filename.ends_with(ext))
 }
 
 impl WardenSecurity {
