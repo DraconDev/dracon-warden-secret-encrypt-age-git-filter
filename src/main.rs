@@ -535,6 +535,35 @@ impl WardenPolicy {
             .unwrap_or_else(default_binary_filter_exempt_patterns)
     }
 
+    /// ADDED 2026-09-30: the protected list every consumer must use — the
+    /// operator's `protected_patterns` UNION the shipped LLM-conversation
+    /// defaults, deduped and sorted for stable output. The union (not a
+    /// serde default) is what makes the defaults real for existing
+    /// installations: an operator config that already sets
+    /// `protected_patterns` would otherwise never see them.
+    ///
+    /// An EMPTY operator list stays empty (legacy scan-everything):
+    /// `path_is_protected` treats empty as "scan everything", and flipping
+    /// a fresh install to default-deny as a side effect of shipping
+    /// conversation defaults would silently drop Tier-2 scanning from
+    /// files like `.env`. Legacy installs still whole-file-encrypt dumps
+    /// because the gate passes everything and the security crate's
+    /// filename rule applies. Per-file opt-out is the `.plaintext`
+    /// sibling hatch, which wins over everything including these.
+    pub(crate) fn effective_protected_patterns(&self) -> Vec<String> {
+        if self.protected_patterns.is_empty() {
+            return Vec::new();
+        }
+        let mut merged = BTreeSet::new();
+        for p in default_conversation_protected_patterns() {
+            merged.insert(p);
+        }
+        for p in &self.protected_patterns {
+            merged.insert(p.clone());
+        }
+        merged.into_iter().collect()
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
         self.filter_limit()?;
         fn is_allowed_plaintext_pattern(p: &str) -> bool {
@@ -692,7 +721,7 @@ pub(crate) fn wire_managed_patterns_from_policy() -> bool {
     let Ok(policy) = WardenPolicy::load(&policy_path) else {
         return false;
     };
-    set_managed_patterns(policy.protected_patterns.clone());
+    set_managed_patterns(policy.effective_protected_patterns());
     true
 }
 
@@ -869,7 +898,7 @@ fn build_gitignore_block_with_existing(
     for p in &policy.plaintext_patterns {
         plaintext_patterns.insert(p.clone());
     }
-    for p in &policy.protected_patterns {
+    for p in policy.effective_protected_patterns() {
         lines.push(format!("!{}", p));
     }
     for p in plaintext_patterns {
@@ -916,9 +945,9 @@ pub(crate) fn build_gitattributes_block(policy: &WardenPolicy) -> Result<String>
         plaintext_patterns.insert(p.clone());
     }
     let mut protected_patterns = BTreeSet::new();
-    for p in &policy.protected_patterns {
-        if !plaintext_patterns.contains(p) {
-            protected_patterns.insert(p.clone());
+    for p in policy.effective_protected_patterns() {
+        if !plaintext_patterns.contains(&p) {
+            protected_patterns.insert(p);
         }
     }
     for p in protected_patterns {
@@ -2540,7 +2569,7 @@ fn scrub_json_value(v: &mut serde_json::Value) {
 pub(crate) fn scrub_markers(policy: &WardenPolicy, repos: &[PathBuf], apply: bool) -> Result<()> {
     use comfy_table::{presets::UTF8_FULL_CONDENSED, Cell, Color, ContentArrangement, Table};
 
-    let protected = build_globset(&policy.protected_patterns)?;
+    let protected = build_globset(&policy.effective_protected_patterns())?;
 
     let mut found = 0usize;
     let mut changed = 0usize;
@@ -2883,7 +2912,7 @@ fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
 
 fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usize, usize)> {
     require_git_marker(repo)?;
-    let protected = build_globset(&policy.protected_patterns)?;
+    let protected = build_globset(&policy.effective_protected_patterns())?;
     let files = git_ls_files(repo)?;
 
     let mut found = 0usize;
@@ -3172,7 +3201,7 @@ fn configured_clean_guard() -> Result<CleanGuard> {
     Ok(CleanGuard {
         limit: policy.filter_limit()?,
         binary_exempt: policy.binary_exempt_patterns(),
-        protected: policy.protected_patterns.clone(),
+        protected: policy.effective_protected_patterns(),
     })
 }
 
