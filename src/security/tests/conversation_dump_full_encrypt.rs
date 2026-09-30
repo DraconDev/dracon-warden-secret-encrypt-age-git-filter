@@ -193,10 +193,8 @@ fn trajectory_json_gets_whole_file_encryption() -> Result<()> {
     // 2026-09-30 audit: `muse export` default output (RAW transcript).
     let security = test_security(vec!["trajectory-*.json".to_string()])?;
     let export = r#"{"export_schema_version":1,"session":"01a0f3aa","messages":[{"role":"user","content":"deploy token widget-prod-fake-key-007"}]}"#;
-    let cleaned = security.smart_clean_with_path(
-        export.as_bytes(),
-        "trajectory-2026-09-30-120000.json",
-    )?;
+    let cleaned =
+        security.smart_clean_with_path(export.as_bytes(), "trajectory-2026-09-30-120000.json")?;
     let cleaned = String::from_utf8(cleaned).expect("clean output is UTF-8");
     assert!(
         cleaned.starts_with("[DRACON_SECRET:"),
@@ -235,9 +233,12 @@ fn rollout_jsonl_gets_whole_file_encryption() -> Result<()> {
 #[test]
 fn rollout_prose_doc_is_not_whole_file_encrypted() -> Result<()> {
     // `rollout-` is transcript-only: deploy rollout docs stay inline-scanned.
-    let security = test_security(vec!["rollout-*.jsonl".to_string(), "rollout-*.md".to_string()])?;
-    let cleaned =
-        security.smart_clean_with_path(b"# Rollout plan\n\nWave 1: canary.\n", "rollout-plan.md")?;
+    let security = test_security(vec![
+        "rollout-*.jsonl".to_string(),
+        "rollout-*.md".to_string(),
+    ])?;
+    let cleaned = security
+        .smart_clean_with_path(b"# Rollout plan\n\nWave 1: canary.\n", "rollout-plan.md")?;
     let cleaned = String::from_utf8(cleaned).expect("clean output is UTF-8");
     assert!(
         !cleaned.starts_with("[DRACON_SECRET:"),
