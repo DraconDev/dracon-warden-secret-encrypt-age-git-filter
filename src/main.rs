@@ -364,6 +364,11 @@ enum Command {
 fn default_hygiene_patterns() -> Vec<String> {
     vec![
         "**/.pi*".to_owned(),
+        // 2026-09-30 audit: aider writes `.aider.chat.history.md` and
+        // `.aider.input.history` into the working dir by default, and its
+        // own docs recommend `.aider*` in .gitignore. Regenerable working
+        // memory, not a keepsake: machine-local like `chat_history.json`.
+        "**/.aider*".to_owned(),
         "**/chrometrace.log".to_owned(),
         "**/.svelte-kit/".to_owned(),
         "**/.vite/".to_owned(),
@@ -414,18 +419,21 @@ fn default_binary_filter_exempt_patterns() -> Vec<String> {
 }
 
 /// ADDED 2026-09-30: shipped protected patterns for LLM conversation/session
-/// exports (Muse `conversation-<ts>.txt`, Pi
-/// `pi-session-<ts>_<uuid>.html`, ...). These dumps land in repos and carry
-/// pasted secrets, credentials, internal paths, and PII in free prose, so
-/// they are protected (persisted, but age-encrypted in git) by default rather
-/// than relying on the operator to list them.
+/// exports (Muse `conversation-<ts>.txt` and `trajectory-<ts>.json`, Pi
+/// `pi-session-<ts>_<uuid>.html`, Codex `rollout-<ts>-<uuid>.jsonl`, ...).
+/// These dumps land in repos and carry pasted secrets, credentials, internal
+/// paths, and PII in free prose, so they are protected (persisted, but
+/// age-encrypted in git) by default rather than relying on the operator to
+/// list them.
 ///
 /// Basename globs on purpose (no `/`): like every other entry they match at
 /// any depth. Extension-scoped on purpose: a bare `pi-session-*` would also
-/// match the `pi-session-retention-purge.service` systemd unit, and a bare
-/// `conversation-*` would match source like `conversation-service.rs` —
-/// neither is a dump. Keep in agreement with the security crate's
-/// `is_llm_conversation_dump` whole-file rule (a test pins it).
+/// match the `pi-session-retention-purge.service` systemd unit, a bare
+/// `conversation-*` would match source like `conversation-service.rs`, and
+/// a bare `rollout-*` would match deploy rollout docs — none is a dump, so
+/// `rollout-` is transcript-only (`.json`/`.jsonl`). Keep in agreement with
+/// the security crate's `is_llm_conversation_dump` whole-file rule (a test
+/// pins it).
 fn default_conversation_protected_patterns() -> Vec<String> {
     [
         "conversation-*.txt",
@@ -436,6 +444,17 @@ fn default_conversation_protected_patterns() -> Vec<String> {
         "pi-session-*.txt",
         "pi-session-*.md",
         "pi-session-*.json",
+        // 2026-09-30 audit: `muse export` writes RAW transcripts as
+        // `trajectory-<ts>.json` in the CWD; formats evolve (this
+        // replaced `conversation-*.txt`), so the sibling exts ride along.
+        "trajectory-*.json",
+        "trajectory-*.txt",
+        "trajectory-*.md",
+        "trajectory-*.html",
+        // 2026-09-30 audit: Codex session transcripts
+        // (`rollout-<ts>-<uuid>.jsonl`) copied into repos for audit work.
+        "rollout-*.jsonl",
+        "rollout-*.json",
     ]
     .iter()
     .map(|p| (*p).to_owned())
