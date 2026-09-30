@@ -2133,6 +2133,111 @@ watch_roots = ["/tmp/test"]
         assert!(block.contains("secrets/** filter=dracon"));
     }
 
+    // --- 2026-09-30: LLM conversation dumps protected by default ---
+    //
+    // `conversation-*.txt` / `pi-session-*.html` session exports land in
+    // repos carrying pasted secrets and PII, so the shipped defaults opt
+    // them in to whole-file age encryption without a config edit.
+
+    #[test]
+    fn effective_protected_patterns_empty_stays_empty() {
+        // Legacy scan-everything: shipping conversation defaults must not
+        // flip a fresh install to default-deny as a side effect.
+        let policy = WardenPolicy::default();
+        assert!(policy.protected_patterns.is_empty());
+        assert!(policy.effective_protected_patterns().is_empty());
+    }
+
+    #[test]
+    fn effective_protected_patterns_union_conversation_defaults() {
+        let effective = sample_policy().effective_protected_patterns();
+        // Operator entries survive.
+        assert!(effective.contains(&"*.env".to_string()));
+        assert!(effective.contains(&"secrets/**".to_string()));
+        // Every shipped default rides along.
+        for p in default_conversation_protected_patterns() {
+            assert!(
+                effective.contains(&p),
+                "shipped default missing from effective list: {p}"
+            );
+        }
+        // Sorted + deduped: an operator entry that repeats a default
+        // appears exactly once.
+        let mut sorted = effective.clone();
+        sorted.sort();
+        assert_eq!(effective, sorted, "effective list is not sorted");
+        let policy = WardenPolicy {
+            protected_patterns: vec!["conversation-*.txt".into(), ".env".into()],
+            ..Default::default()
+        };
+        let effective = policy.effective_protected_patterns();
+        assert_eq!(
+            effective
+                .iter()
+                .filter(|p| p.as_str() == "conversation-*.txt")
+                .count(),
+            1,
+            "duplicate pattern in effective list"
+        );
+    }
+
+    #[test]
+    fn gitattributes_block_protects_conversation_dumps() {
+        let block = build_gitattributes_block(&sample_policy()).expect("block");
+        assert!(block.contains("conversation-*.txt filter=dracon diff=dracon merge=dracon"));
+        assert!(block.contains("pi-session-*.html filter=dracon diff=dracon merge=dracon"));
+    }
+
+    #[test]
+    fn gitignore_block_negates_conversation_dumps() {
+        // Persisted, not ignored: the `!` negations keep dumps tracked
+        // (as ciphertext) even if a hygiene pattern would match them.
+        let block = build_gitignore_block(&sample_policy()).expect("block");
+        assert!(block.contains("!conversation-*.txt"));
+        assert!(block.contains("!pi-session-*.html"));
+    }
+
+    #[test]
+    fn conversation_defaults_agree_with_dump_predicate() {
+        use dracon_security_kit::is_llm_conversation_dump;
+        use dracon_security_kit::path_matches_any_pattern;
+
+        let defaults = default_conversation_protected_patterns();
+        assert_eq!(defaults.len(), 8, "shipped default set changed shape");
+        // Every default glob, instantiated, is a dump by the filename
+        // rule AND matches the gate matcher the filter enforces.
+        for glob in &defaults {
+            let name = glob.replacen('*', "2026-09-27-124138", 1);
+            assert!(
+                is_llm_conversation_dump(&name),
+                "default {glob} instantiates to a non-dump: {name}"
+            );
+            assert!(
+                path_matches_any_pattern(&name, &defaults),
+                "gate matcher rejects default instantiation: {name}"
+            );
+            assert!(
+                path_matches_any_pattern(&format!("nested/dir/{name}"), &defaults),
+                "gate matcher rejects nested dump: {name}"
+            );
+        }
+        // Same-prefix non-dump source is rejected on both sides.
+        for name in [
+            "pi-session-retention-purge.service",
+            "systemd/pi-session-retention-purge.service",
+            "src/conversation-service.rs",
+        ] {
+            assert!(
+                !is_llm_conversation_dump(name.rsplit('/').next().unwrap()),
+                "non-dump matched by filename rule: {name}"
+            );
+            assert!(
+                !path_matches_any_pattern(name, &defaults),
+                "non-dump matched by gate matcher: {name}"
+            );
+        }
+    }
+
     #[test]
     fn discover_git_repos_finds_all_git_dirs() {
         let td = TestDir::new("warden_discover_all");
