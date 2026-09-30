@@ -78,8 +78,10 @@ fn effective_like_patterns() -> Vec<String> {
 #[test]
 fn conversation_txt_gets_whole_file_encryption() -> Result<()> {
     let security = test_security(effective_like_patterns())?;
-    let cleaned = security
-        .smart_clean_with_path(CONVERSATION_TXT.as_bytes(), "conversation-2026-09-27-124138.txt")?;
+    let cleaned = security.smart_clean_with_path(
+        CONVERSATION_TXT.as_bytes(),
+        "conversation-2026-09-27-124138.txt",
+    )?;
     let cleaned = String::from_utf8(cleaned).expect("clean output is UTF-8");
     assert!(
         cleaned.starts_with("[DRACON_SECRET:"),
@@ -104,8 +106,10 @@ fn conversation_txt_gets_whole_file_encryption() -> Result<()> {
 #[test]
 fn conversation_txt_round_trips_through_smudge() -> Result<()> {
     let security = test_security(effective_like_patterns())?;
-    let cleaned = security
-        .smart_clean_with_path(CONVERSATION_TXT.as_bytes(), "conversation-2026-09-27-124138.txt")?;
+    let cleaned = security.smart_clean_with_path(
+        CONVERSATION_TXT.as_bytes(),
+        "conversation-2026-09-27-124138.txt",
+    )?;
     let cleaned_str = String::from_utf8(cleaned).expect("clean output is UTF-8");
     let restored = security.smart_smudge(&cleaned_str)?;
     assert_eq!(
@@ -118,7 +122,8 @@ fn conversation_txt_round_trips_through_smudge() -> Result<()> {
 #[test]
 fn pi_session_html_at_depth_gets_whole_file_encryption() -> Result<()> {
     let security = test_security(effective_like_patterns())?;
-    let path = "exports/pi-session-2026-09-27T12-41-50-432Z_01a0e2e2-d060-718e-b988-38dcb0ff6fe7.html";
+    let path =
+        "exports/pi-session-2026-09-27T12-41-50-432Z_01a0e2e2-d060-718e-b988-38dcb0ff6fe7.html";
     let cleaned = security.smart_clean_with_path(PI_SESSION_HTML.as_bytes(), path)?;
     let cleaned = String::from_utf8(cleaned).expect("clean output is UTF-8");
     assert!(

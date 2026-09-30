@@ -133,8 +133,7 @@ pub fn path_matches_any_pattern(path_str: &str, patterns: &[String]) -> bool {
 /// `default_conversation_protected_patterns` (a cross-crate test pins it).
 pub fn is_llm_conversation_dump(filename: &str) -> bool {
     const DUMP_EXTS: [&str; 4] = [".txt", ".md", ".json", ".html"];
-    let prefix_ok =
-        filename.starts_with("conversation-") || filename.starts_with("pi-session-");
+    let prefix_ok = filename.starts_with("conversation-") || filename.starts_with("pi-session-");
     prefix_ok && DUMP_EXTS.iter().any(|ext| filename.ends_with(ext))
 }
 
