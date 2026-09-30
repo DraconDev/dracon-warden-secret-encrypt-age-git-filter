@@ -38,12 +38,16 @@ repo_roots = ["~/.dracon", "~/Dev"]
 # Example: ["*.key", "*.pem", "*.env", ".ssh/*", "secrets/*"]
 #
 # ADDED 2026-09-30 — shipped LLM-conversation defaults: as soon as this list
-# is non-empty, the warden additionally protects `conversation-*.txt/md/json/
-# html` and `pi-session-*.html/txt/md/json` (Muse / Pi session exports,
-# which carry pasted secrets and PII in free prose). They are persisted but
-# whole-file age-encrypted in git, at any depth. An empty list keeps the
-# legacy scan-everything behavior (which already covers dumps via the
-# filename rule). Per-file opt-out: touch `<file>.plaintext`.
+# is non-empty, the warden additionally protects `conversation-*` and
+# `pi-session-*` (Muse / Pi session exports), `trajectory-*` (`muse export`
+# RAW transcripts) and transcript-only `rollout-*` (Codex session copies),
+# each in their dump extensions — all carry pasted secrets and PII in free
+# prose. They are persisted but whole-file age-encrypted in git, at any
+# depth. An empty list keeps the legacy scan-everything behavior (which
+# already covers dumps via the filename rule). Per-file opt-out: touch
+# `<file>.plaintext`. Note: dumps can be tens of MB (57 MB observed), so a
+# default 10 MiB `filter_max_bytes` install fails closed on the largest
+# ones — raise the limit (64 MiB ceiling) rather than disabling the filter.
 protected_patterns = []
 
 # Glob patterns for files that must remain plaintext (excluded from encryption)
@@ -109,6 +113,9 @@ plaintext_patterns = []
 # to extend or replace them for a particular installation.
 hygiene_patterns = [
     "**/.pi*",
+    # 2026-09-30 audit: aider working memory (`.aider.chat.history.md`,
+    # `.aider.input.history`) — aider's own docs recommend ignoring it.
+    "**/.aider*",
     # Product-default machine-local audit/cache hygiene (2026-08-30).
     # These artifacts are regeneratable and must not rebloat repositories.
     "web/games/audit-evidence/",
