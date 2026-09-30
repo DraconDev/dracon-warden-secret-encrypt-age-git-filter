@@ -36,6 +36,14 @@ repo_roots = ["~/.dracon", "~/Dev"]
 # Glob patterns for files that MUST be encrypted (age filter + gitattributes)
 # These files are tracked in git but stored as encrypted blobs.
 # Example: ["*.key", "*.pem", "*.env", ".ssh/*", "secrets/*"]
+#
+# ADDED 2026-09-30 — shipped LLM-conversation defaults: as soon as this list
+# is non-empty, the warden additionally protects `conversation-*.txt/md/json/
+# html` and `pi-session-*.html/txt/md/json` (Muse / Pi session exports,
+# which carry pasted secrets and PII in free prose). They are persisted but
+# whole-file age-encrypted in git, at any depth. An empty list keeps the
+# legacy scan-everything behavior (which already covers dumps via the
+# filename rule). Per-file opt-out: touch `<file>.plaintext`.
 protected_patterns = []
 
 # Glob patterns for files that must remain plaintext (excluded from encryption)
