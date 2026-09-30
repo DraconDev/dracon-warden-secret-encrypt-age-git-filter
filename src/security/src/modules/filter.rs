@@ -117,6 +117,27 @@ pub fn path_matches_any_pattern(path_str: &str, patterns: &[String]) -> bool {
         .any(|pattern| git_attribute_pattern_matches(pattern, path_str))
 }
 
+/// ADDED 2026-09-30: true when `filename` (basename, not a path) is an LLM
+/// conversation/session export: Muse `conversation-<ts>.txt`, Pi
+/// `pi-session-<ts>_<uuid>.html`, and the same prefixes with the other dump
+/// extensions the exporters can produce.
+///
+/// These dumps carry pasted secrets, credentials, internal paths, and PII in
+/// free prose, so they get whole-file age encryption rather than inline
+/// secret scanning — structure and prose both hidden, with no ~16 s regex
+/// bill on a multi-MB HTML dump. The extension gate is load-bearing:
+/// `pi-session-retention-purge.service` is a systemd unit that shares the
+/// `pi-session-` prefix but must stay plaintext source, and likewise a
+/// hypothetical `conversation-service.rs` — only the dump extensions match.
+/// Keep in agreement with the warden binary's
+/// `default_conversation_protected_patterns` (a cross-crate test pins it).
+pub fn is_llm_conversation_dump(filename: &str) -> bool {
+    const DUMP_EXTS: [&str; 4] = [".txt", ".md", ".json", ".html"];
+    let prefix_ok =
+        filename.starts_with("conversation-") || filename.starts_with("pi-session-");
+    prefix_ok && DUMP_EXTS.iter().any(|ext| filename.ends_with(ext))
+}
+
 impl WardenSecurity {
     pub fn smart_clean(&self, content: &str) -> Result<String> {
         let scanner = SecretScanner::new()?;
@@ -295,7 +316,15 @@ impl WardenSecurity {
                     // keys.json — another credential-declaring filename found
                     // carrying provider secrets in the wild.
                     || filename == "creds.json"
-                    || filename == "keys.json";
+                    || filename == "keys.json"
+                    // ADDED 2026-09-30: LLM conversation/session exports
+                    // (`conversation-*.txt`, `pi-session-*.html`, ...) carry
+                    // pasted secrets and PII in free prose, so the whole file
+                    // is encrypted instead of inline-scanning it. Filename
+                    // arm like creds.json: reaching this line already proves
+                    // the path cleared the protected-patterns gate above
+                    // (the shipped conversation defaults opt these in).
+                    || is_llm_conversation_dump(filename);
                 if is_full_encrypt {
                     // Don't double-encrypt
                     if content.starts_with(HEADER_V2_MAGIC)

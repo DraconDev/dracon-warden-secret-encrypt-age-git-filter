@@ -413,6 +413,35 @@ fn default_binary_filter_exempt_patterns() -> Vec<String> {
     .collect()
 }
 
+/// ADDED 2026-09-30: shipped protected patterns for LLM conversation/session
+/// exports (Muse `conversation-<ts>.txt`, Pi
+/// `pi-session-<ts>_<uuid>.html`, ...). These dumps land in repos and carry
+/// pasted secrets, credentials, internal paths, and PII in free prose, so
+/// they are protected (persisted, but age-encrypted in git) by default rather
+/// than relying on the operator to list them.
+///
+/// Basename globs on purpose (no `/`): like every other entry they match at
+/// any depth. Extension-scoped on purpose: a bare `pi-session-*` would also
+/// match the `pi-session-retention-purge.service` systemd unit, and a bare
+/// `conversation-*` would match source like `conversation-service.rs` —
+/// neither is a dump. Keep in agreement with the security crate's
+/// `is_llm_conversation_dump` whole-file rule (a test pins it).
+fn default_conversation_protected_patterns() -> Vec<String> {
+    [
+        "conversation-*.txt",
+        "conversation-*.md",
+        "conversation-*.json",
+        "conversation-*.html",
+        "pi-session-*.html",
+        "pi-session-*.txt",
+        "pi-session-*.md",
+        "pi-session-*.json",
+    ]
+    .iter()
+    .map(|p| (*p).to_owned())
+    .collect()
+}
+
 fn expand_tilde(raw: &str) -> PathBuf {
     let Some(rest) = raw.strip_prefix('~') else {
         return PathBuf::from(raw);
@@ -436,6 +465,9 @@ fn existing_policy_paths(raw_paths: &[String]) -> Vec<PathBuf> {
 
 #[derive(Debug, Default, Deserialize, Clone)]
 pub(crate) struct WardenPolicy {
+    /// Operator-configured protected list. Consumers must use
+    /// `effective_protected_patterns()` instead of this field directly so
+    /// the shipped conversation defaults ride along (see below).
     #[serde(default)]
     protected_patterns: Vec<String>,
     /// Optional bounded filter input limit. Omitted preserves the 10 MiB default.
