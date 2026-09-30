@@ -999,6 +999,7 @@ mod tests {
             patterns,
             vec![
                 "**/.pi*",
+                "**/.aider*",
                 "**/chrometrace.log",
                 "**/.svelte-kit/",
                 "**/.vite/",
@@ -2203,7 +2204,7 @@ watch_roots = ["/tmp/test"]
         use dracon_security_kit::path_matches_any_pattern;
 
         let defaults = default_conversation_protected_patterns();
-        assert_eq!(defaults.len(), 8, "shipped default set changed shape");
+        assert_eq!(defaults.len(), 14, "shipped default set changed shape");
         // Every default glob, instantiated, is a dump by the filename
         // rule AND matches the gate matcher the filter enforces.
         for glob in &defaults {
@@ -2226,6 +2227,8 @@ watch_roots = ["/tmp/test"]
             "pi-session-retention-purge.service",
             "systemd/pi-session-retention-purge.service",
             "src/conversation-service.rs",
+            "rollout-plan.md",
+            "docs/rollout-notes.txt",
         ] {
             assert!(
                 !is_llm_conversation_dump(name.rsplit('/').next().unwrap()),

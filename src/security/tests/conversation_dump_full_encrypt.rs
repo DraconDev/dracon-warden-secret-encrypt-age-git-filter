@@ -189,6 +189,65 @@ fn conversation_source_file_is_not_whole_file_encrypted() -> Result<()> {
 }
 
 #[test]
+fn trajectory_json_gets_whole_file_encryption() -> Result<()> {
+    // 2026-09-30 audit: `muse export` default output (RAW transcript).
+    let security = test_security(vec!["trajectory-*.json".to_string()])?;
+    let export = r#"{"export_schema_version":1,"session":"01a0f3aa","messages":[{"role":"user","content":"deploy token widget-prod-fake-key-007"}]}"#;
+    let cleaned = security.smart_clean_with_path(
+        export.as_bytes(),
+        "trajectory-2026-09-30-120000.json",
+    )?;
+    let cleaned = String::from_utf8(cleaned).expect("clean output is UTF-8");
+    assert!(
+        cleaned.starts_with("[DRACON_SECRET:"),
+        "trajectory export was not whole-file encrypted:\n{}",
+        &cleaned[..cleaned.len().min(200)]
+    );
+    assert!(
+        !cleaned.contains("widget-prod-fake-key-007"),
+        "transcript plaintext leaked through clean filter"
+    );
+    Ok(())
+}
+
+#[test]
+fn rollout_jsonl_gets_whole_file_encryption() -> Result<()> {
+    // 2026-09-30 audit: Codex session transcript copied into a repo.
+    let security = test_security(vec!["rollout-*.jsonl".to_string()])?;
+    let rollout = r#"{"ts":"2026-09-04T20:31:57","type":"message","content":"db password db-Stag1ng-fake-pw42"}"#;
+    let cleaned = security.smart_clean_with_path(
+        rollout.as_bytes(),
+        "audit/rollout-2026-09-04T20-31-57-01a06de8-0650-7900-a97d-dfbc8e179a76.jsonl",
+    )?;
+    let cleaned = String::from_utf8(cleaned).expect("clean output is UTF-8");
+    assert!(
+        cleaned.starts_with("[DRACON_SECRET:"),
+        "rollout transcript was not whole-file encrypted:\n{}",
+        &cleaned[..cleaned.len().min(200)]
+    );
+    assert!(
+        !cleaned.contains("db-Stag1ng-fake-pw42"),
+        "transcript plaintext leaked through clean filter"
+    );
+    Ok(())
+}
+
+#[test]
+fn rollout_prose_doc_is_not_whole_file_encrypted() -> Result<()> {
+    // `rollout-` is transcript-only: deploy rollout docs stay inline-scanned.
+    let security = test_security(vec!["rollout-*.jsonl".to_string(), "rollout-*.md".to_string()])?;
+    let cleaned =
+        security.smart_clean_with_path(b"# Rollout plan\n\nWave 1: canary.\n", "rollout-plan.md")?;
+    let cleaned = String::from_utf8(cleaned).expect("clean output is UTF-8");
+    assert!(
+        !cleaned.starts_with("[DRACON_SECRET:"),
+        "deploy doc was wrongly whole-file encrypted"
+    );
+    assert!(cleaned.contains("Wave 1: canary."), "doc content mangled");
+    Ok(())
+}
+
+#[test]
 fn dump_predicate_matches_only_dump_extensions() {
     // Observed real-world names plus every shipped extension.
     for name in [
@@ -200,6 +259,12 @@ fn dump_predicate_matches_only_dump_extensions() {
         "pi-session-2026-09-27T12-41-50-432Z_01a0e2e2-d060-718e-b988-38dcb0ff6fe7.txt",
         "pi-session-2026-09-27T12-41-50-432Z_01a0e2e2-d060-718e-b988-38dcb0ff6fe7.md",
         "pi-session-2026-09-27T12-41-50-432Z_01a0e2e2-d060-718e-b988-38dcb0ff6fe7.json",
+        "trajectory-2026-09-30-120000.json",
+        "trajectory-2026-09-30-120000.txt",
+        "trajectory-2026-09-30-120000.md",
+        "trajectory-2026-09-30-120000.html",
+        "rollout-2026-09-04T20-31-57-01a06de8-0650-7900-a97d-dfbc8e179a76.jsonl",
+        "rollout-2026-09-04T20-31-57-01a06de8-0650-7900-a97d-dfbc8e179a76.json",
     ] {
         assert!(is_llm_conversation_dump(name), "dump not matched: {name}");
     }
@@ -209,7 +274,10 @@ fn dump_predicate_matches_only_dump_extensions() {
         "pi-session-retention-purge.timer",
         "conversation-service.rs",
         "conversation-handler.ts",
+        "rollout-plan.md",
+        "rollout-notes.txt",
         "my-conversation-notes.txt",
+        "trajectories.md",
         "conversation.txt",
         "pi-session.html",
         ".env",
