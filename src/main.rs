@@ -3,6 +3,7 @@
 //! Dracon Warden — security hardening and encryption daemon.
 
 mod print;
+mod storage;
 
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
@@ -251,6 +252,23 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Stream whole-payload age encryption for external storage (stdin to stdout).
+    StorageEncrypt {
+        /// Owning repository used for authorized recipient discovery.
+        #[arg(long)]
+        repo: PathBuf,
+        /// Plaintext input budget; independent of Git filter limits.
+        #[arg(long, default_value_t = 4 * 1024 * 1024 * 1024u64)]
+        max_bytes: u64,
+    },
+    /// Stream authenticated payload decryption (publish output only after success).
+    StorageDecrypt {
+        #[arg(long)]
+        repo: PathBuf,
+        /// Plaintext output budget.
+        #[arg(long, default_value_t = 4 * 1024 * 1024 * 1024u64)]
+        max_bytes: u64,
+    },
     /// Show resolved policy path and repo roots.
     Status,
     /// Run one hardening pass and exit.
@@ -2247,7 +2265,27 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     VERBOSITY.store(cli.verbose, Ordering::SeqCst);
 
+    let storage_encrypt = matches!(&cli.cmd, Command::StorageEncrypt { .. });
     match cli.cmd {
+        Command::StorageEncrypt { repo, max_bytes }
+        | Command::StorageDecrypt { repo, max_bytes } => {
+            // These commands stream local bytes only. They never install hooks,
+            // harden a repo, create keys, or invoke Git/network operations.
+            let repo = repo
+                .canonicalize()
+                .context("cannot resolve owning repository")?;
+            if !has_git_marker(&repo) {
+                anyhow::bail!("owning repository must have a Git marker");
+            }
+            let security = dracon_security_kit::WardenSecurity::new(Some(&repo))?;
+            let mut input = std::io::stdin().lock();
+            let mut output = std::io::stdout().lock();
+            if storage_encrypt {
+                storage::encrypt(&security, &mut input, &mut output, max_bytes)?;
+            } else {
+                storage::decrypt(&security, &mut input, &mut output, max_bytes)?;
+            }
+        }
         Command::FilterClean { path } => {
             run_filter_with_timeout(true, "filter-clean", path).await?;
         }
