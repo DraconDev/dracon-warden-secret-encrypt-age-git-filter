@@ -48,6 +48,7 @@ dracon-security-kit = { package = "dracon-security", version = "0.4.0", path = "
 tempfile = "3"
 
 [dev-dependencies]
+sha2 = "0.10.9"
 
 # This manifest is maintained in the standalone dracon-warden repository.
 # The parent dracon-utilities workspace consumes this directory by path.
