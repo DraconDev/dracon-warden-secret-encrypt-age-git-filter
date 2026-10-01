@@ -3,11 +3,9 @@
 mod tests {
     use crate::*;
     use dracon_security_kit::managed_patterns_override;
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Mutex;
     use std::time::Duration;
 
-    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
     static HOME_MUTEX: Mutex<()> = Mutex::new(());
 
     /// Guard that temporarily changes $HOME and restores it on drop.
@@ -40,29 +38,28 @@ mod tests {
 
     struct TestDir {
         path: std::path::PathBuf,
+        _temporary: tempfile::TempDir,
         #[allow(dead_code)]
         guard: Mutex<()>,
     }
 
     impl TestDir {
         fn new(name: &str) -> Self {
-            let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
-            let tmp = std::env::temp_dir();
-            let path = tmp.join(format!("dracon_warden_test_{}_{}", name, id));
-            fs::create_dir_all(&path).expect("create temp dir");
+            // Workspace checks may run in multiple processes. Keep the name's
+            // quote/space fixtures while allocating a unique owned directory.
+            let temporary = tempfile::Builder::new()
+                .prefix(&format!("dracon_warden_test_{name}_"))
+                .tempdir()
+                .expect("create temp dir");
+            let path = temporary.path().to_owned();
             Self {
                 path,
+                _temporary: temporary,
                 guard: Mutex::new(()),
             }
         }
         fn path(&self) -> &std::path::Path {
             &self.path
-        }
-    }
-
-    impl Drop for TestDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
         }
     }
 
