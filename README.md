@@ -26,6 +26,19 @@ cd dracon-warden-secret-encrypt-age-git-filter
 cargo build --release --locked
 ```
 
+## External-payload streaming preview
+
+Unreleased source builds provide `storage-encrypt --repo <repo>` and
+`storage-decrypt --repo <repo>`, reading stdin and writing stdout. They use
+existing authorized recipients and identity discovery for whole-payload age
+encryption. `--max-bytes` bounds plaintext input/output (default 4 GiB),
+independently of the Git filter size limit.
+
+Write to a private temporary destination and publish it only after successful
+exit. Output can be partial on failure, including failed authentication at the
+end of decryption. These commands do not configure filters, generate keys,
+enroll storage paths, or upload to a backend. Dracon Sync integration is pending.
+
 ## Mental Model (Important)
 
 - **Working tree is plaintext**: `filter.smudge` decrypts so your app can read normal config/secrets.
