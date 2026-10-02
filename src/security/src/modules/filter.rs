@@ -195,7 +195,13 @@ impl WardenSecurity {
         // still passes through: binary in a non-sensitive, non-protected
         // location is never encrypted. The .plaintext hatch above still
         // wins over everything.
-        if !path_is_protected(path_str, &self.managed_patterns) {
+        // ADDED (media option): a media-pattern match passes this gate
+        // without disturbing the managed-patterns semantics — an empty
+        // media list matches nothing (never legacy scan-everything),
+        // and a legacy empty managed list still scans everything.
+        if !path_is_protected(path_str, &self.managed_patterns)
+            && !path_matches_any_pattern(path_str, &self.media_patterns)
+        {
             return match std::str::from_utf8(content) {
                 Ok(text_content) => {
                     let scanner = SecretScanner::new_tier1()?;
@@ -298,7 +304,12 @@ impl WardenSecurity {
             || self
                 .managed_patterns
                 .iter()
-                .any(|p| filename == p || path_str.contains(p));
+                .any(|p| filename == p || path_str.contains(p))
+            // ADDED (media option): media-matched binaries whole-file
+            // encrypt via the binary arm below. Gitattributes-style
+            // matching (empty list matches nothing), not the naive
+            // substring rule above.
+            || path_matches_any_pattern(path_str, &self.media_patterns);
 
         // 2. Process based on content type
         match std::str::from_utf8(content) {

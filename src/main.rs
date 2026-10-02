@@ -8,8 +8,11 @@ mod storage;
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
 #[cfg(test)]
+use dracon_security_kit::clear_managed_media_patterns_override;
+#[cfg(test)]
 use dracon_security_kit::clear_managed_patterns_override;
 use dracon_security_kit::path_matches_any_pattern;
+use dracon_security_kit::set_managed_media_patterns;
 use dracon_security_kit::set_managed_patterns;
 pub(crate) use dracon_security_kit::DraconWarden;
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -507,6 +510,22 @@ pub(crate) struct WardenPolicy {
     /// the shipped conversation defaults ride along (see below).
     #[serde(default)]
     protected_patterns: Vec<String>,
+    /// ADDED (media option): glob patterns for binary media selected
+    /// for whole-file encryption (screenshots of internal systems,
+    /// customer data on screen, ...). Default `[]` disables the
+    /// option entirely — no shipped defaults, no behavior change.
+    /// Unlike `protected_patterns`, this list NEVER changes the
+    /// scan-everything/scan-allowlist posture: it only passes its
+    /// own matches through the filter gate and marks them as
+    /// sensitive locations (binaries whole-file encrypt; text
+    /// matches get full filter treatment). Entries are emitted as
+    /// filter lines after the binary carve-outs (so they win over
+    /// the exemption) and before the plaintext lines (so an
+    /// explicit plaintext entry still wins over them, same as for
+    /// protected paths). Hygiene-ignored paths stay ignored: this
+    /// list does not un-ignore anything.
+    #[serde(default)]
+    media_protected_patterns: Vec<String>,
     /// Optional bounded filter input limit. Omitted preserves the 10 MiB default.
     #[serde(default)]
     filter_max_bytes: Option<usize>,
@@ -759,6 +778,7 @@ pub(crate) fn wire_managed_patterns_from_policy() -> bool {
         return false;
     };
     set_managed_patterns(policy.effective_protected_patterns());
+    set_managed_media_patterns(policy.media_protected_patterns.clone());
     true
 }
 
@@ -766,6 +786,7 @@ pub(crate) fn wire_managed_patterns_from_policy() -> bool {
 #[cfg(test)]
 pub(crate) fn clear_filter_managed_patterns() {
     clear_managed_patterns_override();
+    clear_managed_media_patterns_override();
 }
 
 pub(crate) fn resolve_policy_path_local() -> Result<PathBuf> {
