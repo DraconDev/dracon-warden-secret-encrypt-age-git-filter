@@ -351,6 +351,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pre_push_hook_blocks_secret_removed_or_reverted_before_tip() {
+        for binary in [false, true] {
+            for remove in [false, true] {
+                let (td, hook) = make_repo_with_pre_push_hook("hook_intermediate_secret");
+                let repo = td.path();
+                fs::write(repo.join("asset"), b"safe baseline\n").unwrap();
+                run_git_in(repo, &["add", "--", "asset"]);
+                run_git_in(repo, &["commit", "-q", "-m", "baseline"]);
+                let base = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+                let name = if remove { "new-asset" } else { "asset" };
+                let mut secret = b"password = \"synthetic-regression-only\"\n".to_vec();
+                if binary { secret.insert(0, 0); }
+                fs::write(repo.join(name), secret).unwrap();
+                run_git_in(repo, &["add", "--", name]);
+                run_git_in(repo, &["commit", "-q", "-m", "introduce fixture"]);
+                if remove { run_git_in(repo, &["rm", "--", name]); }
+                else {
+                    fs::write(repo.join(name), b"safe baseline\n").unwrap();
+                    run_git_in(repo, &["add", "--", name]);
+                }
+                run_git_in(repo, &["commit", "-q", "-m", "remove fixture"]);
+                let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+                let (status, error) = run_hook_input(repo, &hook,
+                    &format!("refs/heads/main {head} refs/heads/main {base}\n"));
+                assert!(!status.success(), "secret in reachable intermediate commit escaped: {error}");
+            }
+        }
+    }
+
     /// ADDED 2026-07-21 (v0.112.32, audit M32/F4.6): a secret-shaped
     /// line in a file whose name contains a SPACE must still be
     /// caught. The pre-fix hook iterated
