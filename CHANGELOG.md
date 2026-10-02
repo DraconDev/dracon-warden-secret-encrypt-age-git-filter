@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (workspace audit 2026-10-02)
 
+- Refreshed the standalone lockfile from the tested parent dependency versions and verified isolated `cargo metadata --locked --offline`, so a standalone clone retains the same reproducible dependency graph.
 - Pre-push scanning checks every newly published commit, including merge-parent changes, instead of only endpoint trees (audit A1, 2026-10-02). Add/delete and modify/revert secrets remain blocked, including binary introductions; inherited binary matches and explicit plaintext exceptions remain supported.
 
 ### Added
