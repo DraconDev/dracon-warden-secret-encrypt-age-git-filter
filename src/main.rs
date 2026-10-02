@@ -3850,6 +3850,7 @@ fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
         limit,
         &guard.binary_exempt,
         &guard.protected,
+        &guard.media,
     ) {
         eprintln!("{}", reason);
         return Err(anyhow::anyhow!("{}", reason));
@@ -3922,6 +3923,7 @@ fn filter_transform_bytes(
         limit,
         &guard.binary_exempt,
         &guard.protected,
+        &guard.media,
     ) {
         eprintln!("{}", reason);
         return Err(anyhow::anyhow!("{}", reason));
@@ -4309,6 +4311,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
             limit,
             &guard.binary_exempt,
             &guard.protected,
+            &guard.media,
         )
         .is_none();
     // A clean passthrough is handled exactly like smudge: the bytes past
@@ -4439,6 +4442,7 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
                 limit,
                 &guard.binary_exempt,
                 &guard.protected,
+            &guard.media,
             )
             .unwrap_or_else(|| {
                 format!(

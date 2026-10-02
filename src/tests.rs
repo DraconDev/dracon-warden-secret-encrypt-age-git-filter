@@ -4865,6 +4865,8 @@ mod binary_carve_out_tests {
             LIMIT,
             &exempt(),
             &protected,
+            protected & [],
+            protected,
         );
         assert!(
             reason.is_some(),
