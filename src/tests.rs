@@ -4996,6 +4996,37 @@ mod binary_carve_out_tests {
     }
 
     #[test]
+    fn gitattributes_emits_media_lines_between_carveouts_and_plaintext() {
+        let policy = WardenPolicy {
+            media_protected_patterns: vec!["internal-dashboards/**".into()],
+            plaintext_patterns: vec!["*.pub".into()],
+            ..Default::default()
+        };
+        let block = build_gitattributes_block(&policy).expect("block");
+        let media_line = "internal-dashboards/** filter=dracon diff=dracon merge=dracon";
+        assert!(block.contains(media_line), "missing media line:\n{block}");
+        let carveout = block.lines().position(|l| l == "*.png -filter").unwrap();
+        let media = block.lines().position(|l| l == media_line).unwrap();
+        let plain = block.lines().position(|l| l == "*.pub -filter").unwrap();
+        assert!(
+            carveout < media && media < plain,
+            "media lines must win over carve-outs but lose to plaintext:\n{block}"
+        );
+        // Off by default: a default policy emits no media lines.
+        let off = build_gitattributes_block(&WardenPolicy::default()).expect("block");
+        assert!(!off.contains("internal-dashboards"));
+        // Exact media/plaintext overlap is a loud contradiction, same
+        // rule as protected/plaintext overlap.
+        let clash = WardenPolicy {
+            media_protected_patterns: vec!["*.png".into()],
+            plaintext_patterns: vec!["*.png".into()],
+            ..Default::default()
+        };
+        let err = build_gitattributes_block(&clash).expect_err("clash must fail");
+        assert!(err.to_string().contains("media-protected and plaintext"));
+    }
+
+    #[test]
     fn policy_can_override_or_disable_the_defaults() {
         let custom = WardenPolicy {
             binary_filter_exempt_patterns: Some(vec!["*.blend".into()]),
