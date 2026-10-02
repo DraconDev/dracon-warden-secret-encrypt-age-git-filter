@@ -5283,6 +5283,15 @@ while read local_ref local_sha remote_ref remote_sha; do
 
     # Check each newly published commit, not only the endpoint trees: an
     # introduced-then-deleted secret remains reachable in the pushed history.
+    # A new tag accompanying a branch to the same target reuses that branch's
+    # scan, rather than rechecking grandfathered content from older commits.
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ] && \
+        [ "${local_ref#refs/tags/}" != "$local_ref" ] && \
+        awk -v sha="$local_sha" \
+            '$1 ~ /^refs\/heads\// && $2 == sha { found=1 } END { exit(found ? 0 : 1) }' \
+            "$REFS_FILE"; then
+        continue
+    fi
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
         NEW_COMMITS=$(git rev-list --reverse "$local_sha" --not --remotes 2>/dev/null) || exit 1
     else
