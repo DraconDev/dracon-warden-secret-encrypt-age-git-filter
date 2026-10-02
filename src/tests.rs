@@ -360,23 +360,36 @@ mod tests {
                 fs::write(repo.join("asset"), b"safe baseline\n").unwrap();
                 run_git_in(repo, &["add", "--", "asset"]);
                 run_git_in(repo, &["commit", "-q", "-m", "baseline"]);
-                let base = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+                let base = git_in_output(repo, &["rev-parse", "HEAD"])
+                    .trim()
+                    .to_string();
                 let name = if remove { "new-asset" } else { "asset" };
                 let mut secret = b"password = \"synthetic-regression-only\"\n".to_vec();
-                if binary { secret.insert(0, 0); }
+                if binary {
+                    secret.insert(0, 0);
+                }
                 fs::write(repo.join(name), secret).unwrap();
                 run_git_in(repo, &["add", "--", name]);
                 run_git_in(repo, &["commit", "-q", "-m", "introduce fixture"]);
-                if remove { run_git_in(repo, &["rm", "--", name]); }
-                else {
+                if remove {
+                    run_git_in(repo, &["rm", "--", name]);
+                } else {
                     fs::write(repo.join(name), b"safe baseline\n").unwrap();
                     run_git_in(repo, &["add", "--", name]);
                 }
                 run_git_in(repo, &["commit", "-q", "-m", "remove fixture"]);
-                let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
-                let (status, error) = run_hook_input(repo, &hook,
-                    &format!("refs/heads/main {head} refs/heads/main {base}\n"));
-                assert!(!status.success(), "secret in reachable intermediate commit escaped: {error}");
+                let head = git_in_output(repo, &["rev-parse", "HEAD"])
+                    .trim()
+                    .to_string();
+                let (status, error) = run_hook_input(
+                    repo,
+                    &hook,
+                    &format!("refs/heads/main {head} refs/heads/main {base}\n"),
+                );
+                assert!(
+                    !status.success(),
+                    "secret in reachable intermediate commit escaped: {error}"
+                );
             }
         }
     }
