@@ -5334,9 +5334,9 @@ while read local_ref local_sha remote_ref remote_sha; do
     # ADDED file with `grep -a` (treats binary data as text). For a new
     # file the added content IS the whole file, so this is equivalent
     # to the diff-line scan for text additions and covers binaries for
-    # the first time. MODIFIED files keep the added-lines diff scan
-    # only: scanning whole modified blobs would re-trip on key-shaped
-    # bytes that predate the push.
+    # the first time. Modified text files keep the added-lines scan;
+    # modified binaries compare secret matches with parent blobs below
+    # so unrelated edits do not re-trip on grandfathered matches.
     git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null | tr '\0' '\n' > "$ADDED_FILES"
     while IFS= read -r af; do
         # Skip files hatched via a `.plaintext` sibling, matching the

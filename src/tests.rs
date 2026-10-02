@@ -435,6 +435,59 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pre_push_hook_allows_inherited_binary_secret_shape() {
+        let (td, hook) = make_repo_with_pre_push_hook("hook_binary_grandfather");
+        let repo = td.path();
+        let mut bytes = b"\0password = \"synthetic-existing-fixture\"\n".to_vec();
+        fs::write(repo.join("asset.bin"), &bytes).unwrap();
+        run_git_in(repo, &["add", "--", "asset.bin"]);
+        run_git_in(repo, &["commit", "-qm", "published baseline"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        bytes.extend_from_slice(b"unrelated change\n");
+        fs::write(repo.join("asset.bin"), &bytes).unwrap();
+        run_git_in(repo, &["commit", "-qam", "unrelated binary change"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, error) = run_hook(repo, &hook, &head, &base);
+        assert!(
+            status.success(),
+            "inherited binary fixture re-triggered scan: {error}"
+        );
+    }
+
+    #[test]
+    fn pre_push_hook_preserves_explicit_plaintext_sibling_exception() {
+        let (td, hook) = make_repo_with_pre_push_hook("hook_plaintext_exception");
+        let repo = td.path();
+        fs::write(repo.join("asset"), "safe baseline\n").unwrap();
+        run_git_in(repo, &["add", "--", "asset"]);
+        run_git_in(repo, &["commit", "-qm", "baseline"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        fs::write(repo.join("asset.plaintext"), "operator exception").unwrap();
+        fs::write(
+            repo.join("asset"),
+            b"password = \"synthetic-explicit-fixture\"\n",
+        )
+        .unwrap();
+        run_git_in(repo, &["commit", "-qam", "intentional plaintext"]);
+        fs::write(repo.join("asset"), "safe baseline\n").unwrap();
+        run_git_in(repo, &["commit", "-qam", "revert fixture"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, error) = run_hook(repo, &hook, &head, &base);
+        assert!(
+            status.success(),
+            "explicit plaintext exception lost: {error}"
+        );
+    }
+
     /// ADDED 2026-07-21 (v0.112.32, audit M32/F4.6): a secret-shaped
     /// line in a file whose name contains a SPACE must still be
     /// caught. The pre-fix hook iterated
