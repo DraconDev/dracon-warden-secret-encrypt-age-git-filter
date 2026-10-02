@@ -1031,15 +1031,12 @@ mod tests {
             toml::from_str("media_protected_patterns = []\n").expect("parse empty list");
         assert!(empty.media_protected_patterns.is_empty());
         // An explicit list parses and surfaces in the managed block.
-        let set: WardenPolicy = toml::from_str(
-            "media_protected_patterns = [\"internal-dashboards/**\"]\n",
-        )
-        .expect("parse media list");
+        let set: WardenPolicy =
+            toml::from_str("media_protected_patterns = [\"internal-dashboards/**\"]\n")
+                .expect("parse media list");
         assert_eq!(set.media_protected_patterns, ["internal-dashboards/**"]);
         let block = build_gitattributes_block(&set).expect("block");
-        assert!(block.contains(
-            "internal-dashboards/** filter=dracon diff=dracon merge=dracon"
-        ));
+        assert!(block.contains("internal-dashboards/** filter=dracon diff=dracon merge=dracon"));
     }
 
     /// ADDED 2026-07-21 (v0.112.33, audit H2/F0.1 follow-up): a

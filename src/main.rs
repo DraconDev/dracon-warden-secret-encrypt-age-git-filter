@@ -698,10 +698,7 @@ impl WardenPolicy {
             .iter()
             .cloned()
             .collect::<BTreeSet<_>>();
-        let media_clash = media
-            .intersection(&plaintext)
-            .cloned()
-            .collect::<Vec<_>>();
+        let media_clash = media.intersection(&plaintext).cloned().collect::<Vec<_>>();
         if !media_clash.is_empty() {
             return Err(anyhow::anyhow!(
                 "invalid policy: patterns cannot be both media-protected and plaintext: {}",

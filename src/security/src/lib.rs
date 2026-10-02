@@ -1651,11 +1651,9 @@ mod tests {
         assert_eq!(skipped, model_id, "non-media path stays Tier-1-only");
         // Legacy install (managed empty): scan-everything survives
         // setting media alone — non-media text is still fully scanned.
-        let legacy = test_security_with_identity()
-            .with_managed_media_patterns(vec!["shots/**".to_string()]);
-        let still_scanned = legacy
-            .smart_clean_with_path(model_id, "notes.txt")
-            .unwrap();
+        let legacy =
+            test_security_with_identity().with_managed_media_patterns(vec!["shots/**".to_string()]);
+        let still_scanned = legacy.smart_clean_with_path(model_id, "notes.txt").unwrap();
         assert_ne!(
             still_scanned, model_id,
             "legacy scan-everything must survive the media option"
