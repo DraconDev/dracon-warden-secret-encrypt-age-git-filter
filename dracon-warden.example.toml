@@ -107,6 +107,19 @@ plaintext_patterns = []
 # and bring back the hard failure this key exists to remove.
 # binary_filter_exempt_patterns = ["*.png", "*.jpg", "*.mp4", "*.zip"]
 
+# Glob patterns for binary MEDIA selected for whole-file encryption
+# (screenshots of internal systems, customer data on screen, ...).
+# OFF BY DEFAULT: omitted or `[]` disables the option entirely — no
+# shipped defaults, no behavior change, game art and ordinary
+# screenshots stay visible and renderable. Unlike `protected_patterns`,
+# this list never changes the scan-everything/scan-allowlist posture;
+# it only routes its own matches through the filter (binaries
+# whole-file encrypt; an oversize media file fails closed rather than
+# passing through unencrypted). Entries win over the binary carve-outs
+# above; an exact plaintext_patterns overlap is rejected as a
+# contradiction. Hygiene-ignored paths stay ignored.
+# media_protected_patterns = ["internal-dashboards/**"]
+
 # Glob patterns for hygiene checks (files that should NOT exist in repo).
 # These are the shipped defaults: Pi harness state, browser trace logs, and
 # regeneratable frontend build caches stay machine-local. Set an explicit list

@@ -214,6 +214,11 @@ protected_patterns = []
 # Cargo.lock, events jsonl) — e.g. ["Cargo.lock", "*.pub"].
 plaintext_patterns = []
 
+# Glob patterns for binary media selected for whole-file encryption.
+# Off by default ([]): no shipped defaults, no behavior change.
+# e.g. ["internal-dashboards/**"].
+media_protected_patterns = []
+
 # Hygiene globs (files that should NOT exist in repos). Omitted = the narrow
 # machine-local defaults; the shipped example extends them with
 # product-specific regeneratable paths.
