@@ -394,6 +394,47 @@ mod tests {
         }
     }
 
+    #[test]
+    fn pre_push_hook_blocks_secret_introduced_by_merge_resolution() {
+        let (td, hook) = make_repo_with_pre_push_hook("hook_merge_secret");
+        let repo = td.path();
+        fs::write(repo.join("asset"), "safe baseline\n").unwrap();
+        run_git_in(repo, &["add", "--", "asset"]);
+        run_git_in(repo, &["commit", "-q", "-m", "base"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        run_git_in(repo, &["checkout", "-q", "-b", "side"]);
+        fs::write(repo.join("asset"), "side content\n").unwrap();
+        run_git_in(repo, &["commit", "-qam", "side"]);
+        run_git_in(repo, &["checkout", "-q", "-"]);
+        fs::write(repo.join("asset"), "main content\n").unwrap();
+        run_git_in(repo, &["commit", "-qam", "main"]);
+        let merge = ProcessCommand::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["merge", "--no-commit", "side"])
+            .output()
+            .unwrap();
+        assert!(
+            !merge.status.success(),
+            "fixture must create a merge conflict"
+        );
+        fs::write(repo.join("asset"), b"password = \"synthetic-merge-only\"\n").unwrap();
+        run_git_in(repo, &["add", "--", "asset"]);
+        run_git_in(repo, &["commit", "-qm", "resolve merge"]);
+        fs::write(repo.join("asset"), "safe baseline\n").unwrap();
+        run_git_in(repo, &["commit", "-qam", "remove secret"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, error) = run_hook(repo, &hook, &head, &base);
+        assert!(
+            !status.success(),
+            "merge-resolution secret escaped: {error}"
+        );
+    }
+
     /// ADDED 2026-07-21 (v0.112.32, audit M32/F4.6): a secret-shaped
     /// line in a file whose name contains a SPACE must still be
     /// caught. The pre-fix hook iterated
