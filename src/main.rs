@@ -5350,6 +5350,29 @@ while read local_ref local_sha remote_ref remote_sha; do
         fi
     done < "$ADDED_FILES"
 
+    # Binary modifications have no added text lines. Reject newly introduced
+    # secret shapes, while allowing exact matches inherited from parent blobs.
+    git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=M -z "$scan_commit" 2>/dev/null | tr '\0' '\n' > "$ADDED_FILES"
+    PARENTS=$(git show -s --format=%P "$scan_commit") || exit 1
+    while IFS= read -r bf; do
+        [ -f "$bf.plaintext" ] && continue
+        if ! git diff-tree --root -m -r --no-commit-id --numstat "$scan_commit" -- "$bf" |
+            awk '$1 == "-" && $2 == "-" { binary=1 } END { exit(binary ? 0 : 1) }'; then
+            continue
+        fi
+        OLD_MATCHES=$(for parent in $PARENTS; do
+            git cat-file blob "$parent:$bf" 2>/dev/null | grep -aoE "$SECRET_RE" || true
+        done)
+        NEW_MATCHES=$(git cat-file blob "$scan_commit:$bf" 2>/dev/null | grep -aoE "$SECRET_RE" || true)
+        printf '%s\n' "$NEW_MATCHES" | while IFS= read -r candidate; do
+            [ -z "$candidate" ] && continue
+            if ! printf '%s\n' "$OLD_MATCHES" | grep -qFx -- "$candidate"; then
+                echo "⚠️  Possible plaintext secrets detected in changed binary file." >&2
+                exit 1
+            fi
+        done || exit 1
+    done < "$ADDED_FILES"
+
     done
 
     # ADDED 2026-07-21 (v0.112.33, audit H2/F0.1 follow-up): reject
