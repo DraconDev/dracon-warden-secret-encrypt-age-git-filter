@@ -1632,9 +1632,10 @@ mod tests {
 
     #[test]
     fn media_match_passes_the_gate_without_flipping_legacy_posture() {
-        // Tier-2-only fixture (see the Tier-1 gate test): encrypted by
-        // the full scanner, untouched by the Tier-1-only fallback.
-        let model_id = br#"id: "mistralai/mistral-small-3.1-24b-instruct""#;
+        // Tier-2-only fixture ("Generic Secret" assignment): encrypted
+        // by the full scanner, untouched by the Tier-1-only fallback
+        // (Tier-1 is fixed-prefix structured tokens only).
+        let model_id = br#"token = "abcdefghijklmnopqrst""#;
         // Default-deny install (managed non-empty): a media match opts
         // the path into full treatment; other paths stay Tier-1-only.
         let security = test_security_with_identity()
