@@ -2596,6 +2596,7 @@ watch_roots = ["/tmp/test"]
             // ADDED 2026-09-27 (audit decision D2): new field on the
             // exhaustive policy initializers in this module.
             binary_filter_exempt_patterns: None,
+            media_protected_patterns: vec![],
         };
 
         // Effective roots still includes p1 (backwards compat)
@@ -2639,6 +2640,7 @@ watch_roots = ["/tmp/test"]
             // ADDED 2026-09-27 (audit decision D2): new field on the
             // exhaustive policy initializers in this module.
             binary_filter_exempt_patterns: None,
+            media_protected_patterns: vec![],
         };
 
         // Effective roots uses p_new (the canonical key), not p_old
@@ -2677,6 +2679,7 @@ watch_roots = ["/tmp/test"]
             // ADDED 2026-09-27 (audit decision D2): new field on the
             // exhaustive policy initializers in this module.
             binary_filter_exempt_patterns: None,
+            media_protected_patterns: vec![],
         };
 
         assert!(
