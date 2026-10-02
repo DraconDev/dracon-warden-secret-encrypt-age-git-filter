@@ -5281,37 +5281,17 @@ while read local_ref local_sha remote_ref remote_sha; do
         continue
     fi
 
-    # Determine the diff range to scan.
-    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ] && \
-        [ "${local_ref#refs/tags/}" != "$local_ref" ]; then
-        # A tag commonly points at a commit that was already published on a
-        # branch. The old empty-tree range re-scanned the entire repository
-        # for that tag and could reject historical documentation placeholders
-        # as if they were newly pushed secrets. If the tag accompanies a
-        # branch update in this same push, the branch leg below already scans
-        # the new commit; if the branch was pushed earlier, the remote-tracking
-        # ref proves the tag target was already scanned and accepted.
-        PUBLISHED_COMMITS=$(git rev-list "$local_sha" --not --remotes 2>/dev/null || true)
-        REMOTE_TRACKING_REFS=$(git for-each-ref --format='%(refname)' refs/remotes 2>/dev/null || true)
-        if { [ -n "$REMOTE_TRACKING_REFS" ] && [ -z "$PUBLISHED_COMMITS" ]; } || \
-            awk -v sha="$local_sha" \
-                '$1 ~ /^refs\/heads\// && $2 == sha { found=1 } END { exit(found ? 0 : 1) }' \
-                "$REFS_FILE"; then
-            continue
-        fi
-        # A genuinely new tag still scans from the empty tree.
-        RANGE="4b825dc642cb6eb9a060e54bf8d69288fbee4904..$local_sha"
-    elif [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-        # A new branch has no previously published tag leg to reuse.
-        RANGE="4b825dc642cb6eb9a060e54bf8d69288fbee4904..$local_sha"
+    # Check each newly published commit, not only the endpoint trees: an
+    # introduced-then-deleted secret remains reachable in the pushed history.
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        NEW_COMMITS=$(git rev-list --reverse "$local_sha" --not --remotes 2>/dev/null) || exit 1
     else
-        # Existing branch — scan commits being pushed
-        RANGE="$remote_sha..$local_sha"
+        NEW_COMMITS=$(git rev-list --reverse "$local_sha" --not "$remote_sha" 2>/dev/null) || exit 1
     fi
-
+    for scan_commit in $NEW_COMMITS; do
     # Collect non-hatched files (skip files with a `.plaintext` sibling)
     : > "$SCAN_FILES_NUL"
-    git diff --name-only -z "$RANGE" 2>/dev/null | tr '\0' '\n' | while IFS= read -r f; do
+    git diff-tree --root -m -r --no-commit-id --name-only -z "$scan_commit" 2>/dev/null | tr '\0' '\n' | while IFS= read -r f; do
         if [ -f "$f.plaintext" ]; then
             # Hatched file — silently allow
             continue
@@ -5326,7 +5306,7 @@ while read local_ref local_sha remote_ref remote_sha; do
 
     # Scan only newly added diff lines. Deletions of old secret-shaped fixtures
     # are safe, while additions still trip the defense-in-depth guard.
-    DIFF=$(xargs -0 -r git diff --unified=0 "$RANGE" -- < "$SCAN_FILES_NUL" 2>/dev/null | grep -E '^\+[^+]' || true)
+    DIFF=$(xargs -0 -r git diff-tree --root -m -r --no-commit-id -p --unified=0 "$scan_commit" -- < "$SCAN_FILES_NUL" 2>/dev/null | grep -E '^\+[^+]' || true)
     # CHANGED 2026-07-26 (v0.113.1, audit WARDEN-M2): `\x27` is NOT a
     # hex escape in GNU grep ERE (verified grep 3.12: "stray \ before
     # x" — the class became ["x27], matching literal x/2/7 instead of
@@ -5348,18 +5328,20 @@ while read local_ref local_sha remote_ref remote_sha; do
     # the first time. MODIFIED files keep the added-lines diff scan
     # only: scanning whole modified blobs would re-trip on key-shaped
     # bytes that predate the push.
-    git diff --name-only --diff-filter=A -z "$RANGE" 2>/dev/null | tr '\0' '\n' > "$ADDED_FILES"
+    git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null | tr '\0' '\n' > "$ADDED_FILES"
     while IFS= read -r af; do
         # Skip files hatched via a `.plaintext` sibling, matching the
         # text scan above.
         [ -f "$af.plaintext" ] && continue
-        if git cat-file blob "$local_sha:$af" 2>/dev/null | grep -aqE "$SECRET_RE"; then
+        if git cat-file blob "$scan_commit:$af" 2>/dev/null | grep -aqE "$SECRET_RE"; then
             echo "⚠️  Possible plaintext secrets detected in added file $af (binary-safe scan)." >&2
             echo "   The warden filter may have been bypassed." >&2
             echo "   Run: dracon-warden once $(git rev-parse --show-toplevel)" >&2
             exit 1
         fi
     done < "$ADDED_FILES"
+
+    done
 
     # ADDED 2026-07-21 (v0.112.33, audit H2/F0.1 follow-up): reject
     # pushes containing commits authored by known TEST identities.
@@ -5393,13 +5375,6 @@ while read local_ref local_sha remote_ref remote_sha; do
     # cannot be retroactively un-published, so re-scanning it on a
     # later tag push is wasted and prone to false positives. Defense
     # in depth is preserved for the new push itself.
-    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-        # New ref (tag or branch). Scan only commits not yet on any remote.
-        NEW_COMMITS=$(git rev-list "$local_sha" --not --remotes 2>/dev/null || true)
-    else
-        # Existing-ref update. Scan only the new commits being added.
-        NEW_COMMITS=$(git rev-list "$local_sha" --not "$remote_sha" 2>/dev/null || true)
-    fi
     if [ -n "$NEW_COMMITS" ]; then
         BAD_AUTHORS=$(printf '%s\n' "$NEW_COMMITS" | xargs -I{} git log -1 --format='%ae%n%ce' {} 2>/dev/null | sort -u | grep -Eix '^test@test$|^test@test\.com$|^test@example\.com$' || true)
         if [ -n "$BAD_AUTHORS" ]; then
