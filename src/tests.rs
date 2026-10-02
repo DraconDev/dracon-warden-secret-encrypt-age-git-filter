@@ -4927,6 +4927,34 @@ mod binary_carve_out_tests {
     }
 
     #[test]
+    fn oversize_media_path_is_never_size_exempt() {
+        let media = vec!["internal-dashboards/**".to_string()];
+        // Opted-in: same extension, same size as the carve-out case,
+        // but the operator asked for encryption — fail closed.
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("internal-dashboards/shot.png"),
+            LIMIT,
+            &exempt(),
+            &[],
+            &media,
+        )
+        .is_some());
+        // The option off (empty media list): the carve-out applies.
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("internal-dashboards/shot.png"),
+            LIMIT,
+            &exempt(),
+            &[],
+            &[],
+        )
+        .is_none());
+    }
+
+    #[test]
     fn unknown_extension_is_not_exempt() {
         // `.bin` is exempt but `.weirdext` is not — the carve-out is an
         // explicit allowlist, not a "looks binary" heuristic.
