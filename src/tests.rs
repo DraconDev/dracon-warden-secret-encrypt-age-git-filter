@@ -4020,6 +4020,99 @@ protected_patterns = ["secrets.json"]
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn storage_pre_commit_requires_valid_explicit_guard_binding() {
+        let (td, hook) = make_repo_with_hook("storage_binding", "pre-commit", PRE_COMMIT_HOOK);
+        let repo = td.path();
+        // Inspection UUID alone must not enroll an ordinary repository.
+        run_git_in(repo, &["config", "dracon.storageRepoId", &"a".repeat(64)]);
+        assert!(run_hook_args(repo, &hook, &[]).0.success());
+        run_git_in(repo, &["config", "filter.dracon-storage.required", "true"]);
+        let (status, text) = run_hook_args(repo, &hook, &[]);
+        assert!(!status.success());
+        assert!(text.contains("version-1 guard bindings"));
+        for version in ["", "2", "1"] {
+            run_git_in(repo, &["config", "dracon.storageGuardVersion", version]);
+            assert!(!run_hook_args(repo, &hook, &[]).0.success());
+        }
+        for executable in ["dracon-sync", "/nonexistent/storage-sync"] {
+            run_git_in(
+                repo,
+                &["config", "dracon.storageSyncExecutable", executable],
+            );
+            assert!(!run_hook_args(repo, &hook, &[]).0.success());
+        }
+        let executable = repo.join(".git/non-executable");
+        fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+        run_git_in(
+            repo,
+            &[
+                "config",
+                "dracon.storageSyncExecutable",
+                executable.to_str().unwrap(),
+            ],
+        );
+        assert!(!run_hook_args(repo, &hook, &[]).0.success());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn storage_pre_commit_quotes_pinned_executable_chains_and_propagates_failure() {
+        use std::os::unix::fs::PermissionsExt;
+        let (td, hook) = make_repo_with_hook("storage_execution", "pre-commit", PRE_COMMIT_HOOK);
+        let repo = td.path();
+        let executable = repo.join(".git/guard ' $(touch injected)");
+        fs::write(
+            &executable,
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > .git/guard-arguments\nexit 0\n",
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+        let user_hook = repo.join(".git/hooks/pre-commit");
+        fs::write(
+            &user_hook,
+            "#!/bin/sh\nprintf chained > .git/user-hook-ran\nexit 0\n",
+        )
+        .unwrap();
+        fs::set_permissions(&user_hook, fs::Permissions::from_mode(0o755)).unwrap();
+        run_git_in(repo, &["config", "dracon.storageGuardVersion", "1"]);
+        run_git_in(
+            repo,
+            &[
+                "config",
+                "dracon.storageSyncExecutable",
+                executable.to_str().unwrap(),
+            ],
+        );
+        let (status, text) = run_hook_args(repo, &hook, &[]);
+        assert!(status.success(), "{text}");
+        let expected = format!(
+            "storage\nverify-configured-index\n--repo\n{}\n",
+            repo.display()
+        );
+        assert_eq!(
+            fs::read_to_string(repo.join(".git/guard-arguments")).unwrap(),
+            expected
+        );
+        assert!(repo.join(".git/user-hook-ran").exists());
+        assert!(!repo.join("injected").exists());
+        fs::write(
+            &executable,
+            "#!/bin/sh\ntest -f .git/user-hook-ran || exit 99\nexit 42\n",
+        )
+        .unwrap();
+        fs::remove_file(repo.join(".git/user-hook-ran")).unwrap();
+        assert_eq!(run_hook_args(repo, &hook, &[]).0.code(), Some(42));
+        assert!(repo.join(".git/user-hook-ran").exists());
+        // A successful storage check must not bypass Warden's encryption gate.
+        fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::create_dir(repo.join(".dracon")).unwrap();
+        let (status, text) = run_hook_args(repo, &hook, &[]);
+        assert!(!status.success());
+        assert!(text.contains("filter"), "{text}");
+    }
+
     #[test]
     fn pre_commit_hook_chains_to_foreign_repo_local_hook() {
         let (td, hook) = make_repo_with_hook("precommit_chain", "pre-commit", PRE_COMMIT_HOOK);
