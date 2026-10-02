@@ -3372,6 +3372,7 @@ fn filter_clean_refusal_reason(
         // No policy in this test-only wrapper: nothing is protected,
         // which is the shipped default.
         &[],
+        &[],
     )
 }
 
@@ -3384,6 +3385,7 @@ pub(crate) fn test_guard(limit: usize) -> CleanGuard {
         limit,
         binary_exempt: default_binary_filter_exempt_patterns(),
         protected: Vec::new(),
+        media: Vec::new(),
     }
 }
 
@@ -3394,6 +3396,7 @@ fn filter_clean_refusal_with_limit(
     limit: usize,
     binary_exempt: &[String],
     protected: &[String],
+    media: &[String],
 ) -> Option<String> {
     if !is_clean {
         return None;
@@ -3423,10 +3426,16 @@ fn filter_clean_refusal_with_limit(
         // (text, source, unknown extension, anything protected) still
         // refuses, and the path-shape guards below still apply to an
         // exempt path.
+        //
+        // Media option: a media path is never size-exempt either
+        // (same fail-closed rule as a protected path — the operator
+        // asked for encryption, so oversize must refuse rather than
+        // pass through unencrypted).
         let exempt = path.is_some_and(|p| {
             !binary_exempt.is_empty()
                 && path_matches_any_pattern(p, binary_exempt)
                 && !path_matches_any_pattern(p, protected)
+                && !path_matches_any_pattern(p, media)
         });
         if !exempt {
             return Some(format!(
