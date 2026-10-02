@@ -1008,6 +1008,14 @@ pub(crate) fn build_gitattributes_block(policy: &WardenPolicy) -> Result<String>
             protected_patterns.insert(p);
         }
     }
+    // Media option: same treatment as protected lines (after the
+    // binary carve-outs, so they win over the exemption) and the
+    // same exact-match plaintext skip. Empty by default: no lines.
+    for p in &policy.media_protected_patterns {
+        if !plaintext_patterns.contains(p) {
+            protected_patterns.insert(p.clone());
+        }
+    }
     for p in protected_patterns {
         lines.push(format!("{} filter=dracon diff=dracon merge=dracon", p));
     }
@@ -3259,6 +3267,9 @@ struct CleanGuard {
     /// exempt by default and the carve-out would stop being opt-in per
     /// directory.
     protected: Vec<String>,
+    /// The policy's `media_protected_patterns`. A media path is never
+    /// size-exempt either (same fail-closed rule as `protected`).
+    media: Vec<String>,
 }
 
 fn configured_clean_guard() -> Result<CleanGuard> {
@@ -3269,6 +3280,7 @@ fn configured_clean_guard() -> Result<CleanGuard> {
             limit: STREAM_IO_MAX_BYTES,
             binary_exempt: default_binary_filter_exempt_patterns(),
             protected: Vec::new(),
+            media: Vec::new(),
         });
     };
     // A policy that exists but does not parse is a hard error, exactly
@@ -3280,6 +3292,7 @@ fn configured_clean_guard() -> Result<CleanGuard> {
         limit: policy.filter_limit()?,
         binary_exempt: policy.binary_exempt_patterns(),
         protected: policy.effective_protected_patterns(),
+        media: policy.media_protected_patterns.clone(),
     })
 }
 
