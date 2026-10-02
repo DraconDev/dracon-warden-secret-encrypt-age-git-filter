@@ -4890,6 +4890,7 @@ mod binary_carve_out_tests {
             limit: LIMIT,
             binary_exempt: exempt(),
             protected: protected.clone(),
+            media: Vec::new(),
         };
         for path in ["secrets/dump.png", "secrets/deep/nested/a.png"] {
             let err = filter_transform_bytes(
@@ -5075,6 +5076,7 @@ mod binary_carve_out_tests {
                 limit: LIMIT,
                 binary_exempt: default_binary_filter_exempt_patterns(),
                 protected,
+                media: Vec::new(),
             }
         }
 
