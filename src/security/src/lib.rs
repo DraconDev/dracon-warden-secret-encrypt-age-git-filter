@@ -1573,6 +1573,95 @@ mod tests {
     }
 
     #[test]
+    fn test_managed_media_patterns_override_roundtrip() {
+        // The filter binary wires the policy's media_protected_patterns
+        // via `set_managed_media_patterns`; the same apply step must
+        // surface them without touching the managed-patterns gate
+        // semantics (empty media list = nothing is media).
+        set_managed_media_patterns(vec!["internal-dashboards/**".to_string()]);
+        let mut security = WardenSecurity::new(None).unwrap();
+        security.apply_managed_patterns_override();
+        assert!(crate::path_matches_any_pattern(
+            "internal-dashboards/shot.png",
+            &security.media_patterns
+        ));
+        assert!(!crate::path_matches_any_pattern(
+            "assets/shot.png",
+            &security.media_patterns
+        ));
+        assert!(security.managed_patterns.is_empty());
+        clear_managed_media_patterns_override();
+        let mut security2 = WardenSecurity::new(None).unwrap();
+        security2.apply_managed_patterns_override();
+        assert!(security2.media_patterns.is_empty());
+    }
+
+    #[test]
+    fn media_patterns_whole_file_encrypt_matched_binaries_only() {
+        // PNG magic + invalid UTF-8 tail: genuinely binary content.
+        let png: Vec<u8> = vec![
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF, 0xFE,
+        ];
+        assert!(std::str::from_utf8(&png).is_err());
+        let security = || {
+            test_security_with_identity()
+                .with_managed_media_patterns(vec!["internal-dashboards/**".to_string()])
+        };
+        // Opted-in path: whole-file tag, byte-identical smudge roundtrip.
+        let tagged = security()
+            .smart_clean_with_path(&png, "internal-dashboards/shot.png")
+            .unwrap();
+        assert_ne!(tagged, png);
+        let back = smudge_with_security(&security(), &tagged).unwrap();
+        assert_eq!(back, png);
+        // Same bytes, non-media path: passthrough.
+        assert_eq!(
+            security()
+                .smart_clean_with_path(&png, "assets/shot.png")
+                .unwrap(),
+            png
+        );
+        // The option off (empty list): passthrough on the same path.
+        assert_eq!(
+            test_security_with_identity()
+                .smart_clean_with_path(&png, "internal-dashboards/shot.png")
+                .unwrap(),
+            png
+        );
+    }
+
+    #[test]
+    fn media_match_passes_the_gate_without_flipping_legacy_posture() {
+        // Tier-2-only fixture (see the Tier-1 gate test): encrypted by
+        // the full scanner, untouched by the Tier-1-only fallback.
+        let model_id = br#"id: "mistralai/mistral-small-3.1-24b-instruct""#;
+        // Default-deny install (managed non-empty): a media match opts
+        // the path into full treatment; other paths stay Tier-1-only.
+        let security = test_security_with_identity()
+            .with_managed_patterns(vec!["*.env".to_string()])
+            .with_managed_media_patterns(vec!["shots/**".to_string()]);
+        let treated = security
+            .smart_clean_with_path(model_id, "shots/note.txt")
+            .unwrap();
+        assert_ne!(treated, model_id, "media match must pass the gate");
+        let skipped = security
+            .smart_clean_with_path(model_id, "notes.txt")
+            .unwrap();
+        assert_eq!(skipped, model_id, "non-media path stays Tier-1-only");
+        // Legacy install (managed empty): scan-everything survives
+        // setting media alone — non-media text is still fully scanned.
+        let legacy = test_security_with_identity()
+            .with_managed_media_patterns(vec!["shots/**".to_string()]);
+        let still_scanned = legacy
+            .smart_clean_with_path(model_id, "notes.txt")
+            .unwrap();
+        assert_ne!(
+            still_scanned, model_id,
+            "legacy scan-everything must survive the media option"
+        );
+    }
+
+    #[test]
     fn test_smart_clean_skips_unprotected_large_input_when_patterns_set() {
         // Regression: with the override wired, a large NON-protected
         // file (e.g. a 6.87 MB pi-session HTML export) must pass
