@@ -357,6 +357,7 @@ dracon-warden repair --strict
 
 ### What's Encrypted
 - Files matching `protected_patterns` in policy (empty list = legacy scan-everything)
+- Files matching `media_protected_patterns` (empty list = option off; binaries whole-file encrypt)
 - Files containing detected secrets
 
 ### What's NOT Encrypted

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New opt-in `media_protected_patterns` policy key (off by default): glob patterns for binary media selected for whole-file age encryption — screenshots of internal systems, customer data on screen, and other captures whose pixels are sensitive even though no scanner can grep them. Motivated by the 2026 agent-screenshot leak reports: autonomous tooling commits captures faster than anyone reviews them. Omitted or `[]` disables the option entirely (no shipped defaults, no behavior change); unlike `protected_patterns` it never changes the scan-everything/scan-allowlist posture. Entries are emitted as filter lines after the binary carve-outs (so they win over the exemption) and route matches through the filter gate as sensitive locations; an oversize media file fails closed rather than passing through unencrypted, an exact `plaintext_patterns` overlap is rejected as a contradiction, and hygiene-ignored paths stay ignored. Documented in `dracon-warden.example.toml`.
+
 - The pre-commit hook template checks explicitly configured storage repositories
   through their pinned Sync executable after user-hook chaining. Invalid bindings
   and guard failures block commits; existing encryption checks still apply.
