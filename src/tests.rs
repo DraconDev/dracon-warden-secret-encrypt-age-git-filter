@@ -934,14 +934,23 @@ mod tests {
             let policy: WardenPolicy =
                 toml::from_str(&format!("filter_max_bytes = {limit}")).unwrap();
             assert_eq!(policy.filter_limit().unwrap(), limit);
-            assert!(filter_clean_refusal_with_limit(true, limit, None, limit, &[], &[]).is_none());
             assert!(
-                filter_clean_refusal_with_limit(true, limit + 1, None, limit, &[], &[]).is_some()
+                filter_clean_refusal_with_limit(true, limit, None, limit, &[], &[], &[]).is_none()
             );
             assert!(
-                filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit, &[], &[])
+                filter_clean_refusal_with_limit(true, limit + 1, None, limit, &[], &[], &[])
                     .is_some()
             );
+            assert!(filter_clean_refusal_with_limit(
+                true,
+                1,
+                Some("../secret"),
+                limit,
+                &[],
+                &[],
+                &[]
+            )
+            .is_some());
         }
         for limit in [
             0,
@@ -4805,7 +4814,7 @@ mod binary_carve_out_tests {
             "nested/deep/photo.webp",
         ] {
             let reason =
-                filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[]);
+                filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[], &[]);
             assert!(
                 reason.is_none(),
                 "a >limit binary should be addable again, got: {reason:?} ({path})"
@@ -4824,7 +4833,7 @@ mod binary_carve_out_tests {
             "no-extension",
         ] {
             let reason =
-                filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[]);
+                filter_clean_refusal_with_limit(true, OVER, Some(path), LIMIT, &exempt(), &[], &[]);
             assert!(
                 reason.is_some(),
                 "a >limit {path} must still be refused — the carve-out is binary-only"
@@ -4852,6 +4861,7 @@ mod binary_carve_out_tests {
             Some("assets/dump.png"),
             LIMIT,
             &exempt(),
+            &[],
             &[]
         )
         .is_none());
@@ -4865,8 +4875,7 @@ mod binary_carve_out_tests {
             LIMIT,
             &exempt(),
             &protected,
-            protected & [],
-            protected,
+            &[],
         );
         assert!(
             reason.is_some(),
@@ -4926,6 +4935,7 @@ mod binary_carve_out_tests {
             Some("a/b.bin"),
             LIMIT,
             &exempt(),
+            &[],
             &[]
         )
         .is_none());
@@ -4935,6 +4945,7 @@ mod binary_carve_out_tests {
             Some("a/b.weirdext"),
             LIMIT,
             &exempt(),
+            &[],
             &[]
         )
         .is_some());
@@ -4945,7 +4956,8 @@ mod binary_carve_out_tests {
         // An operator who sets `binary_filter_exempt_patterns = []` opts
         // back out; the guard must then behave exactly as it did before.
         assert!(
-            filter_clean_refusal_with_limit(true, OVER, Some("a/b.png"), LIMIT, &[], &[]).is_some()
+            filter_clean_refusal_with_limit(true, OVER, Some("a/b.png"), LIMIT, &[], &[], &[])
+                .is_some()
         );
     }
 
@@ -4957,6 +4969,7 @@ mod binary_carve_out_tests {
             Some("a/b.png"),
             LIMIT,
             &exempt(),
+            &[],
             &[]
         )
         .is_none());
