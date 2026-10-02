@@ -4926,6 +4926,33 @@ if [ -n "$DRACON_FOREIGN_HOOK" ] && [ -x "$DRACON_FOREIGN_HOOK" ]; then
     "$DRACON_FOREIGN_HOOK" "$@" || exit $?
 fi
 
+# Optional storage guard, after both user-hook chains have run. A repo ID
+# alone is only an inspection binding; it does not activate storage. Explicit
+# guard/driver markers require the pinned operator executable and version-1
+# bindings. No PATH fallback, eval, network request or encryption occurs here.
+STORAGE_VERSION=$(git -C "$REPO" config --local --get dracon.storageGuardVersion 2>/dev/null || true)
+STORAGE_REQUIRED=0
+[ -n "$STORAGE_VERSION" ] && STORAGE_REQUIRED=1
+for STORAGE_KEY in filter.dracon-storage.clean filter.dracon-storage.process filter.dracon-storage.required; do
+    git -C "$REPO" config --local --get "$STORAGE_KEY" >/dev/null 2>&1 && STORAGE_REQUIRED=1
+done
+if [ "$STORAGE_REQUIRED" -eq 1 ]; then
+    if [ "$STORAGE_VERSION" != 1 ]; then
+        echo "pre-commit: storage requires explicit version-1 guard bindings." >&2
+        exit 1
+    fi
+    STORAGE_SYNC=$(git -C "$REPO" config --local --get dracon.storageSyncExecutable 2>/dev/null || true)
+    case "$STORAGE_SYNC" in
+        /*) ;;
+        *) echo "pre-commit: absolute storage guard executable required." >&2; exit 1 ;;
+    esac
+    if [ ! -f "$STORAGE_SYNC" ] || [ ! -x "$STORAGE_SYNC" ]; then
+        echo "pre-commit: configured storage guard executable unavailable." >&2
+        exit 1
+    fi
+    "$STORAGE_SYNC" storage verify-configured-index --repo "$REPO" || exit $?
+fi
+
 # (2) The pre-fix hook exited 1 in EVERY repo lacking filter=dracon —
 #     hard-blocking commits in third-party clones and scratch repos
 #     machine-wide. Only enforce on warden-MANAGED repos (any warden
