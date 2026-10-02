@@ -70,6 +70,32 @@ pub fn clear_managed_patterns_override() {
     *MANAGED_PATTERNS_OVERRIDE.lock().unwrap() = None;
 }
 
+/// Managed-media override for the filter process. The `dracon-warden`
+/// binary wires the policy's `media_protected_patterns` here once per
+/// filter invocation. Unlike `managed_patterns`, an empty list means
+/// "nothing is media" (never legacy scan-everything): matching is done
+/// with `path_matches_any_pattern`, so an unset option changes no
+/// gate or encryption decision.
+static MANAGED_MEDIA_PATTERNS_OVERRIDE: Mutex<Option<Vec<String>>> = Mutex::new(None);
+
+/// Set the managed media patterns for the current filter process.
+/// Called by the `dracon-warden` binary's filter path from the
+/// policy's `media_protected_patterns` list.
+pub fn set_managed_media_patterns(patterns: Vec<String>) {
+    *MANAGED_MEDIA_PATTERNS_OVERRIDE.lock().unwrap() = Some(patterns);
+}
+
+/// Current managed-media override, if set (filter-process plumbing +
+/// diagnostics).
+pub fn managed_media_patterns_override() -> Option<Vec<String>> {
+    MANAGED_MEDIA_PATTERNS_OVERRIDE.lock().unwrap().clone()
+}
+
+/// Clear the managed-media override (test + diagnostics use).
+pub fn clear_managed_media_patterns_override() {
+    *MANAGED_MEDIA_PATTERNS_OVERRIDE.lock().unwrap() = None;
+}
+
 static ALLOW_V1_FALLBACK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 // Legacy V1 AES-CFB decryption is intentionally unavailable. CFB has no
@@ -268,6 +294,7 @@ pub struct WardenSecurity {
     master_identities: Vec<x25519::Identity>,
     imported_identities: Vec<x25519::Identity>,
     managed_patterns: Vec<String>,
+    media_patterns: Vec<String>,
     secret_marker: String,
     repo_root: Option<PathBuf>,
     mock_home: Option<PathBuf>,
@@ -283,15 +310,26 @@ impl WardenSecurity {
     /// `dracon-warden` binary from the policy's `protected_patterns`).
     /// Without this, `managed_patterns` stays empty and
     /// `path_is_protected` falls back to the legacy scan-everything
-    /// behavior — the config gate would be dead code.
+    /// behavior — the config gate would be dead code. The media
+    /// override (policy's `media_protected_patterns`) rides along;
+    /// its empty default means "nothing is media" and changes no
+    /// decision.
     fn apply_managed_patterns_override(&mut self) {
         if let Some(patterns) = MANAGED_PATTERNS_OVERRIDE.lock().unwrap().clone() {
             self.managed_patterns = patterns;
+        }
+        if let Some(patterns) = MANAGED_MEDIA_PATTERNS_OVERRIDE.lock().unwrap().clone() {
+            self.media_patterns = patterns;
         }
     }
 
     pub fn with_managed_patterns(mut self, patterns: Vec<String>) -> Self {
         self.managed_patterns = patterns;
+        self
+    }
+
+    pub fn with_managed_media_patterns(mut self, patterns: Vec<String>) -> Self {
+        self.media_patterns = patterns;
         self
     }
 
@@ -389,6 +427,7 @@ impl WardenSecurity {
             master_identities: Vec::new(),
             imported_identities: Vec::new(),
             managed_patterns: Vec::new(),
+            media_patterns: Vec::new(),
             secret_marker: std::env::var("DRACON_SECRET_MARKER")
                 .ok()
                 .and_then(|m| normalize_secret_marker(&m))
