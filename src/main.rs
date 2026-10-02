@@ -4932,7 +4932,7 @@ fi
 # bindings. No PATH fallback, eval, network request or encryption occurs here.
 STORAGE_VERSION=$(git -C "$REPO" config --local --get dracon.storageGuardVersion 2>/dev/null || true)
 STORAGE_REQUIRED=0
-[ -n "$STORAGE_VERSION" ] && STORAGE_REQUIRED=1
+git -C "$REPO" config --local --get dracon.storageGuardVersion >/dev/null 2>&1 && STORAGE_REQUIRED=1
 for STORAGE_KEY in filter.dracon-storage.clean filter.dracon-storage.process filter.dracon-storage.required; do
     git -C "$REPO" config --local --get "$STORAGE_KEY" >/dev/null 2>&1 && STORAGE_REQUIRED=1
 done

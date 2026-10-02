@@ -4028,6 +4028,9 @@ protected_patterns = ["secrets.json"]
         // Inspection UUID alone must not enroll an ordinary repository.
         run_git_in(repo, &["config", "dracon.storageRepoId", &"a".repeat(64)]);
         assert!(run_hook_args(repo, &hook, &[]).0.success());
+        run_git_in(repo, &["config", "dracon.storageGuardVersion", ""]);
+        assert!(!run_hook_args(repo, &hook, &[]).0.success());
+        run_git_in(repo, &["config", "--unset", "dracon.storageGuardVersion"]);
         run_git_in(repo, &["config", "filter.dracon-storage.required", "true"]);
         let (status, text) = run_hook_args(repo, &hook, &[]);
         assert!(!status.success());
