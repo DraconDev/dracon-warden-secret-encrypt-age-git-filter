@@ -690,6 +690,25 @@ impl WardenPolicy {
             ));
         }
 
+        // Media option: same loud contradiction check — a path listed
+        // as both "encrypt this media" and "keep this plaintext" is
+        // an operator error, not a precedence question.
+        let media = self
+            .media_protected_patterns
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let media_clash = media
+            .intersection(&plaintext)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !media_clash.is_empty() {
+            return Err(anyhow::anyhow!(
+                "invalid policy: patterns cannot be both media-protected and plaintext: {}",
+                media_clash.join(", ")
+            ));
+        }
+
         for p in &plaintext {
             // FIXED 2026-08-11 (audit LOW): the forbidden-substring check
             // ran AFTER the allowlist check, which made it unreachable —
