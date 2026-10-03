@@ -1104,7 +1104,7 @@ mod tests {
             ),
             (
                 "Resend API Key",
-                concat!("re_", "AB123456_ABCD23456789ABCDEFGHJKLMNP"),
+                concat!("re_", "AB123456_ABCD23456789ABCDEFGHJKLM"),
             ),
             (
                 "GCP API Key",
