@@ -5234,7 +5234,11 @@ SCAN_FILES_NUL=$(mktemp)
 # Accumulator for added-file paths (newline-delimited) — used by the
 # added-blob scan below.
 ADDED_FILES=$(mktemp)
-trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$REFS_FILE"' EXIT
+# Lazily-populated remote object list for the blob-novelty check
+# (R3-L21; assigned inside `remote_blob_is_published`). The EXIT
+# trap expands at exit time, so the late assignment is covered.
+REMOTE_OBJECTS=""
+trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$REFS_FILE" "$REMOTE_OBJECTS"' EXIT
 
 # Secret shapes scanned against added diff lines AND added file blobs
 # (see the added-blob scan below). Kept case-sensitive deliberately:
@@ -5433,8 +5437,11 @@ while read local_ref local_sha remote_ref remote_sha; do
             # leak (republished content). Pure renames never reach here
             # (`-M100%` above lists them as R, not A). Fail closed: any
             # lookup failure falls through to the block below.
+            # CHANGED 2026-10-03 (audit R3-L21): enumerate remote
+            # objects ONCE per push (lazily, inside the helper) instead
+            # of one O(history) `rev-list` per added file.
             BLOB_SHA=$(git rev-parse "$scan_commit:$af" 2>/dev/null || true)
-            if [ -n "$BLOB_SHA" ] && git rev-list --objects --remotes 2>/dev/null | grep -q "^$BLOB_SHA"; then
+            if [ -n "$BLOB_SHA" ] && remote_blob_is_published "$BLOB_SHA"; then
                 continue
             fi
             echo "⚠️  Possible plaintext secrets detected in added file $af (binary-safe scan)." >&2
