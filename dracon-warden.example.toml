@@ -83,7 +83,12 @@ plaintext_patterns = []
 # bounded at 4x filter_max_bytes — raise filter_max_bytes to raise it with
 # it. A blob past the ceiling is refused with an explicit message rather
 # than relayed truncated, so .gitignore anything that legitimately exceeds
-# it.
+# it. The ceiling applies to smudge too: an over-ceiling blob fails
+# checkout/diff of that file under the installed filter-process driver
+# (e.g. the limit was lowered after push, or the blob came from a
+# higher-limit machine). Recover one file at a time with the one-shot
+# path, which streams without a ceiling:
+#   git show HEAD:<path> | dracon-warden filter-smudge <path> > <path>
 #
 # ENTRY POINTS: the in-filter exemption needs the pathname, which git
 # supplies over `filter.dracon.process` (what `dracon-warden once`

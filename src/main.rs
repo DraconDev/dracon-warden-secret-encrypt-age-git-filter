@@ -4022,6 +4022,31 @@ fn passthrough_ceiling_bytes(limit: usize) -> usize {
     limit.saturating_mul(4).max(STREAM_IO_MAX_BYTES)
 }
 
+/// The over-ceiling refusal message, with a direction-appropriate recovery.
+///
+/// ADDED 2026-10-03 (audit R4-W-04): the smudge hint names the one-shot
+/// path, which streams oversize blobs with NO ceiling — the deliberate
+/// divergence from this driver, which must buffer-then-emit (consume the
+/// whole request before answering) or deadlock the pipe. An over-ceiling
+/// blob therefore fails checkout/diff under the installed filter-process
+/// driver while remaining recoverable one file at a time.
+fn over_ceiling_reason(content_len: usize, ceiling: usize, direction: Option<bool>) -> String {
+    let mut reason = format!(
+        "dracon-warden: refusing to relay {} (> {} byte passthrough ceiling = 4x filter_max_bytes): \
+         git's long-running filter protocol has no flow control, so a blob this large cannot be \
+         streamed back without deadlocking the pipe. .gitignore it, or raise filter_max_bytes.",
+        content_len.saturating_add(1),
+        ceiling
+    );
+    if direction == Some(false) {
+        reason.push_str(
+            " Recover an over-ceiling checkout with the one-shot path, which streams without a \
+             ceiling: git show HEAD:<path> | dracon-warden filter-smudge <path> > <path>.",
+        );
+    }
+    reason
+}
+
 fn pkt_encode(payload: &[u8]) -> Vec<u8> {
     if payload.is_empty() {
         return b"0000".to_vec();
@@ -4428,14 +4453,10 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
         // Every direction: a blob larger than the passthrough ceiling
         // cannot be relayed without risking the pipe deadlock above, and
         // a partial relay would corrupt the object. Report it per file;
-        // the driver stays up for the rest of the command.
-        let reason = format!(
-            "dracon-warden: refusing to relay {} (> {} byte passthrough ceiling = 4x filter_max_bytes): \
-             git's long-running filter protocol has no flow control, so a blob this large cannot be \
-             streamed back without deadlocking the pipe. .gitignore it, or raise filter_max_bytes.",
-            content.len().saturating_add(1),
-            ceiling
-        );
+        // the driver stays up for the rest of the command. (R4-W-04: the
+        // one-shot filter-smudge has NO ceiling and stays the recovery
+        // path for an over-ceiling smudge — see over_ceiling_reason.)
+        let reason = over_ceiling_reason(content.len(), ceiling, direction);
         eprintln!("{}", reason);
         output.write_all(&pkt_key_line("status=error"))?;
         output.write_all(b"0000")?;
