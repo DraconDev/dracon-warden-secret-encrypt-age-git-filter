@@ -4604,6 +4604,11 @@ where
 /// 3-way text merge of already-decrypted contents via `git merge-file -p`.
 /// Returns (merged bytes, conflicted). Exit 0 from merge-file means a clean
 /// merge; exit 1 means conflict markers are present in the output.
+/// FIXED 2026-10-03 (audit R3-L19): any OTHER status (exit >1, signal
+/// death) is an internal error, NOT a conflict — the old
+/// `!success()` mapping took the conflict path and overwrote %A with
+/// possibly-empty stdout. Errors propagate (the caller writes %A only
+/// on Ok), leaving stages 1/2/3 in the index for `git checkout -m`.
 fn text_merge(ancestor: &[u8], current: &[u8], other: &[u8]) -> Result<(Vec<u8>, bool)> {
     let dir = tempfile::tempdir().context("failed to create merge temp dir")?;
     let dir = dir.path();
@@ -4623,8 +4628,15 @@ fn text_merge(ancestor: &[u8], current: &[u8], other: &[u8]) -> Result<(Vec<u8>,
         .arg(&other_path)
         .output()
         .context("failed to run git merge-file")?;
-    let conflicted = !output.status.success();
-    Ok((output.stdout, conflicted))
+    match output.status.code() {
+        Some(0) => Ok((output.stdout, false)),
+        Some(1) => Ok((output.stdout, true)),
+        other => Err(anyhow::anyhow!(
+            "git merge-file failed (status {:?}): {}",
+            other,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
