@@ -5510,3 +5510,12 @@ mod binary_carve_out_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tmp_render {
+    #[test]
+    fn tmp_write_secret_re() {
+        let line = format!("SECRET_RE='{}'", crate::hook_secret_re_from_source());
+        std::fs::write("/tmp/new_secret_re.raw", &line).unwrap();
+    }
+}
