@@ -16,6 +16,18 @@ names and that its tier decisions match the constructors. Duplicate pattern
 names (Azure, Alibaba) and GCP/Google aliases are intentionally retained for
 compatibility; this task does not silently drop detectors.
 
+Pre-push hook derivation (audit M10, 2026-10-02): the global pre-push
+hook's SECRET_RE is the POSIX-ERE transliteration of every Tier-1
+shape in this table, rendered from the single source
+`SecretScanner::hook_token_shapes_ere` (names match one-for-one).
+The eight private-key families have no transliteration — they are
+multi-line patterns and the line-oriented hook covers them with its
+shared PEM-header alternative instead. Adding a Tier-1 family
+requires adding its hook shape (the pairing test fails otherwise)
+and pasting the freshness test's rendered line into the PRE_PUSH_HOOK
+template. Transliteration rules: drop word boundaries, plain groups
+for non-capturing ones, literal hyphens last inside classes.
+
 | Family | Tier | Decision / limitation |
 |---|---|---|
 | AWS Access Key ID | 1 | Keep established fixed prefix and 16-character ID; ID alone is not the signing secret. |
