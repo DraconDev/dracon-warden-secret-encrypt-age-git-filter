@@ -2089,10 +2089,20 @@ where
     // core.hooksPath whose pre-commit probe gates every commit;
     // per-repo harden cannot leave it stale post-migration.
     // Pure refresh (never fresh install) — no scope change.
+    // CHANGED 2026-10-03 (audit R4-W-11): a failed refresh TAINTS
+    // the pass. The global hook IS the enforcement point, so the old
+    // warn-then-"✅ hardening pass complete" + exit 0 reported repos
+    // hardened that are not. Per-repo work still runs (local artifacts
+    // keep value; the next pass retries the refresh), but the final
+    // verdict fails.
+    let mut refresh_error: Option<anyhow::Error> = None;
     match refresh_global_hooks_if_stale() {
         Ok(true) => eprintln!("🪝 refreshed stale global warden hooks"),
         Ok(false) => {}
-        Err(e) => eprintln!("⚠️ global hook refresh failed: {}", e),
+        Err(e) => {
+            eprintln!("⚠️ global hook refresh failed: {e}");
+            refresh_error = Some(e);
+        }
     }
 
     let mut changed = 0usize;
@@ -2122,6 +2132,12 @@ where
         }
     }
 
+    if let Some(e) = refresh_error {
+        println!(
+            "⚠️ hardening pass complete with errors (repos changed: {changed}; global hooks stale)"
+        );
+        return Err(e.context("global hook refresh failed"));
+    }
     println!("✅ hardening pass complete (repos changed: {})", changed);
     Ok(())
 }
@@ -5181,7 +5197,15 @@ const PRE_COMMIT_HOOK: &str = r#"#!/bin/sh
 # Validates that the warden encryption filter is configured before committing.
 # Installed by: dracon-warden setup-hooks
 
-REPO=$(git rev-parse --show-toplevel)
+# FIXED 2026-10-03 (audit R4-W-11): refuse to run without repo
+# context. The old bare assignment left REPO empty when
+# --show-toplevel failed (bare repos), so every probe evaluated
+# against filesystem-root paths (`/.gitattributes`,
+# `/.dracon/data/keys`) instead of the repo. Bare repos (mirror
+# pushes) resolve via --absolute-git-dir and evaluate as unmanaged
+# (no worktree siblings to hatch); only the truly-undeterminable
+# case blocks, loud.
+REPO=$(git rev-parse --show-toplevel 2>/dev/null || git rev-parse --absolute-git-dir 2>/dev/null) || { echo "dracon-warden hook: cannot determine repo context" >&2; exit 1; }
 
 # FIXED 2026-07-26 (audit H-10), two prongs:
 # (1) Global core.hooksPath shadows .git/hooks for every repo, which
@@ -5527,7 +5551,11 @@ if [ -n "$DRACON_FOREIGN_HOOK" ] && [ -x "$DRACON_FOREIGN_HOOK" ]; then
     "$DRACON_FOREIGN_HOOK" "$@" < "$REFS_FILE" || exit $?
 fi
 
-REPO=$(git rev-parse --show-toplevel)
+# FIXED 2026-10-03 (audit R4-W-11): refuse to run without repo
+# context — see the pre-commit hook for the rationale. Bare repos
+# (mirror pushes) resolve via --absolute-git-dir and evaluate as
+# unmanaged; only the truly-undeterminable case blocks, loud.
+REPO=$(git rev-parse --show-toplevel 2>/dev/null || git rev-parse --absolute-git-dir 2>/dev/null) || { echo "dracon-warden hook: cannot determine repo context" >&2; exit 1; }
 GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 1
 case "$GIT_COMMON_DIR" in
     /*) ;;
@@ -5785,7 +5813,9 @@ if [ -n "$DRACON_ALLOW_REWRITE" ]; then exit 0; fi
 # recursion). Placed after the bypass so DRACON_ALLOW_REWRITE=1
 # disables hook interference entirely, matching the hook's
 # documented escape hatch.
-REPO=$(git rev-parse --show-toplevel)
+# FIXED 2026-10-03 (audit R4-W-11): refuse to run without repo
+# context — see the pre-commit hook for the rationale.
+REPO=$(git rev-parse --show-toplevel 2>/dev/null || git rev-parse --absolute-git-dir 2>/dev/null) || { echo "dracon-warden hook: cannot determine repo context" >&2; exit 1; }
 GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 1
 case "$GIT_COMMON_DIR" in
     /*) ;;
