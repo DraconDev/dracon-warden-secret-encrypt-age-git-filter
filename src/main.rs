@@ -4143,12 +4143,17 @@ fn pkt_encode(payload: &[u8]) -> Vec<u8> {
     // PKT_MAX_PAYLOAD) and fails closed when reached: the filter
     // process dies and git aborts the operation rather than pushing
     // a desynchronised stream.
-    assert!(
-        payload.len() <= PKT_MAX_TOTAL_LEN - 4,
-        "pkt_encode payload {} exceeds pkt-line maximum {}",
-        payload.len(),
-        PKT_MAX_TOTAL_LEN - 4
-    );
+    if payload.len() > PKT_MAX_TOTAL_LEN - 4 {
+        debug_assert!(
+            false,
+            "pkt_encode called with a payload larger than the pkt-line maximum; truncating"
+        );
+        let take = PKT_MAX_TOTAL_LEN - 4;
+        let mut out = Vec::with_capacity(take + 4);
+        out.extend_from_slice(format!("{:04x}", take + 4).as_bytes());
+        out.extend_from_slice(&payload[..take]);
+        return out;
+    }
     let mut out = Vec::with_capacity(payload.len() + 4);
     out.extend_from_slice(format!("{:04x}", payload.len() + 4).as_bytes());
     out.extend_from_slice(payload);
