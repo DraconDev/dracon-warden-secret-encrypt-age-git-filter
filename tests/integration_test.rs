@@ -643,7 +643,7 @@ fn install_local_precommit(repo: &std::path::Path) -> PathBuf {
 }
 
 /// Commit with the repo's LOCAL hooks dir only.
-fn commit_local_hooks(repo: &PathBuf, hooks: &PathBuf, msg: &str) -> std::process::Output {
+fn commit_local_hooks(repo: &PathBuf, hooks: &std::path::Path, msg: &str) -> std::process::Output {
     git_cmd(
         repo,
         &[
