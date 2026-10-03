@@ -2364,8 +2364,21 @@ async fn main() -> Result<()> {
             current,
             other,
         } => {
-            let code = run_merge(&ancestor, &current, &other)?;
-            std::process::exit(code);
+            // FIXED 2026-10-03 (audit R4-W-06): an internal error
+            // (decrypt failure, merge-file crash) used to propagate
+            // via `?` to process exit 1 — indistinguishable from a
+            // routine conflict, but with DIFFERENT %A state (untouched
+            // ciphertext, not plaintext markers). Git treats any
+            // nonzero as conflict, so exit 2 only sharpens the
+            // operator-facing signal, plus these messages.
+            match run_merge(&ancestor, &current, &other) {
+                Ok(code) => std::process::exit(code),
+                Err(e) => {
+                    eprintln!("dracon-warden merge: INTERNAL ERROR (not a routine conflict): {e:?}");
+                    eprintln!("dracon-warden merge: %A was left untouched — for protected paths it still holds current-side CIPHERTEXT, not conflict markers. Investigate before resolving.");
+                    std::process::exit(2);
+                }
+            }
         }
         Command::Status => {
             let policy_path = resolve_policy_path_local()?;
@@ -4641,6 +4654,14 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
 /// conflict markers is left in %A (git marks the path unmerged); the
 /// operator resolves in plaintext and `git add` re-encrypts via the clean
 /// filter. On success %A holds ciphertext and exit 0 is returned.
+///
+/// Internal-error semantics (DOCUMENTED 2026-10-03, audit R4-W-06):
+/// a decrypt failure, `merge-file` crash, or IO error returns `Err`
+/// (NOT `Ok(1)`) and leaves %A UNTOUCHED — for protected paths that
+/// means current-side ciphertext, never markers. The CLI maps `Err`
+/// to process exit 2 with an INTERNAL ERROR message so it cannot
+/// present as a routine conflict (git itself treats any nonzero as
+/// conflict; the distinction is operator-facing only).
 fn run_merge(ancestor: &Path, current: &Path, other: &Path) -> Result<i32> {
     let warden = DraconWarden::new()?;
     // CHANGED 2026-09-09 (audit F49): the encrypt closure used to call
