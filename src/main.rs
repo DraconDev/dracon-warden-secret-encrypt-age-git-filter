@@ -3416,6 +3416,64 @@ pub(crate) fn test_guard(limit: usize) -> CleanGuard {
     }
 }
 
+/// Relativize an absolute filter path against its own repo root (R4-01).
+///
+/// Real git always sends repo-relative `%f`/process paths, so the absolute
+/// refusal below is dead code on the git path — but IF another caller
+/// (lead claim: cargo/gix on dirty trees; trigger UNVERIFIED) sends an
+/// absolute path, the hard refusal aborts every `git add`. Relativize-then-
+/// guard instead: an absolute path under its repo root becomes the
+/// repo-relative form and flows through the SAME guards and matching as a
+/// native relative path (no new reachable state, so no leak); an absolute
+/// outside the root, an unresolvable root, or an empty remainder still
+/// refuses in the clean direction. Smudge keeps its pass-through shape:
+/// outside-root absolutes are returned unchanged so the downstream
+/// warn-and-relay arm (not a refusal) still handles them.
+///
+/// The root is queried with `git -C <parent> rev-parse --show-toplevel`,
+/// anchored at the path itself rather than the process CWD, and the strip
+/// is lexical (no canonicalization: a symlinked-prefix absolute refuses,
+/// fail-closed, exactly as before).
+fn normalize_filter_path(path: Option<&str>, is_clean: bool) -> Result<Option<String>> {
+    let Some(p) = path else {
+        return Ok(None);
+    };
+    let p_buf = std::path::PathBuf::from(p);
+    if !p_buf.is_absolute() {
+        return Ok(Some(p.to_string()));
+    }
+    let root = (|| {
+        let parent = p_buf.parent()?;
+        let out = ProcessCommand::new("git")
+            .arg("-C")
+            .arg(parent)
+            .arg("rev-parse")
+            .arg("--show-toplevel")
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let root = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if root.is_empty() {
+            return None;
+        }
+        p_buf
+            .strip_prefix(&root)
+            .ok()
+            .map(|rel| rel.to_string_lossy().to_string())
+            .filter(|rel| !rel.is_empty())
+    })();
+    match root {
+        Some(rel) => Ok(Some(rel)),
+        None if !is_clean => Ok(Some(p.to_string())),
+        None => anyhow::bail!(
+            "dracon-warden: refusing to clean absolute filter path '{}' (outside any repo root)",
+            p
+        ),
+    }
+}
+
 fn filter_clean_refusal_with_limit(
     is_clean: bool,
     input_len: usize,
