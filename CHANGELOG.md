@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (workspace audit 2026-10-03, ROUND3)
+
+- The pre-commit hook strips `#` comments before probing filter state (R3-M3): a repo whose only `filter=dracon` lines are commented out no longer reads as managed, and commented filters no longer satisfy the enforcement gate. Both directions carry behavioral tests proven to fail pre-fix.
+- The registered merge driver quotes its `%O`/`%A`/`%B` placeholders (R3-L18): git substitutes temp paths then runs the string via the shell, so a space-containing repo path word-split the driver into a clap error with the merge stuck unmerged. The ensure loop rewrites the key on mismatch, so hardened repos migrate on the next pass.
+- `git merge-file` exit codes above 1 propagate as hard errors instead of conflicts (R3-L19): only exit 1 means conflict markers; anything else leaves `%A` untouched with stages 1/2/3 in the index for `git checkout -m`, instead of overwriting the worktree file with possibly-empty stdout.
+- The pre-push blob-novelty check enumerates remote objects once per push (R3-L21): lazy `remote_blob_is_published` helper replaces one O(history) `rev-list` per added file. Fail-closed is preserved — enumeration failure answers "not published" and the push blocks.
+
 ### Fixed (workspace audit 2026-10-02)
 
 - Refreshed the standalone lockfile from the tested parent dependency versions and verified isolated `cargo metadata --locked --offline`, so a standalone clone retains the same reproducible dependency graph.
