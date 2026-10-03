@@ -5065,7 +5065,9 @@ MANAGED=0
 # 2026-07-26: scratch repo blocked without --local).
 git -C "$REPO" config --local filter.dracon.process >/dev/null 2>&1 && MANAGED=1
 git -C "$REPO" config --local filter.dracon.clean >/dev/null 2>&1 && MANAGED=1
-grep -q "filter=dracon" "$REPO/.gitattributes" 2>/dev/null && MANAGED=1
+# FIXED 2026-10-03 (audit R3-M3): strip `#` comments first — a
+# commented-out filter line must not mark the repo managed.
+grep -v '^[[:space:]]*#' "$REPO/.gitattributes" 2>/dev/null | grep -q "filter=dracon" && MANAGED=1
 [ -d "$REPO/.dracon" ] && MANAGED=1
 [ "$MANAGED" -eq 0 ] && exit 0
 
@@ -5149,7 +5151,10 @@ if [ "$machine_local_violations" -gt 0 ]; then
 fi
 
 # Check .gitattributes has filter=dracon patterns
-if ! grep -q "filter=dracon" "$REPO/.gitattributes" 2>/dev/null; then
+# FIXED 2026-10-03 (audit R3-M3): ignore `#` comments — only an ACTIVE
+# filter line satisfies this gate (a commented-out pattern is not a
+# filter, and git would not apply it).
+if ! grep -v '^[[:space:]]*#' "$REPO/.gitattributes" 2>/dev/null | grep -q "filter=dracon"; then
     echo "❌ Warden filter missing from .gitattributes."
     echo "   Run: dracon-warden once $REPO"
     exit 1
