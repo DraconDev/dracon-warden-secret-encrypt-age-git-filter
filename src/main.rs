@@ -3908,6 +3908,10 @@ fn index_batch_reader(
 }
 
 fn run_filter(is_clean: bool, path: Option<&str>) -> Result<()> {
+    // R4-01: relativize an absolute filter path before any guard or
+    // matching sees it (refuses outside-root absolutes in clean).
+    let owned = normalize_filter_path(path, is_clean)?;
+    let path = owned.as_deref();
     // Wire the policy's `protected_patterns` into the filter process
     // (FIX 2026-08-09, warden v0.113.3): the clean-filter gate in
     // `smart_clean_with_path` skips scanning for files that do NOT
