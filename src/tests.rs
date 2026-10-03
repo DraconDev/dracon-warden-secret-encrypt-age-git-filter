@@ -5056,6 +5056,40 @@ protected_patterns = ["secrets.json"]
         assert!(merged_text.contains("line2-A") && merged_text.contains("line2-B"));
     }
 
+    /// 2026-10-03 (audit R4-W-06): a decrypt failure is an internal
+    /// error (`Err`), NOT a conflict (`Ok(1)`) — and %A is left
+    /// untouched (still current-side content, never markers).
+    #[test]
+    fn merge_driver_decrypt_failure_is_err_with_current_untouched() {
+        let td = TestDir::new("merge_decrypt_err");
+        let dir = td.path();
+        let ancestor = dir.join("ancestor");
+        let current = dir.join("current");
+        let other = dir.join("other");
+        let current_before = b"line1\nline2-A\nline3\n";
+        fs::write(&ancestor, b"line1\nline2\nline3\n").unwrap();
+        fs::write(&current, current_before).unwrap();
+        fs::write(&other, b"line1\nline2-B\nline3\n").unwrap();
+
+        let err = run_merge_impl(
+            &ancestor,
+            &current,
+            &other,
+            |_b, _p| anyhow::bail!("simulated decrypt failure"),
+            |b, _p| Ok(b.to_vec()),
+        )
+        .expect_err("a decrypt failure must be Err, not Ok(1)");
+        assert!(
+            format!("{err:?}").contains("simulated decrypt failure"),
+            "the cause must propagate: {err:?}"
+        );
+        assert_eq!(
+            fs::read(&current).unwrap(),
+            current_before,
+            "%A must be untouched on internal error (no markers)"
+        );
+    }
+
     #[test]
     fn merge_driver_encrypted_roundtrip_clean_merge() {
         // The point of the driver: encrypted inputs are decrypted, merged
