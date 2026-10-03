@@ -5608,7 +5608,10 @@ while read local_ref local_sha remote_ref remote_sha; do
     # Collect non-hatched files (skip files with a `.plaintext` sibling)
     : > "$SCAN_FILES_NUL"
     git diff-tree --root -m -r --no-commit-id --name-only -z "$scan_commit" 2>/dev/null | tr '\0' '\n' | while IFS= read -r f; do
-        if [ -f "$f.plaintext" ]; then
+        # FIXED 2026-10-03 (audit R4-W-08): anchor to $REPO — the old
+        # CWD-relative check assumed the hook runs at the repo root
+        # (never verified against git source).
+        if [ -f "$REPO/$f.plaintext" ]; then
             # Hatched file — silently allow
             continue
         fi
