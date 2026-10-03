@@ -4354,6 +4354,60 @@ protected_patterns = ["secrets.json"]
         assert!(stderr.contains("filter missing"), "stderr: {stderr}");
     }
 
+    /// ADDED 2026-10-03 (audit R3-M3): a commented-out filter line is
+    /// not a filter — git would not apply it, so the gate must not
+    /// accept it. `.dracon/` keeps MANAGED=1 on both versions; only
+    /// the comment-aware probe blocks.
+    #[test]
+    fn pre_commit_hook_blocks_when_only_commented_filters_remain() {
+        let (td, hook) = make_repo_with_hook(
+            "precommit_commented",
+            "pre-commit",
+            PRE_COMMIT_HOOK,
+        );
+        let repo = td.path();
+        fs::create_dir_all(repo.join(".dracon")).expect("dracon dir");
+        fs::write(
+            repo.join(".gitattributes"),
+            "# *.env filter=dracon diff=dracon\n   #*.key filter=dracon\n",
+        )
+        .expect("write attributes");
+
+        let (status, stderr) = run_hook_args(repo, &hook, &[]);
+        assert!(
+            !status.success(),
+            "commented-only filters must not satisfy the gate"
+        );
+        assert!(stderr.contains("filter missing"), "stderr: {stderr}");
+    }
+
+    /// ADDED 2026-10-03 (audit R3-M3): commented-out filter lines must
+    /// not mark the repo managed. The staged machine-local file would
+    /// block a managed repo (gate 1.5); an unmanaged repo exits early.
+    #[test]
+    fn pre_commit_hook_commented_filters_do_not_mark_managed() {
+        let (td, hook) = make_repo_with_hook(
+            "precommit_commented_unmanaged",
+            "pre-commit",
+            PRE_COMMIT_HOOK,
+        );
+        let repo = td.path();
+        fs::write(
+            repo.join(".gitattributes"),
+            "# *.env filter=dracon diff=dracon\n",
+        )
+        .expect("write attributes");
+        fs::create_dir_all(repo.join("scratch")).expect("scratch dir");
+        fs::write(repo.join("scratch/x"), "working material\n").expect("write scratch");
+        run_git_in(repo, &["add", "--", "scratch/x"]);
+
+        let (status, stderr) = run_hook_args(repo, &hook, &[]);
+        assert!(
+            status.success(),
+            "commented-only filters must not mark managed (early exit): {stderr}"
+        );
+    }
+
     #[test]
     fn pre_commit_hook_blocks_managed_repo_with_only_global_filter_config() {
         // FIXED 2026-08-11 (audit LOW): the second filter check read
