@@ -20,13 +20,70 @@ const HEADER_V2_MAGIC: &[u8] = b"age-encryption.org/v1";
 /// for leaving a file unencrypted. See
 /// `docs/design/warden-plaintext-sibling.md`.
 ///
-/// `path` may be relative to the repo root (as passed by git's filter
-/// protocol) or absolute. An empty path returns false (no information).
+/// `path` must be repo-relative; it resolves against the caller CWD,
+/// so callers MUST run with CWD at the repo root (git's filter
+/// protocol guarantees this for the clean/smudge path, the only
+/// production caller). Empty, absolute, and `..`-bearing paths return
+/// false (fail closed = encrypt): an absolute path or a `..` escape
+/// could resolve a sibling OUTSIDE the repo, hatching a file from a
+/// directory it was never next to. Use [`is_hatched_in_repo`] when
+/// the root is known explicitly (tests, non-filter callers).
 pub fn is_hatched(path: &str) -> bool {
     if path.is_empty() {
         return false;
     }
+    let p = std::path::Path::new(path);
+    // FIXED 2026-10-03 (audit R4-W-08): reject shapes that escape
+    // CWD-relative resolution. Previously any absolute path was
+    // checked literally, so a future caller passing an unvalidated
+    // absolute path could be hatched by a foreign directory.
+    if p.is_absolute() {
+        return false;
+    }
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return false;
+    }
     let sibling = format!("{}.plaintext", path);
+    std::path::Path::new(&sibling).exists()
+}
+
+/// Rooted hatch check (ADDED 2026-10-03, audit R4-W-08): `path` may
+/// be repo-relative (resolved under `root`) or absolute (accepted
+/// only when lexically under `root`). Anything else — empty, missing
+/// root, `..` escaping the root, unreadable shapes — returns false.
+/// Containment is LEXICAL (no fs canonicalization, so a missing
+/// sibling is `false`, not an error): a symlink inside the root
+/// pointing out is not contained. That residual matches the threat
+/// posture — planting such a link already requires repo write access,
+/// which can commit plaintext directly.
+pub fn is_hatched_in_repo(root: &std::path::Path, path: &str) -> bool {
+    if path.is_empty() || !root.is_absolute() {
+        return false;
+    }
+    let p = std::path::Path::new(path);
+    let abs = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        root.join(p)
+    };
+    let mut norm = std::path::PathBuf::new();
+    for c in abs.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                if !norm.pop() {
+                    return false;
+                }
+            }
+            std::path::Component::CurDir => {}
+            other => norm.push(other.as_os_str()),
+        }
+    }
+    if !norm.starts_with(root) {
+        return false;
+    }
+    let sibling = format!("{}.plaintext", norm.display());
     std::path::Path::new(&sibling).exists()
 }
 
