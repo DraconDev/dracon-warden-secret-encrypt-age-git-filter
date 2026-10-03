@@ -4686,6 +4686,56 @@ protected_patterns = ["secrets.json"]
         assert!(text.contains("line2-A") && text.contains("line2-B"));
     }
 
+    /// Guard that temporarily prepends a dir to $PATH and restores on
+    /// drop. The workspace harness runs tests serially
+    /// (RUST_TEST_THREADS=1), so process-global PATH mutation is safe.
+    struct PathGuard {
+        original: String,
+    }
+
+    impl PathGuard {
+        fn prepend(dir: &std::path::Path) -> Self {
+            let original = std::env::var("PATH").unwrap_or_default();
+            std::env::set_var(
+                "PATH",
+                format!("{}:{original}", dir.display()),
+            );
+            PathGuard { original }
+        }
+    }
+
+    impl Drop for PathGuard {
+        fn drop(&mut self) {
+            std::env::set_var("PATH", &self.original);
+        }
+    }
+
+    #[test]
+    fn merge_driver_merge_file_error_is_not_a_conflict() {
+        // R3-L19: `git merge-file` exit >1 (internal error) must
+        // propagate as Err — the old `!success()` mapping reported a
+        // conflict and overwrote %A with possibly-empty stdout.
+        let td = TestDir::new("merge_file_error");
+        let bin = td.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        fs::write(
+            bin.join("git"),
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = \"merge-file\" ]; then\n  echo \"fatal: fake merge-file failure\" >&2\n  exit 2\nfi\nexec /usr/bin/env PATH=\"{original_path}\" git \"$@\"\n"
+            ),
+        )
+        .unwrap();
+        chmod_755(&bin.join("git"));
+        let _path = PathGuard::prepend(&bin);
+        let err = text_merge(b"a\n", b"b\n", b"c\n").expect_err("exit 2 must be Err");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("merge-file failed"),
+            "error must name merge-file, got: {msg}"
+        );
+    }
+
     #[test]
     fn merge_driver_untagged_files_clean_and_conflict() {
         // End-to-end driver (no crypto needed: untagged content passes
