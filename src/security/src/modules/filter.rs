@@ -445,9 +445,19 @@ impl WardenSecurity {
 
                 match general_purpose::STANDARD.decode(b64.trim()) {
                     Ok(encrypted) => match self.unlock_payload(&encrypted) {
-                        Ok(plaintext) => {
-                            result.push_str(&String::from_utf8_lossy(&plaintext));
-                        }
+                        Ok(plaintext) => match String::from_utf8(plaintext) {
+                            Ok(text) => result.push_str(&text),
+                            // FIXED 2026-10-03 (audit L9): non-UTF8
+                            // plaintext can never be represented in
+                            // `String` smudge output — the old
+                            // `from_utf8_lossy` corrupted it (U+FFFD)
+                            // and the next clean re-encrypted the
+                            // corruption. Preserve the tag verbatim
+                            // (fail closed, like the Err arms).
+                            Err(_) => {
+                                result.push_str(&content[absolute_start..absolute_end]);
+                            }
+                        },
                         Err(_) => result.push_str(&content[absolute_start..absolute_end]),
                     },
                     Err(_) => result.push_str(&content[absolute_start..absolute_end]),
