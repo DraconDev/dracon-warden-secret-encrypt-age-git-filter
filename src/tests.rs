@@ -1331,11 +1331,7 @@ mod tests {
         // Outside any repo root → clean refuses, smudge keeps the
         // original for its warn-and-relay arm.
         let outside_td = TestDir::new("r401_outside");
-        let outside = outside_td
-            .path()
-            .join("f.txt")
-            .display()
-            .to_string();
+        let outside = outside_td.path().join("f.txt").display().to_string();
         let err = normalize_filter_path(Some(&outside), true).unwrap_err();
         assert!(
             format!("{err:#}").contains("outside any repo root"),
@@ -1346,11 +1342,7 @@ mod tests {
             Some(outside.clone())
         );
         // Unresolvable root (nonexistent parent) refuses the same way.
-        let ghost = repo
-            .join("no-such-dir")
-            .join("f.txt")
-            .display()
-            .to_string();
+        let ghost = repo.join("no-such-dir").join("f.txt").display().to_string();
         assert!(
             normalize_filter_path(Some(&ghost), true).is_err(),
             "unresolvable root must refuse closed"
