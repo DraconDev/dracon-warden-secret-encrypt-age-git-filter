@@ -681,8 +681,7 @@ fn test_precommit_sync_only_dracon_dir_is_not_managed() {
 /// must still block — the fix narrows the probe, it doesn't remove it.
 #[test]
 fn test_precommit_warden_keys_dir_without_config_blocks_as_drift() {
-    let tmp = create_test_repo();
-    let repo = tmp.path().join("test-repo");
+    let (_tmp, repo) = create_untemplated_test_repo();
     let hooks = install_local_precommit(&repo);
     std::fs::create_dir_all(repo.join(".dracon/data/keys")).unwrap();
     std::fs::write(repo.join("hello.txt"), "hello\n").unwrap();
