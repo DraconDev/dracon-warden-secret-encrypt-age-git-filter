@@ -1,6 +1,6 @@
 [package]
 name = "dracon-warden"
-version = "0.113.14"
+version = "0.113.15"
 edition = "2021"
 # See dracon-sync/Cargo.toml — workspace-wide MSRV, audit F84.
 rust-version = "1.89"
