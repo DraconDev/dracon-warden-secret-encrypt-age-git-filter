@@ -4842,7 +4842,7 @@ protected_patterns = ["secrets.json"]
         );
         assert_eq!(textconv.trim(), "dracon-warden filter-smudge");
         let driver = git_in_output(repo, &["config", "--local", "--get", "merge.dracon.driver"]);
-        assert_eq!(driver.trim(), "dracon-warden merge %O %A %B");
+        assert_eq!(driver.trim(), "dracon-warden merge \"%O\" \"%A\" \"%B\"");
         // v0.113.13: single process driver; the superseded
         // per-file keys must be gone.
         let process = git_in_output(

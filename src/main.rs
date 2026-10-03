@@ -1720,7 +1720,16 @@ fn ensure_repo_filter_config(repo: &Path) -> Result<bool> {
         ("filter.dracon.process", "dracon-warden filter-process"),
         ("filter.dracon.required", "true"),
         ("diff.dracon.textconv", "dracon-warden filter-smudge"),
-        ("merge.dracon.driver", "dracon-warden merge %O %A %B"),
+        // FIXED 2026-10-03 (audit R3-L18): quote the %O/%A/%B
+        // placeholders — git substitutes temp paths then runs the
+        // string via the shell, so a space-containing repo path
+        // word-split the driver command (clap exit 2, merge stuck
+        // unmerged). The ensure loop below rewrites the key on
+        // mismatch, so existing repos migrate automatically.
+        (
+            "merge.dracon.driver",
+            "dracon-warden merge \"%O\" \"%A\" \"%B\"",
+        ),
         (
             "merge.dracon.name",
             "dracon-warden secret merge (decrypt, text-merge, re-encrypt)",
