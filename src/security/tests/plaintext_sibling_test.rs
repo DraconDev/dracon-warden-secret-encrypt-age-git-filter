@@ -87,17 +87,61 @@ fn is_hatched_in_repo_rejects_escape_even_when_sibling_exists() {
     ));
 }
 
-#[test]
-fn clean_skips_encryption_when_plaintext_sibling_exists() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("example.env");
-    let sibling = dir.path().join("example.env.plaintext");
-    let secret = concat!(
+/// Fixture dir under `target/` (gitignored, auto-removed): lets tests
+/// exercise CWD-relative hatch paths exactly as the filter protocol
+/// passes them — without chdir races (process-global CWD under
+/// parallel tests) and without polluting the repo. Returns the TempDir
+/// guard plus the CWD-relative dir prefix. Cargo runs test binaries
+/// with CWD at the package root, so `target/` always exists there.
+fn target_fixture_dir() -> (TempDir, String) {
+    fs::create_dir_all("target").unwrap();
+    let dir = TempDir::new_in("target").unwrap();
+    let rel = dir.path().to_str().unwrap().to_string();
+    assert!(
+        !std::path::Path::new(&rel).is_absolute(),
+        "fixture must be CWD-relative"
+    );
+    (dir, rel)
+}
+
+fn age_secret() -> &'static str {
+    concat!(
         "AGE",
         "-SECRET",
         "-KEY-",
         "1QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7LQPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L"
-    );
+    )
+}
+
+#[test]
+fn clean_skips_encryption_when_plaintext_sibling_exists() {
+    // CWD-relative path, the production filter-protocol shape: the
+    // hatch must cause the content to be returned VERBATIM.
+    let (_dir, prefix) = target_fixture_dir();
+    let path = format!("{prefix}/example.env");
+    let sibling = format!("{prefix}/example.env.plaintext");
+    let secret = age_secret();
+
+    fs::write(&path, secret).unwrap();
+    fs::write(&sibling, "").unwrap();
+
+    let security = WardenSecurity::new(None).unwrap();
+    let cleaned = security
+        .smart_clean_with_path(secret.as_bytes(), &path)
+        .expect("clean should succeed");
+
+    assert_eq!(cleaned, secret.as_bytes());
+}
+
+/// 2026-10-03 (audit R4-W-08): an ABSOLUTE hatched path fails closed
+/// (encrypts) — the sibling may live in a foreign directory, so the
+/// unrooted helper refuses the shape instead of checking it.
+#[test]
+fn clean_encrypts_absolute_hatched_path_fail_closed() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("example.env");
+    let sibling = dir.path().join("example.env.plaintext");
+    let secret = age_secret();
 
     fs::write(&path, secret).unwrap();
     fs::write(&sibling, "").unwrap();
@@ -107,8 +151,11 @@ fn clean_skips_encryption_when_plaintext_sibling_exists() {
         .smart_clean_with_path(secret.as_bytes(), path.to_str().unwrap())
         .expect("clean should succeed");
 
-    // The hatch must cause the content to be returned VERBATIM.
-    assert_eq!(cleaned, secret.as_bytes());
+    let cleaned_str = String::from_utf8_lossy(&cleaned);
+    assert!(
+        !cleaned_str.contains(secret),
+        "absolute hatched path must fail closed (encrypt), got: {cleaned_str}"
+    );
 }
 
 #[test]
