@@ -5185,7 +5185,14 @@ git -C "$REPO" config --local filter.dracon.clean >/dev/null 2>&1 && MANAGED=1
 # FIXED 2026-10-03 (audit R3-M3): strip `#` comments first — a
 # commented-out filter line must not mark the repo managed.
 grep -v '^[[:space:]]*#' "$REPO/.gitattributes" 2>/dev/null | grep -q "filter=dracon" && MANAGED=1
-[ -d "$REPO/.dracon" ] && MANAGED=1
+# FIXED 2026-10-03 (audit R4-W-05): the old `[ -d .dracon ]` probe
+# marked EVERY sync-managed repo warden-MANAGED (dracon-sync owns
+# `.dracon/dracon-sync.toml`, `.dracon/convos/`,
+# `.dracon/assets.manifest`), blocking its commits until warden was
+# set up — the H-10 false-positive class via a shared dir name. Key
+# on the warden-exclusive publication dir instead (sync never
+# creates `.dracon/data/keys`; only `publish_repo_pubkey` does).
+[ -d "$REPO/.dracon/data/keys" ] && MANAGED=1
 [ "$MANAGED" -eq 0 ] && exit 0
 
 # ----- (1.5) machine-local files must not be TRACKED (2026-09-28) --------
