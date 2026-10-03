@@ -266,6 +266,21 @@ if [[ -z "$REMOTE" ]]; then
     log "Resolved github remote: $REMOTE"
 fi
 
+# FIXED 2026-10-03 (audit R4-M-03): ported from dracon-system — resolve
+# the GitHub path ONCE, up front. Both the generated release notes and
+# the final summary need it, and the notes are written long before the
+# old late lookup. Only a real github.com remote is trusted; anything
+# else (a local fixture path, a self-hosted remote) falls back to this
+# repo's documented home, so a mangled path can never end up in a
+# published compare link.
+REMOTE_URL="$(git config --get "remote.${REMOTE}.url" 2>/dev/null || true)"
+if [[ "$REMOTE_URL" =~ github\.com[:/]+([^/]+/[^/]+?)(\.git)?$ ]]; then
+    GH_PATH="${BASH_REMATCH[1]}"
+else
+    GH_PATH="DraconDev/dracon-warden-secret-encrypt-age-git-filter"
+    [[ "$REMOTE_URL" == *"github.com"* ]] || log "  origin '$REMOTE_URL' is not a github.com remote; using the documented repo path for links"
+fi
+
 # ----- preconditions -------------------------------------------------------
 [[ -n "$VERSION" ]] || die_pre "missing <version> argument; see --help"
 
@@ -391,7 +406,7 @@ dracon-warden keygen
 dracon-warden once <repo>
 \`\`\`
 
-**Full Changelog**: https://github.com/DraconDev/dracon-utilities/compare/$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")...v${VERSION}
+**Full Changelog**: https://github.com/${GH_PATH}/compare/$(git describe --tags --abbrev=0 2>/dev/null || echo "dracon-warden-v0.0.0")...${TAG}
 EOF
     ok "  $NOTES_REL created"
 fi
@@ -536,9 +551,6 @@ ok ""
 ok "════════════════════════════════════════════"
 ok "✓ dracon-warden v${VERSION} released"
 ok "  crates.io:  https://crates.io/crates/dracon-warden"
-GH_PATH="$(git config --get "remote.${REMOTE}.url" 2>/dev/null || true)"
-GH_PATH="${GH_PATH%.git}"; GH_PATH="${GH_PATH##*github.com[:/]}"
-[[ -n "$GH_PATH" ]] || GH_PATH="DraconDev/dracon-utilities"
 ok "  github:     https://github.com/${GH_PATH}/releases/tag/${TAG}"
 ok "════════════════════════════════════════════"
 
