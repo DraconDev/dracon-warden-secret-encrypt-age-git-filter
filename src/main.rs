@@ -12,6 +12,7 @@ use dracon_security_kit::clear_managed_media_patterns_override;
 #[cfg(test)]
 use dracon_security_kit::clear_managed_patterns_override;
 use dracon_security_kit::path_matches_any_pattern;
+#[cfg(test)]
 use dracon_security_kit::SecretScanner;
 use dracon_security_kit::set_managed_media_patterns;
 use dracon_security_kit::set_managed_patterns;
@@ -4638,7 +4639,9 @@ fn shell_single_quote(value: &Path) -> String {
     format!("'{escaped}'")
 }
 
-/// Hook-only SECRET_RE alternatives: quoted password/secret/api_key
+/// Hook-only SECRET_RE alternatives (test-only: the freshness check renders
+/// the checked-in template line from these plus the token-shape source).
+/// Quoted password/secret/api_key assignments plus the bare-password form.
 /// assignments plus the bare-password form. These have no Tier-1
 /// counterpart (keyword-anchored shapes stay out of Tier-1 by the
 /// membership bar); the token shapes come from
@@ -4647,7 +4650,9 @@ fn shell_single_quote(value: &Path) -> String {
 /// line-oriented hook cannot express. Verbatim shell — the `'\\''` idiom
 /// survives POSIX single-quote parsing (2026-08-12), and `\\s`/`[^...]`
 /// are `grep -E` escapes, not Rust ones.
+#[cfg(test)]
 const HOOK_ASSIGNMENT_ALTERNATIVES: &str = "password\\s*=\\s*[\"'\\''][^\"'\\'']+|secret\\s*=\\s*[\"'\\''][^\"'\\'']+|api_key\\s*=\\s*[\"'\\''][^\"'\\'']+|password\\s*=\\s*[^[:space:]\"'']{6,}";
+#[cfg(test)]
 const HOOK_PEM_HEADER_ALTERNATIVE: &str = "-----BEGIN [A-Z]+ PRIVATE KEY";
 
 /// Render the pre-push hook's SECRET_RE alternation from the single
@@ -4656,6 +4661,7 @@ const HOOK_PEM_HEADER_ALTERNATIVE: &str = "-----BEGIN [A-Z]+ PRIVATE KEY";
 /// must stay directly runnable: the behavioral hook tests execute it as a
 /// real shell subprocess); `pre_push_hook_secret_re_matches_token_shape_source`
 /// fails with the new line to paste whenever the source changes.
+#[cfg(test)]
 fn hook_secret_re_from_source() -> String {
     let mut alts = vec![
         HOOK_PEM_HEADER_ALTERNATIVE,
