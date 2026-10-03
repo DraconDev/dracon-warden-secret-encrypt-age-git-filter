@@ -1,38 +1,27 @@
 # dracon-warden v0.113.15 (2026-10-03)
 
-Git filter encryption and repository hardening for secrets at rest.
+ROUND3 audit remediation (1 MEDIUM, 3 LOW), on top of the unreleased
+ROUND2 batch, media-protection patterns, and LLM-dump defaults already
+in the changelog. Requires dracon-security 0.4.0 (published alongside).
 
-## What's Changed
+- The pre-commit hook strips `#` comments before probing filter state:
+  commented-out `filter=dracon` lines neither mark a repo managed nor
+  satisfy the enforcement gate (behavioral tests both directions).
+- The registered merge driver quotes `%O`/`%A`/`%B` so space-containing
+  paths no longer word-split it; hardened repos migrate on next pass.
+- `git merge-file` exit codes above 1 propagate as hard errors — only
+  exit 1 means conflict — leaving stages in the index instead of
+  overwriting the worktree file with possibly-empty stdout.
+- The pre-push blob-novelty check enumerates remote objects once per
+  push (lazy, still fail-closed) instead of once per added file.
 
-- Bump version to 0.113.15
-- (See CHANGELOG.md for the full list of changes in this release)
+Validation: workspace gates green, 37 hook/merge behavioral tests pass
+including the once-per-push enumeration proof and the exit-2 regression.
 
-## Install
+Install:
 
 ```bash
-cargo install dracon-warden --version 0.113.15
+cargo install dracon-warden --version 0.113.15 --locked
 ```
 
-## Usage as a git filter (smudge/clean)
-
-The filter is installed by warden's hardening pass — no manual
-`git config filter.*` lines needed (the old template documented
-non-existent `init`/`clean`/`smudge` subcommands and a wrong
-`filter.dracon-warden.*` name; the real filter is `filter.dracon.*`,
-written by `once` via ensure_repo_filter_config):
-
-```bash
-# One-time, per machine: install the global hooks (pre-commit /
-# pre-push / pre-rebase) and generate this machine's keypair.
-dracon-warden setup-hooks
-dracon-warden keygen
-
-# Per repo you want to encrypt: harden it — writes the managed
-# .gitattributes filter=dracon block + .gitignore block, configures
-# filter.dracon.process (long-running filter driver; legacy
-# clean/smudge keys are migrated away automatically), and scrubs
-# plaintext markers.
-dracon-warden once <repo>
-```
-
-**Full Changelog**: https://github.com/DraconDev/dracon-utilities/compare/dracon-warden-v0.113.14...v0.113.15
+[Full changelog](https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter/compare/dracon-warden-v0.113.14...dracon-warden-v0.113.15)
