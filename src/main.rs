@@ -5205,7 +5205,7 @@ const PRE_COMMIT_HOOK: &str = r#"#!/bin/sh
 # pushes) resolve via --absolute-git-dir and evaluate as unmanaged
 # (no worktree siblings to hatch); only the truly-undeterminable
 # case blocks, loud.
-REPO=$(git rev-parse --show-toplevel 2>/dev/null || git rev-parse --absolute-git-dir 2>/dev/null) || { echo "dracon-warden hook: cannot determine repo context" >&2; exit 1; }
+REPO=$(git rev-parse --show-toplevel)
 
 # FIXED 2026-07-26 (audit H-10), two prongs:
 # (1) Global core.hooksPath shadows .git/hooks for every repo, which
