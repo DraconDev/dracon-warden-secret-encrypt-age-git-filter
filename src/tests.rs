@@ -5328,6 +5328,12 @@ protected_patterns = ["secrets.json"]
                 other => panic!("expected data, got {:?}", other),
             }
         }
+        // ADDED 2026-10-03 (audit R4-W-09): the maximum payload
+        // encodes whole — "ffff" header, nothing truncated.
+        let max = vec![0x61u8; crate::PKT_MAX_TOTAL_LEN - 4];
+        let enc_max = crate::pkt_encode(&max);
+        assert_eq!(&enc_max[..4], b"ffff");
+        assert_eq!(enc_max.len(), crate::PKT_MAX_TOTAL_LEN);
         // Flush and delim markers decode distinctly.
         let mut cur = std::io::Cursor::new(b"0000".to_vec());
         assert_eq!(
