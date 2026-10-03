@@ -108,7 +108,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 TAG="${CRATE_NAME}-v${VERSION}"
-TOTAL_STEPS=7
+TOTAL_STEPS=8
 
 # ----- colors (only on a tty) ---------------------------------------------
 if [[ -t 1 ]]; then
@@ -276,8 +276,52 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
     die_pre "version '$VERSION' is not semver (expected e.g. 0.112.12)"
 fi
 
-# ----- step 1: bump Cargo.toml version ------------------------------------
-log "step 1/${TOTAL_STEPS}: bumping ${RELPFX}Cargo.toml to ${VERSION}"
+# ----- step 1: test discipline gates (AGENTS.md) -------------------------
+log "step 1/${TOTAL_STEPS}: test discipline gates (AGENTS.md)"
+# FIXED 2026-10-03 (audit R4-M-02): ported from dracon-sync/system —
+# the warden release used to run ZERO AGENTS.md gates (the only build
+# check was `cargo publish --dry-run`, which compiles but runs no
+# tests), so one command could publish a tree that never passed the
+# Test-discipline gates. The four gates run here, before any mutation:
+#   - they run on the CLEAN pre-bump tree (a failed gate leaves the tree
+#     untouched); the version bump below rewrites the version entry in
+#     Cargo.lock, which makes every `--locked` invocation fail with "the
+#     lock file needs to be updated", so post-bump gating would need to
+#     drop --locked — this is why they run pre-bump.
+#   - they always run, even under --dry-run (local, read-only; only
+#     target/ is touched).
+require_cmd cargo-deny
+run_gate() {
+    printf '   $ %s\n' "$*"
+    "$@"
+}
+# ADDED 2026-09-28 (audit decision D5 follow-up): `cargo deny check` does
+# NOT fail when it cannot find a config. cargo-deny 0.19.9 logs
+#   [WARN] unable to find a config path, falling back to default config
+# and then silently applies its BUILT-IN policy, which is not this
+# repository's policy (this repo ships no deny.toml of its own; in the
+# nested checkout the parent workspace deny.toml resolves upward). A
+# release gate that can quietly enforce something other than the
+# intended policy is worse than no gate, so the fallback is now an
+# explicit, fatal error.
+run_deny_gate() {
+    printf '   $ cargo deny check\n'
+    local out rc=0
+    out="$(cargo deny check 2>&1)" || rc=$?
+    printf '%s\n' "$out"
+    if grep -q "falling back to default config" <<<"$out"; then
+        die_pre "no cargo-deny config in scope: cargo-deny fell back to its BUILT-IN default policy, which is not this repository's policy. Run the release from the nested checkout (where the parent deny.toml resolves upward), or pass --config explicitly."
+    fi
+    [ "$rc" -eq 0 ] || die "cargo deny check failed (exit $rc)"
+}
+run_gate cargo test --workspace --locked
+run_gate cargo build --release --locked
+run_deny_gate
+run_gate cargo clippy --workspace --locked -- -D warnings
+ok "  all gates passed"
+
+# ----- step 2: bump Cargo.toml version ------------------------------------
+log "step 2/${TOTAL_STEPS}: bumping ${RELPFX}Cargo.toml to ${VERSION}"
 current=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$CRATE_TOML" 2>/dev/null || true)
 if [[ -z "$current" ]]; then
     die_pre "no version found in $CRATE_TOML"
@@ -290,8 +334,8 @@ else
 fi
 refresh_workspace_lock
 
-# ----- step 2: close CHANGELOG [Unreleased] -------------------------------
-log "step 2/${TOTAL_STEPS}: closing ${RELPFX}CHANGELOG.md [Unreleased] → [${VERSION}]"
+# ----- step 3: close CHANGELOG [Unreleased] -------------------------------
+log "step 3/${TOTAL_STEPS}: closing ${RELPFX}CHANGELOG.md [Unreleased] → [${VERSION}]"
 DATE=$(date -u +%Y-%m-%d)
 # FIXED 2026-08-09 (audit MEDIUM): ported close-changelog.py from
 # dracon-sync v0.113.11. The inline heredoc had NO already-closed
@@ -302,8 +346,8 @@ DATE=$(date -u +%Y-%m-%d)
 python3 "$SCRIPT_DIR/close-changelog.py" "$CHANGELOG" "$VERSION" "$DATE"
 ok "  $CHANGELOG: [Unreleased] closed as [${VERSION}] - ${DATE} (or already closed)"
 
-# ----- step 3: create release-notes file ----------------------------------
-log "step 3/${TOTAL_STEPS}: creating ${RELPFX}release-notes-v${VERSION}.md"
+# ----- step 4: create release-notes file ----------------------------------
+log "step 4/${TOTAL_STEPS}: creating ${RELPFX}release-notes-v${VERSION}.md"
 NOTES_REL="${RELPFX}release-notes-v${VERSION}.md"
 NOTES="$REPO_ROOT/$NOTES_REL"
 if [[ -f "$NOTES" ]]; then
@@ -352,12 +396,12 @@ EOF
     ok "  $NOTES_REL created"
 fi
 
-# ----- step 4: cargo publish --dry-run (sanity) ---------------------------
-log "step 4/${TOTAL_STEPS}: cargo publish --dry-run (sanity check)"
+# ----- step 5: cargo publish --dry-run (sanity) ---------------------------
+log "step 5/${TOTAL_STEPS}: cargo publish --dry-run (sanity check)"
 run_local cargo publish -p "$CRATE_NAME" --dry-run --allow-dirty
 
-# ----- step 5: cargo publish for real -------------------------------------
-log "step 5/${TOTAL_STEPS}: cargo publish -p $CRATE_NAME"
+# ----- step 6: cargo publish for real -------------------------------------
+log "step 6/${TOTAL_STEPS}: cargo publish -p $CRATE_NAME"
 # Publish-order gate (audit MEDIUM 2026-08-09): the path dep on
 # dracon-security masks registry resolution — cargo publish rewrites the
 # `path` dep to its registry twin, so the crates.io twin must be at least
@@ -400,8 +444,8 @@ else
     fi
 fi
 
-# ----- step 6: fixture check on the published artifact ---------------------
-log "step 6/${TOTAL_STEPS}: fixture check on packaged artifact (protected-patterns guard)"
+# ----- step 7: fixture check on the published artifact ---------------------
+log "step 7/${TOTAL_STEPS}: fixture check on packaged artifact (protected-patterns guard)"
 # ADDED 2026-08-09 (audit MEDIUM): the v0.113.3/0.3.1 protected-patterns
 # wedge was caught only by MANUAL publish-verify. Installing from the
 # PACKAGED crate (target/package/, as produced by the publish above)
@@ -425,8 +469,8 @@ else
     die_pub "packaged crate dir $PKG_DIR missing — cannot run fixture check (publish must have failed)"
 fi
 
-# ----- step 7: commit, tag, push, gh release ------------------------------
-log "step 7/${TOTAL_STEPS}: commit + tag + push + gh release"
+# ----- step 8: commit, tag, push, gh release ------------------------------
+log "step 8/${TOTAL_STEPS}: commit + tag + push + gh release"
 # Force staging is scoped to the exact release surfaces (also covers
 # ignored release-note paths) and never uses `git add .`.
 run git add -f -- "${RELPFX}Cargo.toml" "Cargo.lock" "${RELPFX}CHANGELOG.md" "$NOTES_REL"
