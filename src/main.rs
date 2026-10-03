@@ -12,6 +12,7 @@ use dracon_security_kit::clear_managed_media_patterns_override;
 #[cfg(test)]
 use dracon_security_kit::clear_managed_patterns_override;
 use dracon_security_kit::path_matches_any_pattern;
+use dracon_security_kit::SecretScanner;
 use dracon_security_kit::set_managed_media_patterns;
 use dracon_security_kit::set_managed_patterns;
 pub(crate) use dracon_security_kit::DraconWarden;
@@ -4635,6 +4636,37 @@ const FOREIGN_HOOK_PLACEHOLDER: &str = "__DRACON_FOREIGN_HOOK__";
 fn shell_single_quote(value: &Path) -> String {
     let escaped = value.to_string_lossy().replace('\'', "'\\''");
     format!("'{escaped}'")
+}
+
+/// Hook-only SECRET_RE alternatives: quoted password/secret/api_key
+/// assignments plus the bare-password form. These have no Tier-1
+/// counterpart (keyword-anchored shapes stay out of Tier-1 by the
+/// membership bar); the token shapes come from
+/// `SecretScanner::hook_token_shapes_ere`, and `HOOK_PEM_HEADER_ALTERNATIVE`
+/// covers the eight multi-line private-key Tier-1 entries the
+/// line-oriented hook cannot express. Verbatim shell — the `'\\''` idiom
+/// survives POSIX single-quote parsing (2026-08-12), and `\\s`/`[^...]`
+/// are `grep -E` escapes, not Rust ones.
+const HOOK_ASSIGNMENT_ALTERNATIVES: &str = "password\\s*=\\s*[\"'\\''][^\"'\\'']+|secret\\s*=\\s*[\"'\\''][^\"'\\'']+|api_key\\s*=\\s*[\"'\\''][^\"'\\'']+|password\\s*=\\s*[^[:space:]\"'']{6,}";
+const HOOK_PEM_HEADER_ALTERNATIVE: &str = "-----BEGIN [A-Z]+ PRIVATE KEY";
+
+/// Render the pre-push hook's SECRET_RE alternation from the single
+/// token-shape source (`SecretScanner::hook_token_shapes_ere`, audit M10).
+/// The PRE_PUSH_HOOK template carries the checked-in render (the template
+/// must stay directly runnable: the behavioral hook tests execute it as a
+/// real shell subprocess); `pre_push_hook_secret_re_matches_token_shape_source`
+/// fails with the new line to paste whenever the source changes.
+fn hook_secret_re_from_source() -> String {
+    let mut alts = vec![
+        HOOK_PEM_HEADER_ALTERNATIVE,
+        HOOK_ASSIGNMENT_ALTERNATIVES,
+    ];
+    alts.extend(
+        SecretScanner::hook_token_shapes_ere()
+            .into_iter()
+            .map(|(_, ere)| ere),
+    );
+    format!("({})", alts.join("|"))
 }
 
 /// Render a hook with an optional preserved foreign global hook path.
