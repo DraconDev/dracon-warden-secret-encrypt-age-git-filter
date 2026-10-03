@@ -4,7 +4,7 @@
 //! plaintext: the clean filter returns it unchanged, and the smudge filter
 //! never sees it. See `docs/design/warden-plaintext-sibling.md`.
 
-use dracon_security::modules::filter::is_hatched;
+use dracon_security::modules::filter::{is_hatched, is_hatched_in_repo};
 use dracon_security::WardenSecurity;
 use std::fs;
 use tempfile::TempDir;
@@ -16,22 +16,75 @@ fn is_hatched_returns_false_for_empty_path() {
 
 #[test]
 fn is_hatched_returns_false_when_sibling_missing() {
+    // Rooted form: an existing file under the root with no sibling.
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("config").join("secrets.env");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "secret=hunter2\n").unwrap();
-    let rel = path.to_str().unwrap();
-    assert!(!is_hatched(rel));
+    assert!(!is_hatched_in_repo(dir.path(), path.to_str().unwrap()));
+    assert!(!is_hatched_in_repo(
+        dir.path(),
+        "config/secrets.env"
+    ));
 }
 
+/// 2026-10-03 (audit R4-W-08): the unrooted helper resolves
+/// CWD-relative, so absolute paths and `..` escapes fail closed
+/// (false = encrypt) — a foreign directory must never hatch a file.
 #[test]
-fn is_hatched_returns_true_when_sibling_exists() {
+fn is_hatched_rejects_absolute_and_dotdot() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("secrets.env");
     let sibling = dir.path().join("secrets.env.plaintext");
     fs::write(&path, "secret=hunter2\n").unwrap();
     fs::write(&sibling, "").unwrap();
-    assert!(is_hatched(path.to_str().unwrap()));
+    // The sibling EXISTS — rejection is by shape, not absence.
+    assert!(
+        !is_hatched(path.to_str().unwrap()),
+        "absolute paths must fail closed even with a sibling present"
+    );
+    assert!(!is_hatched("../escape.env"));
+    assert!(!is_hatched("a/../../escape.env"));
+    assert!(!is_hatched("/absent.env"));
+}
+
+#[test]
+fn is_hatched_in_repo_accepts_contained_paths() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    let path = root.join("sub").join("secrets.env");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "secret=hunter2\n").unwrap();
+    fs::write(root.join("sub").join("secrets.env.plaintext"), "").unwrap();
+    // Absolute-under-root and relative-under-root both hatch.
+    assert!(is_hatched_in_repo(root, path.to_str().unwrap()));
+    assert!(is_hatched_in_repo(root, "sub/secrets.env"));
+    // `./` normalization stays contained.
+    assert!(is_hatched_in_repo(root, "sub/./secrets.env"));
+}
+
+/// 2026-10-03 (audit R4-W-08): `..` escaping the root fails closed
+/// even when the escaped sibling EXISTS on disk.
+#[test]
+fn is_hatched_in_repo_rejects_escape_even_when_sibling_exists() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("root");
+    let outside = dir.path().join("outside.env.plaintext");
+    fs::create_dir_all(root.join("sub")).unwrap();
+    fs::write(&outside, "").unwrap();
+    assert!(
+        !is_hatched_in_repo(&root, "sub/../../outside.env"),
+        "a .. escape must fail closed despite the existing sibling"
+    );
+    assert!(
+        !is_hatched_in_repo(&root, outside.to_str().unwrap()),
+        "an absolute path outside the root must fail closed"
+    );
+    assert!(!is_hatched_in_repo(&root, ""));
+    assert!(!is_hatched_in_repo(
+        std::path::Path::new("relative-root"),
+        "sub/x.env"
+    ));
 }
 
 #[test]
