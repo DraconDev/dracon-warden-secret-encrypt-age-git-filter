@@ -64,6 +64,8 @@ cat > "$work/bin/cargo" <<'EOF'
 set -euo pipefail
 root="${DRACON_FIXTURE_ROOT:?}"
 case "${1:-}" in
+    test|build|clippy|deny)
+        ;;
     check)
         version=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$root/dracon-warden/Cargo.toml")
         sed -i "/^name = \"dracon-warden\"$/{n;s/^version = .*/version = \"$version\"/;}" "$root/Cargo.lock"
@@ -90,7 +92,11 @@ cat > "$work/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 [[ "${1:-}" == auth && "${2:-}" == status ]]
 EOF
-chmod +x "$work/bin/cargo" "$work/bin/gh"
+cat > "$work/bin/cargo-deny" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$work/bin/cargo" "$work/bin/gh" "$work/bin/cargo-deny"
 
 DRACON_FIXTURE_ROOT="$repo" HOME="$work/home" PATH="$work/bin:$PATH" \
     timeout 120 "$repo/dracon-warden/scripts/release.sh" 0.1.1 --dry-run --yes \
