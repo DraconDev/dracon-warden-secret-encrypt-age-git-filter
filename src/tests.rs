@@ -4547,13 +4547,14 @@ protected_patterns = ["secrets.json"]
 
     /// ADDED 2026-10-03 (audit R3-M3): a commented-out filter line is
     /// not a filter — git would not apply it, so the gate must not
-    /// accept it. `.dracon/` keeps MANAGED=1 on both versions; only
-    /// the comment-aware probe blocks.
+    /// accept it. `.dracon/data/keys` keeps MANAGED=1 (R4-W-05 narrowed
+    /// the marker; bare `.dracon/` is sync-only, unmanaged); only the
+    /// comment-aware probe blocks.
     #[test]
     fn pre_commit_hook_blocks_when_only_commented_filters_remain() {
         let (td, hook) = make_repo_with_hook("precommit_commented", "pre-commit", PRE_COMMIT_HOOK);
         let repo = td.path();
-        fs::create_dir_all(repo.join(".dracon")).expect("dracon dir");
+        fs::create_dir_all(repo.join(".dracon/data/keys")).expect("dracon keys dir");
         fs::write(
             repo.join(".gitattributes"),
             "# *.env filter=dracon diff=dracon\n   #*.key filter=dracon\n",
