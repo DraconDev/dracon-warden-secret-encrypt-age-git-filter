@@ -4728,6 +4728,15 @@ where
 /// `!success()` mapping took the conflict path and overwrote %A with
 /// possibly-empty stdout. Errors propagate (the caller writes %A only
 /// on Ok), leaving stages 1/2/3 in the index for `git checkout -m`.
+///
+/// Plaintext-at-rest posture (threat note, audit R4-W-07): the three
+/// decrypted sides live in a 0700 `tempfile::tempdir` (owner-only, no
+/// group/other access) and are best-effort zeroized before the dir
+/// drops. Residual risk: SIGKILL between write and wipe (or a crash
+/// inside `merge-file` itself) leaves plaintext in TMPDIR until the
+/// operator clears it; this is accepted — warden cannot wipe what a
+/// kill signal never lets it touch — and matches the pre-existing
+/// posture of every other decrypted-tempfile flow.
 fn text_merge(ancestor: &[u8], current: &[u8], other: &[u8]) -> Result<(Vec<u8>, bool)> {
     let dir = tempfile::tempdir().context("failed to create merge temp dir")?;
     let dir = dir.path();
@@ -4747,6 +4756,11 @@ fn text_merge(ancestor: &[u8], current: &[u8], other: &[u8]) -> Result<(Vec<u8>,
         .arg(&other_path)
         .output()
         .context("failed to run git merge-file")?;
+    // Best-effort wipe BEFORE interpreting the status, so the crash
+    // and conflict paths are covered as well as the clean path.
+    for side in [&ancestor_path, &current_path, &other_path] {
+        zeroize_file_best_effort(side);
+    }
     match output.status.code() {
         Some(0) => Ok((output.stdout, false)),
         Some(1) => Ok((output.stdout, true)),
