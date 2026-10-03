@@ -3567,6 +3567,9 @@ watch_roots = ["/tmp/test"]
         let _env_guard = EnvGuard::set("DRACON_WARDEN_POLICY", config_path.to_str().unwrap());
 
         let policy = WardenPolicy::load(&config_path).expect("load policy");
+        // Serialize with HomeGuard writers (R4-W-11): harden_repos reads
+        // $HOME (global-hook refresh); a concurrent flip would poison it.
+        let _home_lock = HOME_MUTEX.lock().expect("home mutex");
         let result = harden_repos(&policy, vec![repo.clone()], true);
         assert!(result.is_ok(), "once should succeed: {:?}", result);
         assert!(
@@ -3616,6 +3619,8 @@ watch_roots = ["/tmp/test"]
             result
         );
 
+        // Serialize with HomeGuard writers (R4-W-11): see above.
+        let _home_lock = HOME_MUTEX.lock().expect("home mutex");
         let result = harden_repos(&policy, vec![repo.clone()], true);
         assert!(
             result.is_ok(),
