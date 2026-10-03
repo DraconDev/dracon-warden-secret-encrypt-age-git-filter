@@ -2374,7 +2374,9 @@ async fn main() -> Result<()> {
             match run_merge(&ancestor, &current, &other) {
                 Ok(code) => std::process::exit(code),
                 Err(e) => {
-                    eprintln!("dracon-warden merge: INTERNAL ERROR (not a routine conflict): {e:?}");
+                    eprintln!(
+                        "dracon-warden merge: INTERNAL ERROR (not a routine conflict): {e:?}"
+                    );
                     eprintln!("dracon-warden merge: %A was left untouched — for protected paths it still holds current-side CIPHERTEXT, not conflict markers. Investigate before resolving.");
                     std::process::exit(2);
                 }
