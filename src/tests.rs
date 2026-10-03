@@ -467,6 +467,9 @@ mod tests {
             .to_string();
 
         // Counting wrapper: log every argv, delegate to the real git.
+        // `VAR=val exec` (no /usr/bin/env): the Nix sandbox has no
+        // /usr/bin/env, and the env call was PATH assignment only
+        // (FIXED 2026-10-03, audit R4-M-13 follow-up).
         let bin = td.path().join("bin");
         fs::create_dir_all(&bin).unwrap();
         let log = td.path().join("git-count.log");
@@ -474,7 +477,7 @@ mod tests {
         fs::write(
             bin.join("git"),
             format!(
-                "#!/bin/sh\necho \"$@\" >> \"{}\"\nexec /usr/bin/env PATH=\"{original_path}\" git \"$@\"\n",
+                "#!/bin/sh\necho \"$@\" >> \"{}\"\nPATH=\"{original_path}\" exec git \"$@\"\n",
                 log.display()
             ),
         )
@@ -5173,10 +5176,12 @@ protected_patterns = ["secrets.json"]
         let bin = td.path().join("bin");
         fs::create_dir_all(&bin).unwrap();
         let original_path = std::env::var("PATH").unwrap_or_default();
+        // `VAR=val exec` (no /usr/bin/env): same Nix-sandbox fix as the
+        // counting wrapper above (R4-M-13 follow-up).
         fs::write(
             bin.join("git"),
             format!(
-                "#!/bin/sh\nif [ \"$1\" = \"merge-file\" ]; then\n  echo \"fatal: fake merge-file failure\" >&2\n  exit 2\nfi\nexec /usr/bin/env PATH=\"{original_path}\" git \"$@\"\n"
+                "#!/bin/sh\nif [ \"$1\" = \"merge-file\" ]; then\n  echo \"fatal: fake merge-file failure\" >&2\n  exit 2\nfi\nPATH=\"{original_path}\" exec git \"$@\"\n"
             ),
         )
         .unwrap();
