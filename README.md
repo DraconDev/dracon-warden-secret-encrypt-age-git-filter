@@ -1,6 +1,6 @@
 # Dracon Warden
 
-**Git filter + repo hardening tool.** Secret, encrypt, age, git-filter — repository hardening and smudge/clean encryption. Encrypts secrets at rest in git while keeping plaintext in your working tree. Uses git hooks (not a daemon) as the primary enforcement layer.
+**Git filter + repo hardening tool.** Secret, encrypt, age, git-filter — repository hardening and smudge/clean encryption. Encrypts secrets at rest in git while keeping plaintext in your working tree. Uses git hooks (not a daemon) as an advisory defense-in-depth layer — hooks are client-side and bypassable (`--no-verify`, `core.hooksPath`, fresh clones without `setup-hooks`), so they catch accidents, not adversaries. There is no server-side scan.
 
 ![`dracon-warden` commands](https://raw.githubusercontent.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter/main/docs/status-output.png)
 
@@ -184,8 +184,9 @@ dracon-warden repair
 dracon-warden repair --dry-run
 dracon-warden repair --strict
 
-# Install git hooks globally (primary enforcement layer:
-# pre-commit blocks unconfigured filters, pre-push scans for secrets)
+# Install git hooks globally (advisory defense-in-depth, bypassable
+# via --no-verify: pre-commit blocks unconfigured filters, pre-push
+# scans for secrets)
 dracon-warden setup-hooks --global
 ```
 

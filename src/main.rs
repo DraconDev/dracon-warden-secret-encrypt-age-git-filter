@@ -5219,7 +5219,10 @@ const PRE_PUSH_HOOK: &str = r##"#!/bin/sh
 # dracon-warden-managed-hook-v1
 # Dracon Warden — pre-push hook
 # Defense-in-depth: scans push for plaintext secrets.
-# Catches --no-verify bypass of pre-commit hook.
+# Catches --no-verify bypass of the pre-commit hook — but is itself
+# bypassable (git push --no-verify, core.hooksPath, clones without
+# setup-hooks), so this is accident-catching defense-in-depth, not
+# enforcement. There is no server-side scan (audit R4-W-02).
 # Installed by: dracon-warden setup-hooks
 #
 # Plaintext-sibling escape hatch: a file with a `<path>.plaintext` sibling
