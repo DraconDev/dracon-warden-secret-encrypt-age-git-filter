@@ -5428,6 +5428,8 @@ const PRE_PUSH_HOOK: &str = r##"#!/bin/sh
 # Plaintext-sibling escape hatch: a file with a `<path>.plaintext` sibling
 # is treated as intentionally plaintext. Such files are excluded from the
 # scan (silent allow). See docs/design/warden-plaintext-sibling.md.
+# Accepted scan residuals (Tier-2 gap, newline-in-filename, binary
+# parent-match): docs/design/warden-hook-tier2-residuals-2026-10-03.md.
 #
 # CHANGED 2026-07-21 (v0.112.32, audit M32/F4.6): filenames are
 # handled NUL-delimited. The previous
