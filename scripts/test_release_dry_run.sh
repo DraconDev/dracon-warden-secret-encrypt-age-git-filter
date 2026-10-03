@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression test for the warden monorepo release preview and rollback.
+# Regression test for the warden standalone-repo release preview and rollback.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
