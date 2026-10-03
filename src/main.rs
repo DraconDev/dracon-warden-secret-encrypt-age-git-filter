@@ -5656,8 +5656,8 @@ while read local_ref local_sha remote_ref remote_sha; do
     git diff-tree --root -m -r --no-commit-id -M100% --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null | tr '\0' '\n' > "$ADDED_FILES"
     while IFS= read -r af; do
         # Skip files hatched via a `.plaintext` sibling, matching the
-        # text scan above.
-        [ -f "$af.plaintext" ] && continue
+        # text scan above. Anchored to $REPO (R4-W-08), not CWD.
+        [ -f "$REPO/$af.plaintext" ] && continue
         if git cat-file blob "$scan_commit:$af" 2>/dev/null | grep -aqE "$SECRET_RE"; then
             # FIXED 2026-10-03 (audit L10): blob-novelty check — a blob
             # already present on a remote is grandfathered, not a new
@@ -5683,7 +5683,8 @@ while read local_ref local_sha remote_ref remote_sha; do
     git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=M -z "$scan_commit" 2>/dev/null | tr '\0' '\n' > "$ADDED_FILES"
     PARENTS=$(git show -s --format=%P "$scan_commit") || exit 1
     while IFS= read -r bf; do
-        [ -f "$bf.plaintext" ] && continue
+        # Anchored to $REPO (R4-W-08), not CWD — see above.
+        [ -f "$REPO/$bf.plaintext" ] && continue
         if ! git diff-tree --root -m -r --no-commit-id --numstat "$scan_commit" -- "$bf" |
             awk '$1 == "-" && $2 == "-" { binary=1 } END { exit(binary ? 0 : 1) }'; then
             continue
