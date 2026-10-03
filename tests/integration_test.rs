@@ -377,7 +377,12 @@ fn test_filter_process_live_git_diff_and_add() {
         "add through filter-process must succeed: {}",
         String::from_utf8_lossy(&add.stderr)
     );
-    let commit = git_cmd(&repo, &["commit", "-qm", "seed"]);
+    // --no-verify: this test exercises the filter-PROCESS driver, not
+    // hooks — the operator's ambient global pre-commit hook must not
+    // gate the fixture commit (2026-10-03: the R4-W-03 key-completeness
+    // gate blocked it for a missing diff.dracon.textconv). Filters
+    // still run; only the hook is skipped.
+    let commit = git_cmd(&repo, &["commit", "-qm", "seed", "--no-verify"]);
     assert!(commit.status.success());
     // Modify every file, then diff through the driver.
     for i in 0..300 {
