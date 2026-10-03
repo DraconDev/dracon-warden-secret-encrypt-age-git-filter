@@ -4004,9 +4004,20 @@ protected_patterns = ["secrets.json"]
         hook_path: &std::path::Path,
         args: &[&str],
     ) -> (std::process::ExitStatus, String) {
+        run_hook_args_in(repo, hook_path, args)
+    }
+
+    /// ADDED 2026-10-03 (audit R4-W-11): `cwd` may be outside any
+    /// repo (proves the no-context guard) or a bare repo (pins the
+    /// --absolute-git-dir fallback).
+    fn run_hook_args_in(
+        cwd: &std::path::Path,
+        hook_path: &std::path::Path,
+        args: &[&str],
+    ) -> (std::process::ExitStatus, String) {
         use std::process::Command;
         let output = Command::new(hook_path)
-            .current_dir(repo)
+            .current_dir(cwd)
             .args(args)
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_SYSTEM", "/dev/null")
