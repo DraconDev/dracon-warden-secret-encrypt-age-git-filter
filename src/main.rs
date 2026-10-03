@@ -4381,6 +4381,19 @@ fn serve_one_request<R: std::io::Read, W: std::io::Write>(
             None
         }
     };
+    // R4-01: relativize an absolute pathname before any guard or
+    // matching sees it. On failure (outside-root absolute) keep the
+    // ORIGINAL path: the guards below refuse it after draining the body.
+    // Returning Err here instead would desync the positional pkt-line
+    // protocol for every later request on this connection.
+    let pathname_owned;
+    let pathname = match normalize_filter_path(pathname, direction == Some(true)) {
+        Ok(normalized) => {
+            pathname_owned = normalized;
+            pathname_owned.as_deref()
+        }
+        Err(_) => pathname,
+    };
     veprintln!(2, "request command={} pathname={:?}", command, pathname);
     let t0 = std::time::Instant::now();
     // FIXED 2026-09-27 (audit F96): this loop used to
