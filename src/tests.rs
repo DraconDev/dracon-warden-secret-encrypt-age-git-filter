@@ -4595,6 +4595,20 @@ protected_patterns = ["secrets.json"]
             ],
         );
         run_git_in(repo, &["config", "filter.dracon.required", "true"]);
+        // (R4-W-03: `once` also writes diff.dracon.textconv +
+        // merge.dracon.driver, and the hook now enforces them.)
+        run_git_in(
+            repo,
+            &["config", "diff.dracon.textconv", "dracon-warden filter-smudge"],
+        );
+        run_git_in(
+            repo,
+            &[
+                "config",
+                "merge.dracon.driver",
+                "dracon-warden merge \"%O\" \"%A\" \"%B\"",
+            ],
+        );
         let output = Command::new(&hook)
             .current_dir(repo)
             .env("GIT_CONFIG_GLOBAL", &global_cfg)
@@ -4607,6 +4621,76 @@ protected_patterns = ["secrets.json"]
             "managed repo WITH local filter config must pass: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    /// ADDED 2026-10-03 (audit R4-W-03): without local
+    /// diff.dracon.textconv, git falls back to the text driver and
+    /// diffs of encrypted files show CIPHERTEXT. A managed repo
+    /// missing the key must block even when every other key is set.
+    #[test]
+    fn pre_commit_hook_blocks_when_textconv_key_missing() {
+        let (td, hook) =
+            make_repo_with_hook("precommit_notextconv", "pre-commit", PRE_COMMIT_HOOK);
+        let repo = td.path();
+        fs::write(repo.join(".gitattributes"), "*.env filter=dracon\n").expect("gitattributes");
+        run_git_in(
+            repo,
+            &[
+                "config",
+                "filter.dracon.process",
+                "dracon-warden filter-process",
+            ],
+        );
+        run_git_in(repo, &["config", "filter.dracon.required", "true"]);
+        run_git_in(
+            repo,
+            &[
+                "config",
+                "merge.dracon.driver",
+                "dracon-warden merge \"%O\" \"%A\" \"%B\"",
+            ],
+        );
+        // textconv deliberately unset (hand-edit / partial config).
+
+        let (status, stderr) = run_hook_args(repo, &hook, &[]);
+        assert!(
+            !status.success(),
+            "missing diff.dracon.textconv must block: {stderr}"
+        );
+        assert!(stderr.contains("textconv"), "stderr: {stderr}");
+    }
+
+    /// ADDED 2026-10-03 (audit R4-W-03): without local
+    /// merge.dracon.driver, merges of encrypted files operate on
+    /// CIPHERTEXT (undecryptable conflict output). A managed repo
+    /// missing the key must block even when every other key is set.
+    #[test]
+    fn pre_commit_hook_blocks_when_merge_driver_key_missing() {
+        let (td, hook) =
+            make_repo_with_hook("precommit_nodriver", "pre-commit", PRE_COMMIT_HOOK);
+        let repo = td.path();
+        fs::write(repo.join(".gitattributes"), "*.env filter=dracon\n").expect("gitattributes");
+        run_git_in(
+            repo,
+            &[
+                "config",
+                "filter.dracon.process",
+                "dracon-warden filter-process",
+            ],
+        );
+        run_git_in(repo, &["config", "filter.dracon.required", "true"]);
+        run_git_in(
+            repo,
+            &["config", "diff.dracon.textconv", "dracon-warden filter-smudge"],
+        );
+        // merge driver deliberately unset (hand-edit / partial config).
+
+        let (status, stderr) = run_hook_args(repo, &hook, &[]);
+        assert!(
+            !status.success(),
+            "missing merge.dracon.driver must block: {stderr}"
+        );
+        assert!(stderr.contains("merge.dracon.driver"), "stderr: {stderr}");
     }
 
     #[cfg(unix)]
