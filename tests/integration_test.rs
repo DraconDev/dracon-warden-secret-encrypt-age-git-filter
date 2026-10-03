@@ -676,6 +676,46 @@ fn test_precommit_sync_only_dracon_dir_is_not_managed() {
     );
 }
 
+/// 2026-10-03 (audit R4-W-06): a merge internal error (here: the
+/// %O side is missing, so the read fails) exits 2 — NOT 1 — with an
+/// INTERNAL ERROR message, and %A is left untouched (no markers).
+/// Exit 1 is reserved for routine conflicts (plaintext markers in %A).
+#[test]
+fn test_merge_internal_error_exits_two_with_current_untouched() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let ancestor = dir.join("ancestor-missing");
+    let current = dir.join("current");
+    let other = dir.join("other");
+    let current_before = b"line1\nline2-A\nline3\n";
+    std::fs::write(&current, current_before).unwrap();
+    std::fs::write(&other, b"line1\nline2-B\nline3\n").unwrap();
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
+        .arg("merge")
+        .arg(&ancestor)
+        .arg(&current)
+        .arg(&other)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "internal errors must exit 2 (conflicts exit 1): {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("INTERNAL ERROR") && stderr.contains("left untouched"),
+        "the operator message must distinguish internal errors: {stderr}"
+    );
+    assert_eq!(
+        std::fs::read(&current).unwrap(),
+        current_before,
+        "%A must be untouched on internal error"
+    );
+}
+
 /// 2026-10-03 (audit R4-W-05, positive control): the warden-exclusive
 /// `.dracon/data/keys/` marker WITHOUT filter config IS drift and
 /// must still block — the fix narrows the probe, it doesn't remove it.
