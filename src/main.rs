@@ -5493,6 +5493,12 @@ done < "$REFS_FILE"
 /// the source, before the branch diverges. Rebasing unpushed local
 /// work (including `git pull --rebase` of commits not yet pushed)
 /// is unaffected. Escape hatch: DRACON_ALLOW_REWRITE=1.
+///
+/// CAVEAT 2026-10-03 (audit L11): the check consults LOCAL
+/// remote-tracking refs — published-but-unfetched commits escape when
+/// refs are stale. The hook warns (never blocks) when a remote exists
+/// and FETCH_HEAD is missing or older than 24h; daemon-managed repos
+/// stay fresh via auto-fetch.
 const PRE_REBASE_HOOK: &str = r#"#!/bin/sh
 # dracon-warden-managed-hook-v1
 # Dracon Warden — pre-rebase hook
@@ -5550,6 +5556,20 @@ upstream="$1"
 tip="${2:-HEAD}"
 oldest=$(git rev-list "$upstream".."$tip" 2>/dev/null | tail -1)
 [ -z "$oldest" ] && exit 0
+
+# DOCUMENTED 2026-10-03 (audit L11): containment is checked against
+# LOCAL remote-tracking refs. Published-but-unfetched commits escape
+# when refs are stale. A fetch inside the hook was rejected (breaks
+# offline rebases, slows every rebase); warn instead. Daemon-managed
+# repos auto-fetch constantly so their refs stay fresh; manual clones
+# should `git fetch` first. Warning-only: never blocks the rebase.
+if git remote 2>/dev/null | grep -q .; then
+    FETCH_HEAD_FILE="$GIT_COMMON_DIR/FETCH_HEAD"
+    if [ ! -f "$FETCH_HEAD_FILE" ] || [ -n "$(find "$FETCH_HEAD_FILE" -mmin +1440 2>/dev/null)" ]; then
+        echo "⚠️  dracon-warden: remote-tracking refs may be stale (no fetch in 24h); the published-commit check may miss recently pushed commits." >&2
+        echo "   Run: git fetch" >&2
+    fi
+fi
 
 if [ -n "$(git branch -r --contains "$oldest" 2>/dev/null)" ]; then
     echo "❌ dracon-warden: refusing rebase — $oldest is already published on a remote." >&2
