@@ -31,6 +31,11 @@ members = ["dracon-warden"]
 resolver = "2"
 EOF
 cat > "$repo/dracon-warden/Cargo.toml" <<'EOF'
+# R4-M-11: a [workspace.package] version ABOVE [package] — the bump must
+# rewrite the [package] line, never the first `^version =` in the file.
+[workspace.package]
+version = "9.9.9"
+
 [package]
 name = "dracon-warden"
 version = "0.1.0"
@@ -67,14 +72,14 @@ case "${1:-}" in
     test|build|clippy|deny)
         ;;
     check)
-        version=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$root/dracon-warden/Cargo.toml")
+        version=$(awk -F'"' '/^\[/{p=($0=="[package]");next} p && /^version[[:space:]]*=/{print $2;exit}' "$root/dracon-warden/Cargo.toml")
         sed -i "/^name = \"dracon-warden\"$/{n;s/^version = .*/version = \"$version\"/;}" "$root/Cargo.lock"
         ;;
     metadata)
         printf '{"workspace_root":"%s"}\n' "$root"
         ;;
     publish)
-        version=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$root/dracon-warden/Cargo.toml")
+        version=$(awk -F'"' '/^\[/{p=($0=="[package]");next} p && /^version[[:space:]]*=/{print $2;exit}' "$root/dracon-warden/Cargo.toml")
         if [[ " $* " == *" --dry-run "* ]]; then
             mkdir -p "$root/target/package/dracon-warden-$version"
             touch "$root/.publish-dry-run"
@@ -102,7 +107,9 @@ DRACON_FIXTURE_ROOT="$repo" HOME="$work/home" PATH="$work/bin:$PATH" \
     timeout 120 "$repo/dracon-warden/scripts/release.sh" 0.1.1 --dry-run --yes \
     >"$work/dry-run.out" 2>"$work/dry-run.err"
 grep -F 'dracon-warden/Cargo.toml: 0.1.0 → 0.1.1' "$work/dry-run.out" >/dev/null
-test "$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$repo/dracon-warden/Cargo.toml")" = 0.1.1
+test "$(awk -F'"' '/^\[/{p=($0=="[package]");next} p && /^version[[:space:]]*=/{print $2;exit}' "$repo/dracon-warden/Cargo.toml")" = 0.1.1
+# R4-M-11: the [workspace.package] version above must be untouched.
+test "$(awk -F'"' '/^\[/{p=($0=="[workspace.package]");next} p && /^version[[:space:]]*=/{print $2;exit}' "$repo/dracon-warden/Cargo.toml")" = 9.9.9
 test "$(awk -F'"' '/^name = "dracon-warden"$/{getline; print $2; exit}' "$repo/Cargo.lock")" = 0.1.1
 test -e "$repo/.publish-dry-run"
 test ! -e "$repo/.publish-real"
@@ -125,7 +132,7 @@ test -z "$(git -C "$repo" tag --list)"
 DRACON_FIXTURE_ROOT="$repo" HOME="$work/home" PATH="$work/bin:$PATH" \
     timeout 120 "$repo/dracon-warden/scripts/release.sh" --abort \
     >"$work/abort.out" 2>"$work/abort.err"
-test "$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$repo/dracon-warden/Cargo.toml")" = 0.1.0
+test "$(awk -F'"' '/^\[/{p=($0=="[package]");next} p && /^version[[:space:]]*=/{print $2;exit}' "$repo/dracon-warden/Cargo.toml")" = 0.1.0
 test "$(awk -F'"' '/^name = "dracon-warden"$/{getline; print $2; exit}' "$repo/Cargo.lock")" = 0.1.0
 test ! -e "$repo/dracon-warden/release-notes-v0.1.1.md"
 test -z "$(git -C "$repo" status --porcelain)"
@@ -140,7 +147,7 @@ if DRACON_FIXTURE_ROOT="$repo" HOME="$work/home" PATH="$work/bin:$PATH" \
     exit 1
 fi
 grep -F 'is not newer than the current' "$work/mono.out" >/dev/null
-test "$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$repo/dracon-warden/Cargo.toml")" = 0.1.0
+test "$(awk -F'"' '/^\[/{p=($0=="[package]");next} p && /^version[[:space:]]*=/{print $2;exit}' "$repo/dracon-warden/Cargo.toml")" = 0.1.0
 test -z "$(git -C "$repo" status --porcelain)"
 
 # Equal is allowed: a same-version re-run is intentional idempotency, not
@@ -148,6 +155,6 @@ test -z "$(git -C "$repo" status --porcelain)"
 DRACON_FIXTURE_ROOT="$repo" HOME="$work/home" PATH="$work/bin:$PATH" \
     timeout 120 "$repo/dracon-warden/scripts/release.sh" 0.1.0 --dry-run --yes \
     >"$work/rerun.out" 2>&1
-test "$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$repo/dracon-warden/Cargo.toml")" = 0.1.0
+test "$(awk -F'"' '/^\[/{p=($0=="[package]");next} p && /^version[[:space:]]*=/{print $2;exit}' "$repo/dracon-warden/Cargo.toml")" = 0.1.0
 
 echo 'warden release dry-run regression tests: ok'
