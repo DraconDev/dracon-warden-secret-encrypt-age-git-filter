@@ -4252,7 +4252,10 @@ protected_patterns = ["secrets.json"]
     fn pre_rebase_hook_warns_on_stale_refs_without_blocking() {
         let (td, hook) = make_repo_with_hook("rebase_stale", "pre-rebase", PRE_REBASE_HOOK);
         let repo = td.path();
-        run_git_in(repo, &["remote", "add", "origin", "/nonexistent-upstream.git"]);
+        run_git_in(
+            repo,
+            &["remote", "add", "origin", "/nonexistent-upstream.git"],
+        );
         run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
         let sha_a = git_in_output(repo, &["rev-parse", "HEAD"])
             .trim()
@@ -4298,7 +4301,10 @@ protected_patterns = ["secrets.json"]
         let bare = bare_dir.path().join("upstream.git");
         fs::create_dir_all(&bare).expect("bare dir");
         run_git_in(&bare, &["init", "-q", "--bare"]);
-        run_git_in(repo, &["remote", "add", "origin", bare.to_str().expect("utf8")]);
+        run_git_in(
+            repo,
+            &["remote", "add", "origin", bare.to_str().expect("utf8")],
+        );
         run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
         // Only the pre-rebase hook is installed, so this real push runs
         // unhooked and publishes A straight to the bare remote.

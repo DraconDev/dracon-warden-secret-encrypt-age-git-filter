@@ -1984,7 +1984,9 @@ mod tests {
             );
         }
         // Positive control: text-plaintext tags still decrypt inline.
-        let text_tag = security.encrypt_v2_to_b64_tag(b"inline-text-secret").unwrap();
+        let text_tag = security
+            .encrypt_v2_to_b64_tag(b"inline-text-secret")
+            .unwrap();
         let text_tag = std::str::from_utf8(&text_tag).unwrap();
         let input = format!("a {text_tag} b");
         assert_eq!(
