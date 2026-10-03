@@ -4661,9 +4661,10 @@ protected_patterns = ["secrets.json"]
         let (td, hook) =
             make_repo_with_hook("precommit_global_only", "pre-commit", PRE_COMMIT_HOOK);
         let repo = td.path();
-        // Managed markers: .dracon dir + .gitattributes block. No LOCAL
+        // Managed markers: .dracon/data/keys + .gitattributes block
+        // (R4-W-05: bare `.dracon/` is sync-only, unmanaged). No LOCAL
         // filter config (simulating a clone that never ran `once`).
-        fs::create_dir_all(repo.join(".dracon")).expect(".dracon dir");
+        fs::create_dir_all(repo.join(".dracon/data/keys")).expect(".dracon keys dir");
         fs::write(repo.join(".gitattributes"), "*.env filter=dracon\n").expect("gitattributes");
         // Global config carries the filter keys (the masking scope).
         let global_cfg = repo.join("global.gitconfig");
@@ -4914,7 +4915,9 @@ protected_patterns = ["secrets.json"]
         assert!(repo.join(".git/user-hook-ran").exists());
         // A successful storage check must not bypass Warden's encryption gate.
         fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
-        fs::create_dir(repo.join(".dracon")).unwrap();
+        // R4-W-05: the managed marker is `.dracon/data/keys`
+        // (bare `.dracon/` is sync-only, unmanaged).
+        fs::create_dir_all(repo.join(".dracon/data/keys")).unwrap();
         let (status, text) = run_hook_args(repo, &hook, &[]);
         assert!(!status.success());
         assert!(text.contains("filter"), "{text}");
