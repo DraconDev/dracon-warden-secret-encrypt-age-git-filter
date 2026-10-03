@@ -5350,6 +5350,18 @@ protected_patterns = ["secrets.json"]
         assert!(crate::pkt_read(&mut cur).expect("eof").is_none());
     }
 
+    /// ADDED 2026-10-03 (audit R4-W-09): an oversize payload panics
+    /// LOUD instead of silently truncating (the old `debug_assert!`
+    /// compiled out in release). The `expected` message also
+    /// discriminates the old shape in debug builds. Verified under
+    /// `--release` too, where the old code did NOT panic.
+    #[test]
+    #[should_panic(expected = "exceeds pkt-line maximum")]
+    fn pkt_encode_panics_on_oversize_payload() {
+        let over = vec![0u8; crate::PKT_MAX_TOTAL_LEN - 3];
+        let _ = crate::pkt_encode(&over);
+    }
+
     #[test]
     fn filter_process_serve_clean_smudge_and_error() {
         // Full serve loop over in-memory pipes: handshake, one
