@@ -1955,6 +1955,45 @@ mod tests {
     }
 
     #[test]
+    fn test_smart_smudge_preserves_tag_with_binary_plaintext() {
+        // 2026-10-03 (audit L9): a whole-file tag whose plaintext is
+        // BINARY, embedded in text (or with leading bytes/BOM) so the
+        // exact-match `decrypt_whole_file_tag` misses it, reached
+        // `smart_smudge` and corrupted via `from_utf8_lossy` — then the
+        // next clean re-encrypted the corruption. Non-UTF8 plaintext
+        // can never be represented in `String` smudge output, so the
+        // tag must survive verbatim (fail closed).
+        let mut security = WardenSecurity::new(None).unwrap();
+        security.add_memory_identity(age::x25519::Identity::generate());
+        let binary_plaintext = b"\x89PNG\r\n\x1a\n\x00binary-secret";
+        let tag = security.encrypt_v2_to_b64_tag(binary_plaintext).unwrap();
+        let tag = std::str::from_utf8(&tag).unwrap();
+        for input in [format!("prefix {tag} suffix"), format!("\u{FEFF}{tag}")] {
+            let output = security.smart_smudge(&input).unwrap();
+            assert_eq!(
+                output, input,
+                "binary-plaintext tag must survive smart_smudge verbatim"
+            );
+            // End-to-end: exact-match misses (not the whole content),
+            // so smudge_with_security must pass the bytes through.
+            let round = smudge_with_security(&security, input.as_bytes()).unwrap();
+            assert_eq!(
+                round,
+                input.as_bytes(),
+                "binary-plaintext tag must survive smudge_with_security verbatim"
+            );
+        }
+        // Positive control: text-plaintext tags still decrypt inline.
+        let text_tag = security.encrypt_v2_to_b64_tag(b"inline-text-secret").unwrap();
+        let text_tag = std::str::from_utf8(&text_tag).unwrap();
+        let input = format!("a {text_tag} b");
+        assert_eq!(
+            security.smart_smudge(&input).unwrap(),
+            "a inline-text-secret b"
+        );
+    }
+
+    #[test]
     fn test_smudge_passes_binary_unchanged() {
         let warden = DraconWarden::new().expect("create warden");
         // Binary content with null bytes should pass through unchanged
