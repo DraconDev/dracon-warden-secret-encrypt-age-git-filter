@@ -3582,6 +3582,52 @@ watch_roots = ["/tmp/test"]
         );
     }
 
+    /// ADDED 2026-10-03 (audit R4-W-11): a failed global-hook refresh
+    /// TAINTS the pass — harden_repos returns Err instead of reporting
+    /// "✅ hardening pass complete" + exit 0. Poison: a stale warden
+    /// hook (marker + drifted body) in a read-only global hooks dir,
+    /// so the refresh read succeeds but the rewrite fails EACCES.
+    /// Unix-only (relies on permission bits).
+    #[cfg(unix)]
+    #[test]
+    fn harden_repos_fails_when_global_refresh_fails() {
+        use std::os::unix::fs::PermissionsExt;
+        let td = TestDir::new("warden_harden_refresh_fail");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        run_git_in(&repo, &["init", "-q", "-b", "main"]);
+
+        let home = td.path().join("home");
+        let hooks = home.join(".config/git/hooks");
+        fs::create_dir_all(&hooks).expect("hooks dir");
+        fs::write(
+            hooks.join("pre-commit"),
+            "# dracon-warden-managed-hook-v1\ndrifted-stale-body\n",
+        )
+        .expect("stale hook");
+
+        let config_path = td.path().join("dracon-warden.toml");
+        fs::write(&config_path, "[watch]\nwatch_roots = [\"/tmp/test\"]\n")
+            .expect("write config");
+        let policy = WardenPolicy::load(&config_path).expect("load policy");
+
+        let _home_guard = HomeGuard::new(home.to_str().expect("utf8 home"));
+        fs::set_permissions(&hooks, fs::Permissions::from_mode(0o555)).expect("read-only hooks");
+        let result = harden_repos(&policy, vec![repo.clone()], true);
+        fs::set_permissions(&hooks, fs::Permissions::from_mode(0o755)).expect("restore hooks");
+
+        let err = result.expect_err("refresh failure must taint the pass");
+        assert!(
+            err.to_string().contains("global hook refresh failed"),
+            "error must name the refresh: {err}"
+        );
+        // Per-repo work still ran (local artifacts keep value).
+        assert!(
+            repo.join(".gitattributes").exists(),
+            ".gitattributes should still be created"
+        );
+    }
+
     #[test]
     fn cli_repair_dry_run_does_not_modify() {
         let td = TestDir::new("warden_repair_dry_run");
@@ -4641,6 +4687,10 @@ protected_patterns = ["secrets.json"]
         let (td, hook) = make_repo_with_hook("precommit_bare", "pre-commit", PRE_COMMIT_HOOK);
         let bare = td.path().join("mirror.git");
         run_git_in(td.path(), &["init", "-q", "--bare", "mirror.git"]);
+        // Template-seeded hooks would chain; the pin is about OUR entry.
+        for name in ["pre-commit", "pre-push", "pre-rebase"] {
+            let _ = fs::remove_file(bare.join("hooks").join(name));
+        }
         let (status, text) = run_hook_args_in(&bare, &hook, &[]);
         assert!(
             status.success(),
@@ -4656,6 +4706,9 @@ protected_patterns = ["secrets.json"]
         let (td, hook) = make_repo_with_pre_push_hook("hook_bare");
         run_git_in(td.path(), &["init", "-q", "--bare", "mirror.git"]);
         let bare = td.path().join("mirror.git");
+        for name in ["pre-commit", "pre-push", "pre-rebase"] {
+            let _ = fs::remove_file(bare.join("hooks").join(name));
+        }
         let (status, text) = run_hook_input_in(&bare, &hook, "");
         assert!(
             status.success(),
