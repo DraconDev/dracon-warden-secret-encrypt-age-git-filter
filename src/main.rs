@@ -12,11 +12,11 @@ use dracon_security_kit::clear_managed_media_patterns_override;
 #[cfg(test)]
 use dracon_security_kit::clear_managed_patterns_override;
 use dracon_security_kit::path_matches_any_pattern;
-#[cfg(test)]
-use dracon_security_kit::SecretScanner;
 use dracon_security_kit::set_managed_media_patterns;
 use dracon_security_kit::set_managed_patterns;
 pub(crate) use dracon_security_kit::DraconWarden;
+#[cfg(test)]
+use dracon_security_kit::SecretScanner;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use secrecy::ExposeSecret;
 use serde::Deserialize;
@@ -4663,10 +4663,7 @@ const HOOK_PEM_HEADER_ALTERNATIVE: &str = "-----BEGIN [A-Z]+ PRIVATE KEY";
 /// fails with the new line to paste whenever the source changes.
 #[cfg(test)]
 fn hook_secret_re_from_source() -> String {
-    let mut alts = vec![
-        HOOK_PEM_HEADER_ALTERNATIVE,
-        HOOK_ASSIGNMENT_ALTERNATIVES,
-    ];
+    let mut alts = vec![HOOK_PEM_HEADER_ALTERNATIVE, HOOK_ASSIGNMENT_ALTERNATIVES];
     alts.extend(
         SecretScanner::hook_token_shapes_ere()
             .into_iter()

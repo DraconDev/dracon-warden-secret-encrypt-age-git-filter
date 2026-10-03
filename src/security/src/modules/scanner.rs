@@ -271,10 +271,7 @@ impl SecretScanner {
                 "GitHub Token (ghr)",
                 concat!("gh", "r_[A-Za-z0-9_]{36,255}"),
             ),
-            (
-                "GitHub Fine-grained PAT",
-                "github_pat_[A-Za-z0-9_]{36,255}",
-            ),
+            ("GitHub Fine-grained PAT", "github_pat_[A-Za-z0-9_]{36,255}"),
             ("GitLab Token", concat!("gl", "pat-[A-Za-z0-9_-]{20,}")),
             ("GitLab Runner Token", "GR1348941[A-Za-z0-9_-]{20,}"),
             (
@@ -952,11 +949,10 @@ mod tests {
             .into_iter()
             .map(|(name, _)| name)
             .collect();
-        let hook: std::collections::HashSet<&str> =
-            SecretScanner::hook_token_shapes_ere()
-                .into_iter()
-                .map(|(name, _)| name)
-                .collect();
+        let hook: std::collections::HashSet<&str> = SecretScanner::hook_token_shapes_ere()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
         for mapped in HOOK_PEM_MAPPED_NAMES {
             assert!(
                 tier1.contains(mapped),
@@ -1070,7 +1066,10 @@ mod tests {
                 "Slack Bot Token (Compact)",
                 concat!("xox", "b-AbCdEfGhIjKlMnOpQrStUvWxYz0123"),
             ),
-            ("Twilio API Key", concat!("SK", "abcdef0123456789abcdef0123456789")),
+            (
+                "Twilio API Key",
+                concat!("SK", "abcdef0123456789abcdef0123456789"),
+            ),
             (
                 "Twilio Account SID",
                 concat!("AC", "abcdef0123456789abcdef0123456789"),
@@ -1086,7 +1085,10 @@ mod tests {
                 "Mailchimp API Key",
                 concat!("abcdef0123456789", "abcdef0123456789-us1"),
             ),
-            ("NPM Access Token", concat!("npm", "_abcdefghijklmnopqrstuvwxyz0123456789")),
+            (
+                "NPM Access Token",
+                concat!("npm", "_abcdefghijklmnopqrstuvwxyz0123456789"),
+            ),
             (
                 "OpenAI API Key",
                 concat!("sk-", "abcdefghijklmnopqrstuvwxyz0123456789"),
@@ -1100,7 +1102,10 @@ mod tests {
             ),
             (
                 "Groq API Key",
-                concat!("gsk_", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+                concat!(
+                    "gsk_",
+                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                ),
             ),
             (
                 "Resend API Key",
