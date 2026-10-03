@@ -22,10 +22,7 @@ fn is_hatched_returns_false_when_sibling_missing() {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "secret=hunter2\n").unwrap();
     assert!(!is_hatched_in_repo(dir.path(), path.to_str().unwrap()));
-    assert!(!is_hatched_in_repo(
-        dir.path(),
-        "config/secrets.env"
-    ));
+    assert!(!is_hatched_in_repo(dir.path(), "config/secrets.env"));
 }
 
 /// 2026-10-03 (audit R4-W-08): the unrooted helper resolves
