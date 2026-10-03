@@ -625,6 +625,26 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-10-02 (audit M10): the PRE_PUSH_HOOK template carries a
+    /// CHECKED-IN render of the SECRET_RE alternation — the template must
+    /// stay directly runnable (every behavioral hook test executes it as a
+    /// real shell subprocess), so it cannot call the source at runtime.
+    /// This test renders the expected line from the single token-shape
+    /// source (`SecretScanner::hook_token_shapes_ere`) and fails with the
+    /// exact line to paste whenever the source changes.
+    #[test]
+    fn pre_push_hook_secret_re_matches_token_shape_source() {
+        let expected = format!("SECRET_RE='{}'", hook_secret_re_from_source());
+        let line = PRE_PUSH_HOOK
+            .lines()
+            .find(|l| l.starts_with("SECRET_RE='"))
+            .expect("template carries a SECRET_RE line");
+        assert_eq!(
+            line, expected,
+            "checked-in SECRET_RE drifted from the token-shape source; paste this line into the PRE_PUSH_HOOK template:\n{expected}"
+        );
+    }
+
     /// ADDED 2026-08-11 (audit MEDIUM): `git diff --unified=0` emits no
     /// `+` lines for binary files, so binary additions were never
     /// scanned. The added-blob scan (`git cat-file blob | grep -a`)
