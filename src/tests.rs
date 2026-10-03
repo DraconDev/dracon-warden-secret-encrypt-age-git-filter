@@ -4599,7 +4599,11 @@ protected_patterns = ["secrets.json"]
         // merge.dracon.driver, and the hook now enforces them.)
         run_git_in(
             repo,
-            &["config", "diff.dracon.textconv", "dracon-warden filter-smudge"],
+            &[
+                "config",
+                "diff.dracon.textconv",
+                "dracon-warden filter-smudge",
+            ],
         );
         run_git_in(
             repo,
@@ -4629,8 +4633,7 @@ protected_patterns = ["secrets.json"]
     /// missing the key must block even when every other key is set.
     #[test]
     fn pre_commit_hook_blocks_when_textconv_key_missing() {
-        let (td, hook) =
-            make_repo_with_hook("precommit_notextconv", "pre-commit", PRE_COMMIT_HOOK);
+        let (td, hook) = make_repo_with_hook("precommit_notextconv", "pre-commit", PRE_COMMIT_HOOK);
         let repo = td.path();
         fs::write(repo.join(".gitattributes"), "*.env filter=dracon\n").expect("gitattributes");
         run_git_in(
@@ -4666,8 +4669,7 @@ protected_patterns = ["secrets.json"]
     /// missing the key must block even when every other key is set.
     #[test]
     fn pre_commit_hook_blocks_when_merge_driver_key_missing() {
-        let (td, hook) =
-            make_repo_with_hook("precommit_nodriver", "pre-commit", PRE_COMMIT_HOOK);
+        let (td, hook) = make_repo_with_hook("precommit_nodriver", "pre-commit", PRE_COMMIT_HOOK);
         let repo = td.path();
         fs::write(repo.join(".gitattributes"), "*.env filter=dracon\n").expect("gitattributes");
         run_git_in(
@@ -4681,7 +4683,11 @@ protected_patterns = ["secrets.json"]
         run_git_in(repo, &["config", "filter.dracon.required", "true"]);
         run_git_in(
             repo,
-            &["config", "diff.dracon.textconv", "dracon-warden filter-smudge"],
+            &[
+                "config",
+                "diff.dracon.textconv",
+                "dracon-warden filter-smudge",
+            ],
         );
         // merge driver deliberately unset (hand-edit / partial config).
 
