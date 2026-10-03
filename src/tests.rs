@@ -3607,8 +3607,7 @@ watch_roots = ["/tmp/test"]
         .expect("stale hook");
 
         let config_path = td.path().join("dracon-warden.toml");
-        fs::write(&config_path, "[watch]\nwatch_roots = [\"/tmp/test\"]\n")
-            .expect("write config");
+        fs::write(&config_path, "[watch]\nwatch_roots = [\"/tmp/test\"]\n").expect("write config");
         let policy = WardenPolicy::load(&config_path).expect("load policy");
 
         let _home_guard = HomeGuard::new(home.to_str().expect("utf8 home"));
