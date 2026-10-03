@@ -218,6 +218,144 @@ impl SecretScanner {
         ]
     }
 
+    /// POSIX-ERE transliteration of the Tier-1 provider-token shapes, and the
+    /// SINGLE source the pre-push hook's `SECRET_RE` renders from (audit M10,
+    /// 2026-10-02: the hook's hand-written regex covered only AKIA/PEM plus
+    /// password/secret/api_key assignments, so every other Tier-1 shape pushed
+    /// clean when the filter was bypassed).
+    ///
+    /// Same membership bar as [`tier1_patterns`](Self::tier1_patterns): a
+    /// fixed provider prefix + rigid body shape. Names match Tier-1 names
+    /// one-for-one EXCEPT the eight private-key entries (`RSA/DSA/EC/OpenSSH/
+    /// PGP/PKCS8/Encrypted-PKCS8/SSH-generic Private Key`), which are
+    /// multi-line `(?s)` patterns the line-oriented hook cannot express —
+    /// they map to the hook's shared `-----BEGIN ... PRIVATE KEY` header
+    /// alternative instead. `test_hook_shapes_cover_tier1_names` enforces
+    /// both halves: no Tier-1 entry without a hook shape (or the documented
+    /// PEM mapping), no hook shape without a Tier-1 entry.
+    ///
+    /// ERE transliteration rules (the hook runs `grep -E`, not the `regex`
+    /// crate): no `\b` (anchor by alternation position instead — a hook
+    /// false positive only blocks a push, it never encrypts source), no
+    /// `\s`/`\d`/`\w`, no `(?:...)`/`(?...)` (plain `(...)` groups are
+    /// fine), `{m,n}` kept verbatim, and a literal `-` inside a class goes
+    /// LAST (`[A-Za-z0-9_-]`, never `[\-...]` — POSIX leaves `\-` undefined
+    /// and GNU grep reads it as a range). `test_hook_shapes_are_posix_ere`
+    /// statically guards every fragment against PCRE-only constructs.
+    ///
+    /// Like Tier-1, fixed prefixes that naive substring scanners trip on are
+    /// split with `concat!` (same split points as Tier-1), so this source
+    /// file introduces no new literal exposure beyond what Tier-1 ships.
+    pub fn hook_token_shapes_ere() -> Vec<(&'static str, &'static str)> {
+        vec![
+            // The `A{1}` keeps a literal AKIA prefix out of the installed
+            // hook text (the hook must never match its own file).
+            ("AWS Access Key ID", concat!("A{1}K", "IA[A-Z0-9]{16}")),
+            (
+                "GitHub Token (ghp)",
+                concat!("gh", "p_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Token (gho)",
+                concat!("gh", "o_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Token (ghu)",
+                concat!("gh", "u_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Token (ghs)",
+                concat!("gh", "s_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Token (ghr)",
+                concat!("gh", "r_[A-Za-z0-9_]{36,255}"),
+            ),
+            (
+                "GitHub Fine-grained PAT",
+                "github_pat_[A-Za-z0-9_]{36,255}",
+            ),
+            ("GitLab Token", concat!("gl", "pat-[A-Za-z0-9_-]{20,}")),
+            ("GitLab Runner Token", "GR1348941[A-Za-z0-9_-]{20,}"),
+            (
+                "Stripe Live Secret Key",
+                concat!("sk", "_live_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Stripe Live Restricted Key",
+                concat!("rk", "_live_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Stripe Test Secret Key",
+                concat!("sk", "_test_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Stripe Test Restricted Key",
+                concat!("rk", "_test_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Stripe Webhook Secret",
+                concat!("wh", "sec_[0-9a-zA-Z]{24,}"),
+            ),
+            (
+                "Slack Token",
+                concat!("xox", "[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*"),
+            ),
+            (
+                "Slack Bot Token",
+                concat!("xox", "b-[0-9]{11}-[0-9]{11}-[a-zA-Z0-9]{24}"),
+            ),
+            (
+                "Slack Bot Token (Compact)",
+                concat!("xox", "b-[A-Za-z0-9]{24,68}"),
+            ),
+            ("Twilio API Key", "SK[a-f0-9]{32}"),
+            ("Twilio Account SID", "AC[a-f0-9]{32}"),
+            (
+                "SendGrid API Key",
+                r"SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}",
+            ),
+            ("Mailchimp API Key", "[0-9a-f]{32}-us[0-9]{1,2}"),
+            ("NPM Access Token", "npm_[A-Za-z0-9]{36}"),
+            (
+                "OpenAI API Key",
+                "sk-((proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})",
+            ),
+            ("OpenRouter API Key", "sk-or-v1-[0-9a-f]{64}"),
+            ("Groq API Key", "gsk_[A-Za-z0-9]{52}"),
+            (
+                "Resend API Key",
+                "re_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24}",
+            ),
+            ("GCP API Key", concat!("AI", "za[0-9A-Za-z_-]{35}")),
+            ("Google API Key", concat!("AI", "za[0-9A-Za-z_-]{35}")),
+            ("Google Client Secret", "GOCSPX-[A-Za-z0-9_-]{28,}"),
+            ("DigitalOcean Token", concat!("dop", "_v1_[a-f0-9]{64}")),
+            ("Shopify Token", concat!("sh", "pat_[a-fA-F0-9]{32}")),
+            ("Shopify Secret", "shpss_[a-fA-F0-9]{32}"),
+            (
+                "Square Access Token",
+                concat!("sq", "0atp-[A-Za-z0-9_-]{22}"),
+            ),
+            (
+                "Square OAuth Secret",
+                concat!("sq", "0csp-[A-Za-z0-9_-]{43}"),
+            ),
+            (
+                "HashiCorp Vault Token",
+                concat!("hvs", r"\.[A-Za-z0-9_-]{24,}"),
+            ),
+            (
+                "AWS MWS Key",
+                r"amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            ),
+            (
+                "Slack Webhook",
+                r"https://hooks\.slack\.com/(services|workflows|triggers)/[A-Za-z0-9+/]{43,56}",
+            ),
+        ]
+    }
+
     /// Expose patterns for integrity testing (e.g. Max Length Check).
     /// Tier-1 first, then Tier-2 — full set unchanged.
     pub fn get_patterns() -> Vec<(&'static str, &'static str)> {
