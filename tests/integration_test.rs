@@ -592,6 +592,33 @@ filter_max_bytes = 10485760
     assert!(content.is_empty(), "a refusal must emit no content");
 }
 
+/// Create a test repo WITHOUT the operator's `init.templateDir` hooks:
+/// the template ships live warden hooks into every fresh `git init`,
+/// which `setup-hooks --local` would preserve as `.dracon-foreign`
+/// and chain to — testing the template's hook instead of the one
+/// built from this source.
+fn create_untemplated_test_repo() -> (tempfile::TempDir, PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("test-repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let empty_template = tmp.path().join("empty-template");
+    std::fs::create_dir_all(&empty_template).unwrap();
+    git_cmd(
+        &repo,
+        &[
+            "init",
+            "-q",
+            "-b",
+            "master",
+            "--template",
+            empty_template.to_str().unwrap(),
+        ],
+    );
+    git_cmd(&repo, &["config", "user.email", "test@test.com"]);
+    git_cmd(&repo, &["config", "user.name", "Test"]);
+    (tmp, repo)
+}
+
 /// Install the warden pre-commit hook into `repo` and return the hooks
 /// dir for a hermetic `-c core.hooksPath=` commit (bypasses the
 /// operator's global hooksPath so the LOCAL hook under test runs).
@@ -635,8 +662,7 @@ fn commit_local_hooks(repo: &PathBuf, hooks: &PathBuf, msg: &str) -> std::proces
 /// blocked every commit until warden was set up (H-10 class).
 #[test]
 fn test_precommit_sync_only_dracon_dir_is_not_managed() {
-    let tmp = create_test_repo();
-    let repo = tmp.path().join("test-repo");
+    let (_tmp, repo) = create_untemplated_test_repo();
     let hooks = install_local_precommit(&repo);
     std::fs::create_dir_all(repo.join(".dracon")).unwrap();
     std::fs::write(repo.join(".dracon/dracon-sync.toml"), "# sync-only\n").unwrap();
