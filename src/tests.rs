@@ -6012,6 +6012,33 @@ mod binary_carve_out_tests {
                 "the multiply saturates instead of wrapping into a smaller bound"
             );
         }
+
+        /// ADDED 2026-10-03 (audit R4-W-04): the refusal names the
+        /// numbers and, for smudge only, the one-shot recovery — the
+        /// one-shot filter-smudge streams with NO ceiling, so an
+        /// over-ceiling blob fails checkout under filter-process while
+        /// staying recoverable one file at a time.
+        #[test]
+        fn over_ceiling_reason_points_smudge_at_one_shot_recovery() {
+            let smudge = over_ceiling_reason(5000, 4096, Some(false));
+            assert!(
+                smudge.contains("5001") && smudge.contains("4096"),
+                "refusal must name the size and the ceiling: {smudge}"
+            );
+            assert!(
+                smudge.contains("filter-smudge") && smudge.contains("git show HEAD:"),
+                "smudge refusal must name the one-shot recovery: {smudge}"
+            );
+            let clean = over_ceiling_reason(5000, 4096, Some(true));
+            assert!(
+                !clean.contains("filter-smudge"),
+                "clean refusal must not suggest a smudge recovery: {clean}"
+            );
+            assert!(
+                clean.contains("raise filter_max_bytes"),
+                "clean refusal keeps the raise-or-ignore guidance: {clean}"
+            );
+        }
     }
 
     /// End-to-end through git: with the managed block applied, git itself
