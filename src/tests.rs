@@ -636,6 +636,43 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-10-03 (audit R4-W-08): the pre-push hatch check is
+    /// $REPO-anchored — the root-level `.plaintext` sibling must be
+    /// found even when the hook is invoked from a subdirectory. The
+    /// pre-fix CWD-relative check missed it and BLOCKED the
+    /// intentional-plaintext push from any non-root CWD.
+    #[test]
+    fn pre_push_hook_hatch_found_from_subdir_cwd() {
+        let (td, hook) = make_repo_with_pre_push_hook("hook_hatch_subdir");
+        let repo = td.path();
+        fs::write(repo.join("asset"), "safe baseline\n").unwrap();
+        run_git_in(repo, &["add", "--", "asset"]);
+        run_git_in(repo, &["commit", "-qm", "baseline"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        fs::write(repo.join("asset.plaintext"), "operator exception").unwrap();
+        fs::write(
+            repo.join("asset"),
+            b"password = \"synthetic-explicit-fixture\"\n",
+        )
+        .unwrap();
+        run_git_in(repo, &["commit", "-qam", "intentional plaintext"]);
+        fs::write(repo.join("asset"), "safe baseline\n").unwrap();
+        run_git_in(repo, &["commit", "-qam", "revert fixture"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let sub = repo.join("sub");
+        fs::create_dir(&sub).unwrap();
+        let stdin_data = format!("refs/heads/main {head} refs/heads/main {base}\n");
+        let (status, error) = run_hook_input_in(&sub, &hook, &stdin_data);
+        assert!(
+            status.success(),
+            "hatched push blocked from subdir CWD (hatch not $REPO-anchored?): {error}"
+        );
+    }
+
     /// ADDED 2026-07-21 (v0.112.32, audit M32/F4.6): a secret-shaped
     /// line in a file whose name contains a SPACE must still be
     /// caught. The pre-fix hook iterated
