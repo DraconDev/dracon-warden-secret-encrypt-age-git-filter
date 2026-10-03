@@ -1304,8 +1304,11 @@ mod tests {
     #[test]
     fn normalize_filter_path_relativizes_inside_root_and_refuses_outside() {
         let td = TestDir::new("r401_paths");
-        let repo = td.path();
-        run_git_in(repo, &["init", "-q", "-b", "main"]);
+        // Canonicalize: `git rev-parse --show-toplevel` reports the
+        // physical path, which differs from the logical temp path when
+        // $TMPDIR is symlinked (/tmp on macOS).
+        let repo = std::fs::canonicalize(td.path()).unwrap();
+        run_git_in(&repo, &["init", "-q", "-b", "main"]);
         std::fs::create_dir_all(repo.join("sub")).unwrap();
 
         // Inside-root absolute → repo-relative, both directions.
