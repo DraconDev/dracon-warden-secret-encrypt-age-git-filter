@@ -4244,6 +4244,76 @@ protected_patterns = ["secrets.json"]
         assert!(stderr.contains("refusing rebase"), "stderr: {stderr}");
     }
 
+    /// ADDED 2026-10-03 (audit L11): a configured remote with no fetch
+    /// in 24h (here: never fetched — no FETCH_HEAD) warns but never
+    /// blocks the rebase of unpublished commits. No network is touched:
+    /// the remote URL is never contacted.
+    #[test]
+    fn pre_rebase_hook_warns_on_stale_refs_without_blocking() {
+        let (td, hook) = make_repo_with_hook("rebase_stale", "pre-rebase", PRE_REBASE_HOOK);
+        let repo = td.path();
+        run_git_in(repo, &["remote", "add", "origin", "/nonexistent-upstream.git"]);
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
+        let sha_a = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        run_git_in(repo, &["update-ref", "refs/remotes/origin/main", &sha_a]);
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "B"]);
+
+        let (status, stderr) = run_hook_args(repo, &hook, &["origin/main"]);
+        assert!(
+            status.success(),
+            "stale-refs warning must never block an unpublished rebase: {stderr}"
+        );
+        assert!(
+            stderr.contains("may be stale"),
+            "stale refs (never fetched) must warn: {stderr}"
+        );
+    }
+
+    /// ADDED 2026-10-03 (audit L11): no configured remote means no
+    /// staleness signal — local-only rebases stay silent.
+    #[test]
+    fn pre_rebase_hook_stays_silent_without_remote() {
+        let (td, hook) = make_repo_with_hook("rebase_noremote", "pre-rebase", PRE_REBASE_HOOK);
+        let repo = td.path();
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "B"]);
+
+        let (status, stderr) = run_hook_args(repo, &hook, &["HEAD~1"]);
+        assert!(status.success(), "unpublished rebase must pass: {stderr}");
+        assert!(
+            !stderr.contains("may be stale"),
+            "no remote configured — must not warn: {stderr}"
+        );
+    }
+
+    /// ADDED 2026-10-03 (audit L11): a fresh fetch (FETCH_HEAD newer
+    /// than 24h) suppresses the warning. Local bare remote — no network.
+    #[test]
+    fn pre_rebase_hook_stays_silent_after_fresh_fetch() {
+        let (td, hook) = make_repo_with_hook("rebase_fresh", "pre-rebase", PRE_REBASE_HOOK);
+        let repo = td.path();
+        let bare_dir = TestDir::new("rebase_fresh_bare");
+        let bare = bare_dir.path().join("upstream.git");
+        fs::create_dir_all(&bare).expect("bare dir");
+        run_git_in(&bare, &["init", "-q", "--bare"]);
+        run_git_in(repo, &["remote", "add", "origin", bare.to_str().expect("utf8")]);
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
+        // Only the pre-rebase hook is installed, so this real push runs
+        // unhooked and publishes A straight to the bare remote.
+        run_git_in(repo, &["push", "-q", "origin", "main"]);
+        run_git_in(repo, &["fetch", "-q", "origin"]);
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "B"]);
+
+        let (status, stderr) = run_hook_args(repo, &hook, &["origin/main"]);
+        assert!(status.success(), "unpublished rebase must pass: {stderr}");
+        assert!(
+            !stderr.contains("may be stale"),
+            "fresh FETCH_HEAD must suppress the warning: {stderr}"
+        );
+    }
+
     // ---- pre-commit (H-10) ----
 
     #[test]
