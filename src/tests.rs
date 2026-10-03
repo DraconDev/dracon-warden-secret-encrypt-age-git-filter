@@ -221,10 +221,20 @@ mod tests {
         hook_path: &std::path::Path,
         stdin_data: &str,
     ) -> (std::process::ExitStatus, String) {
+        run_hook_input_in(repo, hook_path, stdin_data)
+    }
+
+    /// ADDED 2026-10-03 (audit R4-W-08): `cwd` may be a subdirectory
+    /// of the repo (proves $REPO anchoring of the hatch check).
+    fn run_hook_input_in(
+        cwd: &std::path::Path,
+        hook_path: &std::path::Path,
+        stdin_data: &str,
+    ) -> (std::process::ExitStatus, String) {
         use std::io::Write;
         use std::process::{Command, Stdio};
         let mut child = Command::new(hook_path)
-            .current_dir(repo)
+            .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
