@@ -4471,6 +4471,60 @@ protected_patterns = ["secrets.json"]
         );
     }
 
+    /// ADDED 2026-10-03 (audit R4-W-01): without local
+    /// filter.dracon.required=true, git degrades a filter error to
+    /// silent plaintext passthrough — the exact leak the oversize
+    /// refusal exists to prevent. A managed repo missing the key
+    /// must block even when the driver + attributes are present.
+    #[test]
+    fn pre_commit_hook_blocks_when_required_key_missing() {
+        let (td, hook) = make_repo_with_hook("precommit_noreq", "pre-commit", PRE_COMMIT_HOOK);
+        let repo = td.path();
+        fs::write(repo.join(".gitattributes"), "*.env filter=dracon\n").expect("gitattributes");
+        run_git_in(
+            repo,
+            &[
+                "config",
+                "filter.dracon.process",
+                "dracon-warden filter-process",
+            ],
+        );
+        // required key deliberately unset (hand-edit / partial config).
+
+        let (status, stderr) = run_hook_args(repo, &hook, &[]);
+        assert!(
+            !status.success(),
+            "missing filter.dracon.required must block: {stderr}"
+        );
+        assert!(stderr.contains("required"), "stderr: {stderr}");
+    }
+
+    /// ADDED 2026-10-03 (audit R4-W-01): required=false is not
+    /// good enough — only the literal true keeps git aborting on
+    /// filter errors.
+    #[test]
+    fn pre_commit_hook_blocks_when_required_key_false() {
+        let (td, hook) = make_repo_with_hook("precommit_reqfalse", "pre-commit", PRE_COMMIT_HOOK);
+        let repo = td.path();
+        fs::write(repo.join(".gitattributes"), "*.env filter=dracon\n").expect("gitattributes");
+        run_git_in(
+            repo,
+            &[
+                "config",
+                "filter.dracon.process",
+                "dracon-warden filter-process",
+            ],
+        );
+        run_git_in(repo, &["config", "filter.dracon.required", "false"]);
+
+        let (status, stderr) = run_hook_args(repo, &hook, &[]);
+        assert!(
+            !status.success(),
+            "filter.dracon.required=false must block: {stderr}"
+        );
+        assert!(stderr.contains("required"), "stderr: {stderr}");
+    }
+
     #[test]
     fn pre_commit_hook_blocks_managed_repo_with_only_global_filter_config() {
         // FIXED 2026-08-11 (audit LOW): the second filter check read
@@ -4530,6 +4584,8 @@ protected_patterns = ["secrets.json"]
         );
 
         // Control: with the LOCAL config present the same repo passes.
+        // (R4-W-01: `once` also writes filter.dracon.required=true, and
+        // the hook now enforces it — set it here to mirror `once`.)
         run_git_in(
             repo,
             &[
@@ -4538,6 +4594,7 @@ protected_patterns = ["secrets.json"]
                 "dracon-warden filter-clean",
             ],
         );
+        run_git_in(repo, &["config", "filter.dracon.required", "true"]);
         let output = Command::new(&hook)
             .current_dir(repo)
             .env("GIT_CONFIG_GLOBAL", &global_cfg)

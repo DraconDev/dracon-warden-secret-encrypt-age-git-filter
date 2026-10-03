@@ -5196,6 +5196,17 @@ if ! git -C "$REPO" config --local filter.dracon.process >/dev/null 2>&1 && ! gi
     exit 1
 fi
 
+# FIXED 2026-10-03 (audit R4-W-01): required=true must be set —
+# without it, git treats a filter error as a no-op passthrough
+# instead of aborting, so an oversize refusal or encrypt error
+# would commit the file UNENCRYPTED with exit 0.
+if ! git -C "$REPO" config --local filter.dracon.required 2>/dev/null | grep -qx "true"; then
+    echo "❌ Warden filter.dracon.required is not true in local git config."
+    echo "   Without it, filter errors pass files through UNENCRYPTED."
+    echo "   Run: dracon-warden once $REPO"
+    exit 1
+fi
+
 # Check filter binary is on PATH
 if ! command -v dracon-warden >/dev/null 2>&1; then
     echo "❌ dracon-warden binary not found on PATH."
