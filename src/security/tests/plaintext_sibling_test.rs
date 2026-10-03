@@ -192,22 +192,18 @@ fn clean_encrypts_normally_without_plaintext_sibling() {
 fn clean_with_plaintext_sibling_does_not_add_env_version_header() {
     // Even for .env files (which normally get a Dracon Warden version
     // header), the hatch must cause pass-through with NO modification.
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join(".env");
-    let sibling = dir.path().join(".env.plaintext");
-    let secret = concat!(
-        "AGE",
-        "-SECRET",
-        "-KEY-",
-        "1QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7LQPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L"
-    );
+    // CWD-relative (R4-W-08): absolute paths fail closed.
+    let (_dir, prefix) = target_fixture_dir();
+    let path = format!("{prefix}/.env");
+    let sibling = format!("{prefix}/.env.plaintext");
+    let secret = age_secret();
 
     fs::write(&path, secret).unwrap();
     fs::write(&sibling, "").unwrap();
 
     let security = WardenSecurity::new(None).unwrap();
     let cleaned = security
-        .smart_clean_with_path(secret.as_bytes(), path.to_str().unwrap())
+        .smart_clean_with_path(secret.as_bytes(), &path)
         .expect("clean should succeed");
 
     assert_eq!(cleaned, secret.as_bytes());
@@ -220,9 +216,10 @@ fn clean_with_plaintext_sibling_does_not_add_env_version_header() {
 
 #[test]
 fn clean_with_plaintext_sibling_preserves_binary_content() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("blob.bin");
-    let sibling = dir.path().join("blob.bin.plaintext");
+    // CWD-relative (R4-W-08): absolute paths fail closed.
+    let (_dir, prefix) = target_fixture_dir();
+    let path = format!("{prefix}/blob.bin");
+    let sibling = format!("{prefix}/blob.bin.plaintext");
     // Real binary content (PNG header)
     let bytes: Vec<u8> = vec![
         0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
@@ -233,7 +230,7 @@ fn clean_with_plaintext_sibling_preserves_binary_content() {
 
     let security = WardenSecurity::new(None).unwrap();
     let cleaned = security
-        .smart_clean_with_path(&bytes, path.to_str().unwrap())
+        .smart_clean_with_path(&bytes, &path)
         .expect("clean should succeed");
 
     assert_eq!(cleaned, bytes);
