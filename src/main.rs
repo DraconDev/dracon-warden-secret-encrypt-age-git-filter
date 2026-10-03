@@ -5340,6 +5340,7 @@ remote_blob_is_published() {
     if [ -z "$REMOTE_OBJECTS" ]; then
         REMOTE_OBJECTS=$(mktemp) || return 1
         if ! git rev-list --objects --remotes 2>/dev/null > "$REMOTE_OBJECTS"; then
+            rm -f "$REMOTE_OBJECTS"
             REMOTE_OBJECTS=""
             return 1
         fi
