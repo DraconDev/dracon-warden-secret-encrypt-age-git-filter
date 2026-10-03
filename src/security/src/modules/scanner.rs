@@ -928,6 +928,259 @@ mod tests {
         assert!(findings.is_empty());
     }
 
+    /// Tier-1 entries with no hook shape: the eight multi-line `(?s)`
+    /// private-key patterns, which the line-oriented hook covers with its
+    /// shared `-----BEGIN ... PRIVATE KEY` header alternative instead.
+    const HOOK_PEM_MAPPED_NAMES: &[&str] = &[
+        "RSA Private Key",
+        "DSA Private Key",
+        "EC Private Key",
+        "OpenSSH Private Key",
+        "PGP Private Key",
+        "SSH Private Key (generic)",
+        "PKCS8 Private Key",
+        "Encrypted PKCS8 Private Key",
+    ];
+
+    #[test]
+    fn test_hook_shapes_cover_tier1_names() {
+        // Both halves of the M10 sharing contract: no Tier-1 entry without
+        // a hook shape (or the documented PEM mapping), no hook shape
+        // without a Tier-1 entry. A new Tier-1 pattern without a hook
+        // transliteration fails here instead of pushing clean past the hook.
+        let tier1: std::collections::HashSet<&str> = SecretScanner::tier1_patterns()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        let hook: std::collections::HashSet<&str> =
+            SecretScanner::hook_token_shapes_ere()
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect();
+        for mapped in HOOK_PEM_MAPPED_NAMES {
+            assert!(
+                tier1.contains(mapped),
+                "PEM-mapped name {mapped:?} is not a Tier-1 entry (renamed?)"
+            );
+            assert!(
+                !hook.contains(mapped),
+                "PEM-mapped name {mapped:?} must not also have a hook shape"
+            );
+        }
+        for name in &tier1 {
+            assert!(
+                hook.contains(name) || HOOK_PEM_MAPPED_NAMES.contains(name),
+                "Tier-1 entry {name:?} has no hook shape and no PEM mapping"
+            );
+        }
+        for name in &hook {
+            assert!(
+                tier1.contains(name),
+                "hook shape {name:?} has no Tier-1 entry"
+            );
+        }
+    }
+
+    #[test]
+    fn test_hook_shapes_are_posix_ere() {
+        // The hook runs `grep -E`, not the `regex` crate: every fragment
+        // must be free of PCRE-only constructs AND compile, so a future
+        // edit cannot smuggle `\b`/`(?:`/`\-` into the hook regex (where
+        // GNU grep would silently misread them).
+        for (name, ere) in SecretScanner::hook_token_shapes_ere() {
+            for bad in ["\\b", "\\s", "\\d", "\\w", "\\S", "\\D", "\\W", "(?", "\\-"] {
+                assert!(
+                    !ere.contains(bad),
+                    "hook shape {name:?} contains PCRE-only {bad:?}: {ere}"
+                );
+            }
+            regex::Regex::new(ere)
+                .unwrap_or_else(|e| panic!("hook shape {name:?} does not compile: {e}"));
+        }
+    }
+
+    #[test]
+    fn test_hook_shapes_detect_their_tokens() {
+        // Every ERE fragment detects a well-formed token of its shape
+        // (matched with the `regex` crate, whose semantics coincide with
+        // ERE for these constructs; `test_hook_shapes_are_posix_ere`
+        // guards the coincidence). Samples are `concat!`-split like the
+        // Tier-1 samples above, so no matchable literal ever sits in this
+        // source file.
+        let samples: &[(&str, &str)] = &[
+            ("AWS Access Key ID", concat!("AK", "IAIOSFODNN7EXAMPLE")),
+            (
+                "GitHub Token (ghp)",
+                concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789"),
+            ),
+            (
+                "GitHub Token (gho)",
+                concat!("gh", "o_abcdefghijklmnopqrstuvwxyz0123456789"),
+            ),
+            (
+                "GitHub Token (ghu)",
+                concat!("gh", "u_abcdefghijklmnopqrstuvwxyz0123456789"),
+            ),
+            (
+                "GitHub Token (ghs)",
+                concat!("gh", "s_abcdefghijklmnopqrstuvwxyz0123456789"),
+            ),
+            (
+                "GitHub Token (ghr)",
+                concat!("gh", "r_abcdefghijklmnopqrstuvwxyz0123456789"),
+            ),
+            (
+                "GitHub Fine-grained PAT",
+                concat!("github", "_pat_abcdefghijklmnopqrstuvwxyz0123456789"),
+            ),
+            ("GitLab Token", concat!("gl", "pat-abcdefghijklmnopqrst")),
+            (
+                "GitLab Runner Token",
+                concat!("GR13", "48941abcdefghijklmnopqrst"),
+            ),
+            (
+                "Stripe Live Secret Key",
+                concat!("sk", "_live_abcdefghijklmnopqrstuvwx"),
+            ),
+            (
+                "Stripe Live Restricted Key",
+                concat!("rk", "_live_abcdefghijklmnopqrstuvwx"),
+            ),
+            (
+                "Stripe Test Secret Key",
+                concat!("sk", "_test_abcdefghijklmnopqrstuvwx"),
+            ),
+            (
+                "Stripe Test Restricted Key",
+                concat!("rk", "_test_abcdefghijklmnopqrstuvwx"),
+            ),
+            (
+                "Stripe Webhook Secret",
+                concat!("wh", "sec_abcdefghijklmnopqrstuvwx"),
+            ),
+            (
+                "Slack Token",
+                concat!("xox", "b-12345678901-12345678901-AbCdEfGh"),
+            ),
+            (
+                "Slack Bot Token",
+                concat!("xox", "b-12345678901-12345678901-AbCdEfGhIjKlMnOpQrStUvWx"),
+            ),
+            (
+                "Slack Bot Token (Compact)",
+                concat!("xox", "b-AbCdEfGhIjKlMnOpQrStUvWxYz0123"),
+            ),
+            ("Twilio API Key", concat!("SK", "abcdef0123456789abcdef0123456789")),
+            (
+                "Twilio Account SID",
+                concat!("AC", "abcdef0123456789abcdef0123456789"),
+            ),
+            (
+                "SendGrid API Key",
+                concat!(
+                    "SG",
+                    ".abcdefghijklmnopqrstuv.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr"
+                ),
+            ),
+            (
+                "Mailchimp API Key",
+                concat!("abcdef0123456789", "abcdef0123456789-us1"),
+            ),
+            ("NPM Access Token", concat!("npm", "_abcdefghijklmnopqrstuvwxyz0123456789")),
+            (
+                "OpenAI API Key",
+                concat!("sk-", "abcdefghijklmnopqrstuvwxyz0123456789"),
+            ),
+            (
+                "OpenRouter API Key",
+                concat!(
+                    "sk-or-v1-",
+                    "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+                ),
+            ),
+            (
+                "Groq API Key",
+                concat!("gsk_", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+            ),
+            (
+                "Resend API Key",
+                concat!("re_", "AB123456_ABCD23456789ABCDEFGHJKLMNP"),
+            ),
+            (
+                "GCP API Key",
+                concat!("AI", "zaABCDEFGHIJKLMNOPQRSTUVWXYZ123456789"),
+            ),
+            (
+                "Google API Key",
+                concat!("AI", "zaABCDEFGHIJKLMNOPQRSTUVWXYZ123456789"),
+            ),
+            (
+                "Google Client Secret",
+                concat!("GOCSPX-", "ABCDEFGHIJKLMNOPQRSTUVWXYZab"),
+            ),
+            (
+                "DigitalOcean Token",
+                concat!(
+                    "dop",
+                    "_v1_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+                ),
+            ),
+            (
+                "Shopify Token",
+                concat!("sh", "pat_abcdef0123456789ABCDEF0123456789"),
+            ),
+            (
+                "Shopify Secret",
+                concat!("shp", "ss_abcdef0123456789ABCDEF0123456789"),
+            ),
+            (
+                "Square Access Token",
+                concat!("sq", "0atp-ABCDEFGHIJKLMNOPQRSTUV"),
+            ),
+            (
+                "Square OAuth Secret",
+                concat!("sq", "0csp-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr"),
+            ),
+            (
+                "HashiCorp Vault Token",
+                concat!("hvs", ".ABCDEFGHIJKLMNOPQRSTUVWX"),
+            ),
+            (
+                "AWS MWS Key",
+                concat!("amzn", ".mws.12345678-1234-1234-1234-123456789012"),
+            ),
+            (
+                "Slack Webhook",
+                concat!(
+                    "https://hooks",
+                    ".slack.com/services/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq"
+                ),
+            ),
+        ];
+        let shapes: std::collections::HashMap<&str, &str> =
+            SecretScanner::hook_token_shapes_ere().into_iter().collect();
+        assert_eq!(
+            samples.len(),
+            shapes.len(),
+            "every hook shape needs a detection sample"
+        );
+        for (name, sample) in samples {
+            let ere = shapes
+                .get(name)
+                .unwrap_or_else(|| panic!("no hook shape named {name:?}"));
+            let re = regex::Regex::new(ere).expect("shape compiles");
+            assert!(
+                re.is_match(sample),
+                "hook shape {name:?} ({ere}) missed its sample"
+            );
+        }
+        // The OpenAI project-key branch (`sk-proj-...`) is a second shape
+        // through the same transliterated group — pin it too.
+        let openai = shapes["OpenAI API Key"];
+        let re = regex::Regex::new(openai).expect("openai compiles");
+        assert!(re.is_match(concat!("sk-proj-", "abcdefghijklmnopqrstuvwxyz0123456789")));
+    }
+
     #[test]
     fn test_scanner_truncates_utf8_snippet_at_char_boundary() {
         let scanner = SecretScanner::new().unwrap();
