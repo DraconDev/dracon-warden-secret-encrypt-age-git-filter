@@ -422,6 +422,73 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-10-03 (audit R3-L21): two grandfathered blobs in one
+    /// push must cost ONE remote-object enumeration, not one per file.
+    /// A counting `git` wrapper on PATH proves the once-per-push shape.
+    #[test]
+    fn pre_push_hook_enumerates_remote_objects_once_per_push() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_revlist_once");
+        let repo = td.path();
+        let secret_a = b"password = \"synthetic-regression-a\"\n";
+        let secret_b = b"password = \"synthetic-regression-b\"\n";
+        fs::write(repo.join("a"), secret_a).unwrap();
+        fs::write(repo.join("b"), secret_b).unwrap();
+        run_git_in(repo, &["add", "--", "a", "b"]);
+        run_git_in(repo, &["commit", "-q", "-m", "baseline"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        run_git_in(repo, &["update-ref", "refs/remotes/origin/main", &base]);
+
+        run_git_in(repo, &["rm", "-q", "--", "a", "b"]);
+        run_git_in(repo, &["commit", "-q", "-m", "remove"]);
+        let removed = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        run_git_in(repo, &["update-ref", "refs/remotes/origin/main", &removed]);
+
+        // Byte-identical re-add of BOTH blobs in one commit.
+        fs::write(repo.join("a"), secret_a).unwrap();
+        fs::write(repo.join("b"), secret_b).unwrap();
+        run_git_in(repo, &["add", "--", "a", "b"]);
+        run_git_in(repo, &["commit", "-q", "-m", "republish both"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        // Counting wrapper: log every argv, delegate to the real git.
+        let bin = td.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let log = td.path().join("git-count.log");
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        fs::write(
+            bin.join("git"),
+            format!(
+                "#!/bin/sh\necho \"$@\" >> \"{}\"\nexec /usr/bin/env PATH=\"{original_path}\" git \"$@\"\n",
+                log.display()
+            ),
+        )
+        .unwrap();
+        chmod_755(&bin.join("git"));
+        let _path = PathGuard::prepend(&bin);
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, &removed);
+        assert!(
+            status.success(),
+            "republish of published blobs must pass; stderr: {}",
+            stderr
+        );
+        let argv = fs::read_to_string(&log).unwrap();
+        let enumerations = argv
+            .lines()
+            .filter(|l| l.contains("rev-list") && l.contains("--objects --remotes"))
+            .count();
+        assert_eq!(
+            enumerations, 1,
+            "remote objects must be enumerated once per push, got {enumerations}:\n{argv}"
+        );
+    }
+
     #[test]
     fn pre_push_hook_blocks_secret_removed_or_reverted_before_tip() {
         for binary in [false, true] {
