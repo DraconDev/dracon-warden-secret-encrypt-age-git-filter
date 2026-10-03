@@ -4607,6 +4607,57 @@ protected_patterns = ["secrets.json"]
         );
     }
 
+    /// ADDED 2026-10-03 (audit R4-W-11): with no repo context at all
+    /// the hook blocks LOUD. (Pre-fix this exited 1 silently via the
+    /// GIT_COMMON_DIR guard — the message discriminates; the empty-REPO
+    /// fail-open it replaced only materialized for bare repos, below.)
+    /// `tempfile` (system tmp) is used instead of `TestDir` because the
+    /// target dir sits INSIDE the warden repo — rev-parse would succeed
+    /// by walking up.
+    #[test]
+    fn pre_commit_hook_no_repo_context_exits_1_with_message() {
+        let (td, hook) = make_repo_with_hook("precommit_nocontext", "pre-commit", PRE_COMMIT_HOOK);
+        let _td = td;
+        let outside = tempfile::TempDir::new().expect("tmpdir outside any repo");
+        let (status, text) = run_hook_args_in(outside.path(), &hook, &[]);
+        assert_eq!(status.code(), Some(1), "no-context hook must exit 1");
+        assert!(
+            text.contains("cannot determine repo context"),
+            "no-context hook must say why: {text}"
+        );
+    }
+
+    /// ADDED 2026-10-03 (audit R4-W-11): a bare repo (mirror-push
+    /// shape) resolves via --absolute-git-dir and evaluates as
+    /// unmanaged — exit 0. This pins the fallback against the naive
+    /// `|| exit 1`, which would block every bare-repo push.
+    #[test]
+    fn pre_commit_hook_bare_repo_unmarked_passes() {
+        let (td, hook) = make_repo_with_hook("precommit_bare", "pre-commit", PRE_COMMIT_HOOK);
+        let bare = td.path().join("mirror.git");
+        run_git_in(td.path(), &["init", "-q", "--bare", "mirror.git"]);
+        let (status, text) = run_hook_args_in(&bare, &hook, &[]);
+        assert!(
+            status.success(),
+            "unmarked bare repo must pass as unmanaged: {text}"
+        );
+    }
+
+    /// ADDED 2026-10-03 (audit R4-W-11): pre-push twin of the bare
+    /// pin above — the mirror-push flow itself. Empty stdin (no refs)
+    /// plus bare cwd must exit 0, not trip the context guard.
+    #[test]
+    fn pre_push_hook_bare_repo_unmarked_passes() {
+        let (td, hook) = make_repo_with_pre_push_hook("hook_bare");
+        run_git_in(td.path(), &["init", "-q", "--bare", "mirror.git"]);
+        let bare = td.path().join("mirror.git");
+        let (status, text) = run_hook_input_in(&bare, &hook, "");
+        assert!(
+            status.success(),
+            "unmarked bare push must pass as unmanaged: {text}"
+        );
+    }
+
     /// ADDED 2026-10-03 (audit R4-W-01): without local
     /// filter.dracon.required=true, git degrades a filter error to
     /// silent plaintext passthrough — the exact leak the oversize
