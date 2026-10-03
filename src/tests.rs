@@ -351,6 +351,77 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-10-03 (audit L10): a pure rename of a file with
+    /// secret-shaped (but already-published) content must not block the
+    /// push. Publication is simulated with a remote-tracking ref; the
+    /// hook reads `--remotes`, never the network.
+    #[test]
+    fn pre_push_hook_allows_pure_rename_of_published_secret_shape() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_rename_published");
+        let repo = td.path();
+        let secret = concat!("let access_key = \"AK", "IAIOSFODNN7EXAMPLE\";\n");
+        fs::write(repo.join("creds.rs"), secret).unwrap();
+        run_git_in(repo, &["add", "creds.rs"]);
+        run_git_in(repo, &["commit", "-q", "-m", "baseline"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        // Simulate publication of the baseline (as a prior push would).
+        run_git_in(repo, &["update-ref", "refs/remotes/origin/main", &base]);
+
+        run_git_in(repo, &["mv", "creds.rs", "renamed.rs"]);
+        run_git_in(repo, &["commit", "-q", "-m", "rename"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, &base);
+        assert!(
+            status.success(),
+            "pure rename of published content must pass; stderr: {}",
+            stderr
+        );
+    }
+
+    /// ADDED 2026-10-03 (audit L10): re-adding a byte-identical blob
+    /// that already exists in published history (republish) must not
+    /// block — the blob-novelty check grandfathers it.
+    #[test]
+    fn pre_push_hook_allows_republish_of_published_blob() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_republish_blob");
+        let repo = td.path();
+        let secret = b"password = \"synthetic-regression-only\"\n";
+        fs::write(repo.join("asset"), secret).unwrap();
+        run_git_in(repo, &["add", "--", "asset"]);
+        run_git_in(repo, &["commit", "-q", "-m", "baseline"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        run_git_in(repo, &["update-ref", "refs/remotes/origin/main", &base]);
+
+        run_git_in(repo, &["rm", "-q", "--", "asset"]);
+        run_git_in(repo, &["commit", "-q", "-m", "remove"]);
+        let removed = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        run_git_in(repo, &["update-ref", "refs/remotes/origin/main", &removed]);
+
+        // Byte-identical re-add: the same blob the remote history has.
+        fs::write(repo.join("asset"), secret).unwrap();
+        run_git_in(repo, &["add", "--", "asset"]);
+        run_git_in(repo, &["commit", "-q", "-m", "republish"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, &removed);
+        assert!(
+            status.success(),
+            "republish of a published blob must pass; stderr: {}",
+            stderr
+        );
+    }
+
     #[test]
     fn pre_push_hook_blocks_secret_removed_or_reverted_before_tip() {
         for binary in [false, true] {

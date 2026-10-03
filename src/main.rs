@@ -5368,7 +5368,13 @@ while read local_ref local_sha remote_ref remote_sha; do
 
     # Scan only newly added diff lines. Deletions of old secret-shaped fixtures
     # are safe, while additions still trip the defense-in-depth guard.
-    DIFF=$(xargs -0 -r git diff-tree --root -m -r --no-commit-id -p --unified=0 "$scan_commit" -- < "$SCAN_FILES_NUL" 2>/dev/null | grep -E '^\+[^+]' || true)
+    # FIXED 2026-10-03 (audit L10): two precision gaps closed —
+    #  * `-M100%`: exact renames surface as R (no content lines) instead
+    #    of a D+A pair whose A side re-tripped on grandfathered content.
+    #  * `--diff-filter=a`: ADDED files are excluded here — the full-blob
+    #    loop below (with its blob-novelty check) judges them once, with
+    #    binary safety the diff-line scan lacks.
+    DIFF=$(xargs -0 -r git diff-tree --root -m -r --no-commit-id -M100% --diff-filter=a -p --unified=0 "$scan_commit" -- < "$SCAN_FILES_NUL" 2>/dev/null | grep -E '^\+[^+]' || true)
     # CHANGED 2026-07-26 (v0.113.1, audit WARDEN-M2): `\x27` is NOT a
     # hex escape in GNU grep ERE (verified grep 3.12: "stray \ before
     # x" — the class became ["x27], matching literal x/2/7 instead of
@@ -5390,12 +5396,21 @@ while read local_ref local_sha remote_ref remote_sha; do
     # the first time. Modified text files keep the added-lines scan;
     # modified binaries compare secret matches with parent blobs below
     # so unrelated edits do not re-trip on grandfathered matches.
-    git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null | tr '\0' '\n' > "$ADDED_FILES"
+    git diff-tree --root -m -r --no-commit-id -M100% --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null | tr '\0' '\n' > "$ADDED_FILES"
     while IFS= read -r af; do
         # Skip files hatched via a `.plaintext` sibling, matching the
         # text scan above.
         [ -f "$af.plaintext" ] && continue
         if git cat-file blob "$scan_commit:$af" 2>/dev/null | grep -aqE "$SECRET_RE"; then
+            # FIXED 2026-10-03 (audit L10): blob-novelty check — a blob
+            # already present on a remote is grandfathered, not a new
+            # leak (republished content). Pure renames never reach here
+            # (`-M100%` above lists them as R, not A). Fail closed: any
+            # lookup failure falls through to the block below.
+            BLOB_SHA=$(git rev-parse "$scan_commit:$af" 2>/dev/null || true)
+            if [ -n "$BLOB_SHA" ] && git rev-list --objects --remotes 2>/dev/null | grep -q "^$BLOB_SHA"; then
+                continue
+            fi
             echo "⚠️  Possible plaintext secrets detected in added file $af (binary-safe scan)." >&2
             echo "   The warden filter may have been bypassed." >&2
             echo "   Run: dracon-warden once $(git rev-parse --show-toplevel)" >&2
