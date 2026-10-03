@@ -5207,6 +5207,27 @@ if ! git -C "$REPO" config --local filter.dracon.required 2>/dev/null | grep -qx
     exit 1
 fi
 
+# FIXED 2026-10-03 (audit R4-W-03): the diff/merge driver keys must be
+# set — without them git falls back to the text driver and diffs/merges
+# of encrypted files operate on CIPHERTEXT (an undecryptable conflict
+# output). `once` writes all five keys locally
+# (ensure_repo_filter_config); only presence is checked here — a MISSING
+# key silently degrades, while a changed value either fails loudly in
+# git or is operator intent. (merge.dracon.name is display-only and
+# deliberately unchecked.)
+if ! git -C "$REPO" config --local diff.dracon.textconv >/dev/null 2>&1; then
+    echo "❌ Warden diff.dracon.textconv missing from local git config."
+    echo "   Without it, diffs of encrypted files show CIPHERTEXT."
+    echo "   Run: dracon-warden once $REPO"
+    exit 1
+fi
+if ! git -C "$REPO" config --local merge.dracon.driver >/dev/null 2>&1; then
+    echo "❌ Warden merge.dracon.driver missing from local git config."
+    echo "   Without it, merges of encrypted files operate on CIPHERTEXT."
+    echo "   Run: dracon-warden once $REPO"
+    exit 1
+fi
+
 # Check filter binary is on PATH
 if ! command -v dracon-warden >/dev/null 2>&1; then
     echo "❌ dracon-warden binary not found on PATH."
