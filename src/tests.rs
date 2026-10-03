@@ -1294,6 +1294,92 @@ mod tests {
         assert!(filter_clean_refusal_reason(true, 10, Some("src/main.rs")).is_none());
     }
 
+    /// ADDED 2026-10-03 (audit R4-01): relativize-then-guard. An
+    /// absolute filter path under its own repo root becomes the
+    /// repo-relative form and takes the same path as a native relative
+    /// path; an absolute outside any root still refuses (clean) or
+    /// passes through unchanged (smudge, whose warn-and-relay arm owns
+    /// it); `..` still refuses AFTER relativization (the strip must not
+    /// launder an escape).
+    #[test]
+    fn normalize_filter_path_relativizes_inside_root_and_refuses_outside() {
+        let td = TestDir::new("r401_paths");
+        let repo = td.path();
+        run_git_in(repo, &["init", "-q", "-b", "main"]);
+        std::fs::create_dir_all(repo.join("sub")).unwrap();
+
+        // Inside-root absolute → repo-relative, both directions.
+        let abs = repo.join("sub").join("f.txt").display().to_string();
+        assert_eq!(
+            normalize_filter_path(Some(&abs), true).unwrap(),
+            Some("sub/f.txt".to_string())
+        );
+        assert_eq!(
+            normalize_filter_path(Some(&abs), false).unwrap(),
+            Some("sub/f.txt".to_string())
+        );
+        // Relative and absent paths pass through untouched.
+        assert_eq!(
+            normalize_filter_path(Some("sub/f.txt"), true).unwrap(),
+            Some("sub/f.txt".to_string())
+        );
+        assert!(normalize_filter_path(None, true).unwrap().is_none());
+
+        // Outside any repo root → clean refuses, smudge keeps the
+        // original for its warn-and-relay arm.
+        let outside_td = TestDir::new("r401_outside");
+        let outside = outside_td
+            .path()
+            .join("f.txt")
+            .display()
+            .to_string();
+        let err = normalize_filter_path(Some(&outside), true).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("outside any repo root"),
+            "outside-root absolute must refuse closed: {err:#}"
+        );
+        assert_eq!(
+            normalize_filter_path(Some(&outside), false).unwrap(),
+            Some(outside.clone())
+        );
+        // Unresolvable root (nonexistent parent) refuses the same way.
+        let ghost = repo
+            .join("no-such-dir")
+            .join("f.txt")
+            .display()
+            .to_string();
+        assert!(
+            normalize_filter_path(Some(&ghost), true).is_err(),
+            "unresolvable root must refuse closed"
+        );
+
+        // `..` survives the strip and still refuses downstream: the
+        // relativized form takes the normal guard path, not a bypass.
+        let dotdot = repo
+            .join("sub")
+            .join("..")
+            .join("f.txt")
+            .display()
+            .to_string();
+        assert_eq!(
+            normalize_filter_path(Some(&dotdot), true).unwrap(),
+            Some("sub/../f.txt".to_string())
+        );
+        assert!(
+            filter_clean_refusal_with_limit(
+                true,
+                10,
+                Some("sub/../f.txt"),
+                STREAM_IO_MAX_BYTES,
+                &[],
+                &[],
+                &[]
+            )
+            .is_some(),
+            "relativized .. must still refuse"
+        );
+    }
+
     #[test]
     fn filter_configured_bounds_preserve_default_and_reject_unbounded_limits() {
         let default: WardenPolicy = toml::from_str("").expect("default policy");
