@@ -591,3 +591,80 @@ filter_max_bytes = 10485760
     assert_eq!(status, "error", "a >limit text path must still fail closed");
     assert!(content.is_empty(), "a refusal must emit no content");
 }
+
+/// Install the warden pre-commit hook into `repo` and return the hooks
+/// dir for a hermetic `-c core.hooksPath=` commit (bypasses the
+/// operator's global hooksPath so the LOCAL hook under test runs).
+fn install_local_precommit(repo: &std::path::Path) -> PathBuf {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
+        .arg("setup-hooks")
+        .arg("--local")
+        .arg(repo)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "setup-hooks --local must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let hooks = repo.join(".git/hooks");
+    assert!(
+        hooks.join("pre-commit").exists(),
+        "setup-hooks must install a local pre-commit hook"
+    );
+    hooks
+}
+
+/// Commit with the repo's LOCAL hooks dir only.
+fn commit_local_hooks(repo: &PathBuf, hooks: &PathBuf, msg: &str) -> std::process::Output {
+    git_cmd(
+        repo,
+        &[
+            "-c",
+            &format!("core.hooksPath={}", hooks.display()),
+            "commit",
+            "-m",
+            msg,
+        ],
+    )
+}
+
+/// 2026-10-03 (audit R4-W-05): a bare `.dracon/` dir holding ONLY
+/// sync markers must NOT mark the repo warden-MANAGED — commits must
+/// succeed. Pre-fix the hook demanded warden filter config and
+/// blocked every commit until warden was set up (H-10 class).
+#[test]
+fn test_precommit_sync_only_dracon_dir_is_not_managed() {
+    let tmp = create_test_repo();
+    let repo = tmp.path().join("test-repo");
+    let hooks = install_local_precommit(&repo);
+    std::fs::create_dir_all(repo.join(".dracon")).unwrap();
+    std::fs::write(repo.join(".dracon/dracon-sync.toml"), "# sync-only\n").unwrap();
+    std::fs::write(repo.join("hello.txt"), "hello\n").unwrap();
+    git_cmd(&repo, &["add", "-A"]);
+    let out = commit_local_hooks(&repo, &hooks, "sync-only commit");
+    assert!(
+        out.status.success(),
+        "a sync-only repo (bare .dracon/, no warden markers) must commit freely: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// 2026-10-03 (audit R4-W-05, positive control): the warden-exclusive
+/// `.dracon/data/keys/` marker WITHOUT filter config IS drift and
+/// must still block — the fix narrows the probe, it doesn't remove it.
+#[test]
+fn test_precommit_warden_keys_dir_without_config_blocks_as_drift() {
+    let tmp = create_test_repo();
+    let repo = tmp.path().join("test-repo");
+    let hooks = install_local_precommit(&repo);
+    std::fs::create_dir_all(repo.join(".dracon/data/keys")).unwrap();
+    std::fs::write(repo.join("hello.txt"), "hello\n").unwrap();
+    git_cmd(&repo, &["add", "-A"]);
+    let out = commit_local_hooks(&repo, &hooks, "drift commit");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains("Warden filter missing"),
+        "keys-without-config drift must block with the filter demand, got: {stderr}"
+    );
+}
