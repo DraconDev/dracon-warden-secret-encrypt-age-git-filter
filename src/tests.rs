@@ -4427,11 +4427,7 @@ protected_patterns = ["secrets.json"]
     /// the comment-aware probe blocks.
     #[test]
     fn pre_commit_hook_blocks_when_only_commented_filters_remain() {
-        let (td, hook) = make_repo_with_hook(
-            "precommit_commented",
-            "pre-commit",
-            PRE_COMMIT_HOOK,
-        );
+        let (td, hook) = make_repo_with_hook("precommit_commented", "pre-commit", PRE_COMMIT_HOOK);
         let repo = td.path();
         fs::create_dir_all(repo.join(".dracon")).expect("dracon dir");
         fs::write(
@@ -4763,10 +4759,7 @@ protected_patterns = ["secrets.json"]
     impl PathGuard {
         fn prepend(dir: &std::path::Path) -> Self {
             let original = std::env::var("PATH").unwrap_or_default();
-            std::env::set_var(
-                "PATH",
-                format!("{}:{original}", dir.display()),
-            );
+            std::env::set_var("PATH", format!("{}:{original}", dir.display()));
             PathGuard { original }
         }
     }
