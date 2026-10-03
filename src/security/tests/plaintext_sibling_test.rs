@@ -96,7 +96,15 @@ fn is_hatched_in_repo_rejects_escape_even_when_sibling_exists() {
 fn target_fixture_dir() -> (TempDir, String) {
     fs::create_dir_all("target").unwrap();
     let dir = TempDir::new_in("target").unwrap();
-    let rel = dir.path().to_str().unwrap().to_string();
+    // tempfile canonicalizes to absolute; strip the CWD back off so
+    // the paths exercise the CWD-relative production shape.
+    let rel = dir
+        .path()
+        .strip_prefix(std::env::current_dir().unwrap())
+        .expect("target fixture must sit under the test CWD")
+        .to_str()
+        .unwrap()
+        .to_string();
     assert!(
         !std::path::Path::new(&rel).is_absolute(),
         "fixture must be CWD-relative"
