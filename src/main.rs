@@ -5236,9 +5236,27 @@ trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$REFS_FILE"' EXIT
 # NOTE (extended 2026-08-12, second audit round): this comment must
 # contain NO shape the regex can match — not a quoted or unquoted
 # password/secret/api-key assignment (quoted value, or a bare
-# 6+-character value), not an AKIA access-key shape, not a BEGIN
-# PRIVATE KEY line — the hook would self-match its own text if the
-# script is ever committed (the 2026-08-12 test-harness vacuity).
+# 6+-character value), not an access-key shape, not a BEGIN PRIVATE
+# KEY line, not any provider-token shape below — the hook would
+# self-match its own text if the script is ever committed (the
+# 2026-08-12 test-harness vacuity). Provider names are spelled out
+# (no prefix literals, no bodies) for exactly this reason.
+#
+# FIXED 2026-10-02 (audit M10): the token-shape alternatives render
+# from the single source (`SecretScanner::hook_token_shapes_ere`), the
+# POSIX-ERE transliteration of every Tier-1 provider-token shape. The
+# hand-written regex tripped only on the access-key shape plus PEM and
+# assignments, so all other Tier-1 shapes pushed clean when the filter
+# was bypassed. The checked-in line below is that render; the
+# freshness test prints the exact line to paste when the source
+# changes. Coverage: access-key ID, PEM header, the four assignment
+# branches, plus one alternative per Tier-1 provider token (github
+# classic/ PAT shapes, gitlab personal/runner, stripe live/test/
+# restricted/webhook, slack token/bot/webhook, twilio key/SID,
+# sendgrid, mailchimp, npm, openai incl. proj/svcacct plus openrouter,
+# groq, resend, gcp/google client secret, digitalocean, shopify token/
+# secret, square access/oauth, vault, mws). Private-key bodies stay
+# header-only: the hook is line-oriented and cannot span lines.
 SECRET_RE='(-----BEGIN [A-Z]+ PRIVATE KEY|password\s*=\s*["'\''][^"'\'']+|secret\s*=\s*["'\''][^"'\'']+|api_key\s*=\s*["'\''][^"'\'']+|password\s*=\s*[^[:space:]"'']{6,}|A{1}KIA[A-Z0-9]{16}|ghp_[A-Za-z0-9_]{36,255}|gho_[A-Za-z0-9_]{36,255}|ghu_[A-Za-z0-9_]{36,255}|ghs_[A-Za-z0-9_]{36,255}|ghr_[A-Za-z0-9_]{36,255}|github_pat_[A-Za-z0-9_]{36,255}|glpat-[A-Za-z0-9_-]{20,}|GR1348941[A-Za-z0-9_-]{20,}|sk_live_[0-9a-zA-Z]{24,}|rk_live_[0-9a-zA-Z]{24,}|sk_test_[0-9a-zA-Z]{24,}|rk_test_[0-9a-zA-Z]{24,}|whsec_[0-9a-zA-Z]{24,}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*|xoxb-[0-9]{11}-[0-9]{11}-[a-zA-Z0-9]{24}|xoxb-[A-Za-z0-9]{24,68}|SK[a-f0-9]{32}|AC[a-f0-9]{32}|SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}|[0-9a-f]{32}-us[0-9]{1,2}|npm_[A-Za-z0-9]{36}|sk-((proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})|sk-or-v1-[0-9a-f]{64}|gsk_[A-Za-z0-9]{52}|re_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24}|AIza[0-9A-Za-z_-]{35}|AIza[0-9A-Za-z_-]{35}|GOCSPX-[A-Za-z0-9_-]{28,}|dop_v1_[a-f0-9]{64}|shpat_[a-fA-F0-9]{32}|shpss_[a-fA-F0-9]{32}|sq0atp-[A-Za-z0-9_-]{22}|sq0csp-[A-Za-z0-9_-]{43}|hvs\.[A-Za-z0-9_-]{24,}|amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|https://hooks\.slack\.com/(services|workflows|triggers)/[A-Za-z0-9+/]{43,56})'
 
 # ── Repo-local hook chaining (FIXED 2026-08-11, audit MEDIUM — H-10
