@@ -12,7 +12,7 @@ git init -q -b main "$repo"
 git -C "$repo" config core.hooksPath /dev/null
 git -C "$repo" config user.name fixture
 git -C "$repo" config user.email fixture@example.test
-git -C "$repo" remote add origin https://github.com/DraconDev/dracon-utilities.git
+git -C "$repo" remote add origin https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter.git
 
 cp "$SCRIPT_DIR/release.sh" "$repo/dracon-warden/scripts/release.sh"
 cp "$SCRIPT_DIR/resolve-github-remote.sh" "$repo/dracon-warden/scripts/resolve-github-remote.sh"
@@ -101,6 +101,19 @@ test "$(awk -F'"' '/^name = "dracon-warden"$/{getline; print $2; exit}' "$repo/C
 test -e "$repo/.publish-dry-run"
 test ! -e "$repo/.publish-real"
 test -e "$repo/dracon-warden/release-notes-v0.1.1.md"
+# R4-M-03: generated notes must link the UTILITY repo — GH_PATH from the
+# github remote with `.git` stripped (bash ERE `+?` is greedy, so the
+# regex keeps the suffix) and the full ${TAG} compare endpoint
+# (v${VERSION} never exists; tags are dracon-warden-vX.Y.Z).
+grep -F 'https://github.com/DraconDev/dracon-warden-secret-encrypt-age-git-filter/compare/dracon-warden-v0.0.0...dracon-warden-v0.1.1' "$repo/dracon-warden/release-notes-v0.1.1.md" >/dev/null
+if grep -F '.git/compare' "$repo/dracon-warden/release-notes-v0.1.1.md" >/dev/null; then
+    echo 'GH_PATH leaked a .git suffix into release links' >&2
+    exit 1
+fi
+if grep -F 'dracon-utilities' "$repo/dracon-warden/release-notes-v0.1.1.md" >/dev/null; then
+    echo 'release notes still link the parent repo' >&2
+    exit 1
+fi
 test -z "$(git -C "$repo" tag --list)"
 
 DRACON_FIXTURE_ROOT="$repo" HOME="$work/home" PATH="$work/bin:$PATH" \
