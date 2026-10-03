@@ -5090,6 +5090,34 @@ protected_patterns = ["secrets.json"]
         );
     }
 
+    /// 2026-10-03 (audit R4-W-07): the merge-side wipe overwrites
+    /// the full length with zeros (same length, no secret bytes left)
+    /// and never panics on missing/empty files.
+    #[test]
+    fn zeroize_file_best_effort_wipes_full_length() {
+        let td = TestDir::new("zeroize_merge_side");
+        let target = td.path().join("side");
+        // Multi-chunk length (past the 8 KiB zero block) plus a tail.
+        let secret = vec![0x5A; 8192 * 2 + 13];
+        fs::write(&target, &secret).unwrap();
+
+        zeroize_file_best_effort(&target);
+
+        let wiped = fs::read(&target).unwrap();
+        assert_eq!(wiped.len(), secret.len(), "wipe must preserve length");
+        assert!(
+            wiped.iter().all(|b| *b == 0),
+            "no secret bytes may survive the wipe"
+        );
+
+        // Best-effort: missing and empty files are silent no-ops.
+        zeroize_file_best_effort(&td.path().join("does-not-exist"));
+        let empty = td.path().join("empty");
+        fs::write(&empty, b"").unwrap();
+        zeroize_file_best_effort(&empty);
+        assert_eq!(fs::read(&empty).unwrap().len(), 0);
+    }
+
     #[test]
     fn merge_driver_encrypted_roundtrip_clean_merge() {
         // The point of the driver: encrypted inputs are decrypted, merged

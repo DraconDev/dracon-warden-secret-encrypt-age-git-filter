@@ -4772,6 +4772,38 @@ fn text_merge(ancestor: &[u8], current: &[u8], other: &[u8]) -> Result<(Vec<u8>,
     }
 }
 
+/// Overwrite a file's full length with zeros, best-effort (R4-W-07).
+/// Every IO step is fallible-ignored: a wipe failure must never fail
+/// the merge itself (the 0700 tempdir drop is the primary cleanup;
+/// this only shortens plaintext-at-rest lifetime). Best-effort also
+/// means: no fsync (page-cache-only plaintext still dies with the
+/// wipe on clean shutdown paths), single pass (no multi-pass DoD
+/// theater — modern storage remaps anyway).
+fn zeroize_file_best_effort(path: &Path) {
+    use std::io::{Seek, SeekFrom, Write};
+    let mut file = match fs::OpenOptions::new().write(true).open(path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let len = match file.metadata() {
+        Ok(m) => m.len(),
+        Err(_) => return,
+    };
+    if len == 0 || file.seek(SeekFrom::Start(0)).is_err() {
+        return;
+    }
+    const ZEROS: [u8; 8192] = [0; 8192];
+    let mut remaining = len;
+    while remaining > 0 {
+        let n = remaining.min(ZEROS.len() as u64) as usize;
+        if file.write_all(&ZEROS[..n]).is_err() {
+            return;
+        }
+        remaining -= n as u64;
+    }
+    let _ = file.flush();
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HookMode {
     Global,
