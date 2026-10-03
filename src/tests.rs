@@ -645,6 +645,87 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-10-02 (audit M10): end-to-end proof that the rendered
+    /// SECRET_RE trips on Tier-1 provider-token shapes through the real
+    /// `grep -E` path — one test per transliteration family (long-body
+    /// github token, hyphen-class gitlab token, live stripe key). The
+    /// token literals are concat-split so the warden's own push of this
+    /// test file does not trip the hook it tests.
+    #[test]
+    fn pre_push_hook_blocks_github_token_shape() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_github_token");
+        let repo = td.path();
+
+        fs::write(
+            repo.join("deploy.env"),
+            concat!("token=gh", "p_abcdefghijklmnopqrstuvwxyz0123456789\n"),
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "deploy.env"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add deploy token"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+        assert_eq!(
+            status.code(),
+            Some(1),
+            "hook must block a github token shape; stderr was: {}",
+            stderr
+        );
+    }
+
+    #[test]
+    fn pre_push_hook_blocks_gitlab_token_shape() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_gitlab_token");
+        let repo = td.path();
+
+        fs::write(
+            repo.join("ci.env"),
+            concat!("token=gl", "pat-abcdefghijklmnopqrst\n"),
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "ci.env"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add ci token"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+        assert_eq!(
+            status.code(),
+            Some(1),
+            "hook must block a gitlab token shape; stderr was: {}",
+            stderr
+        );
+    }
+
+    #[test]
+    fn pre_push_hook_blocks_stripe_live_key_shape() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_stripe_key");
+        let repo = td.path();
+
+        fs::write(
+            repo.join("billing.env"),
+            concat!("key=sk", "_live_abcdefghijklmnopqrstuvwx\n"),
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "billing.env"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add billing key"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+        assert_eq!(
+            status.code(),
+            Some(1),
+            "hook must block a stripe live-key shape; stderr was: {}",
+            stderr
+        );
+    }
+
     /// ADDED 2026-08-11 (audit MEDIUM): `git diff --unified=0` emits no
     /// `+` lines for binary files, so binary additions were never
     /// scanned. The added-blob scan (`git cat-file blob | grep -a`)
