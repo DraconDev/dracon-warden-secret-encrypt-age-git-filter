@@ -5331,6 +5331,22 @@ if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
     "$LOCAL_HOOK" "$@" < "$REFS_FILE" || exit $?
 fi
 
+# Blob-novelty helper (R3-L21): is $1 already on a remote? The remote
+# object list is enumerated ONCE per push into $REMOTE_OBJECTS, lazily
+# on first use (most pushes never match, so eager enumeration would
+# tax every push). Fail closed: enumeration failure (or an empty
+# list) answers "not published" and the caller blocks.
+remote_blob_is_published() {
+    if [ -z "$REMOTE_OBJECTS" ]; then
+        REMOTE_OBJECTS=$(mktemp) || return 1
+        if ! git rev-list --objects --remotes 2>/dev/null > "$REMOTE_OBJECTS"; then
+            REMOTE_OBJECTS=""
+            return 1
+        fi
+    fi
+    grep -q "^$1" "$REMOTE_OBJECTS"
+}
+
 # Read push info from stdin (remote URL and branch refs)
 while read local_ref local_sha remote_ref remote_sha; do
     # ── History-rewrite guard (ADDED 2026-07-25, v0.113.0) ──────
