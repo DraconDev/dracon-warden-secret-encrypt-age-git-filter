@@ -162,6 +162,8 @@ hygiene_patterns = [
 #   conversation dumps in mind rather than disabling the filter.
 #
 # allow_v1_fallback = false
-#   Accept legacy v1-tagged payloads on decrypt. Default false (v1 was
-#   the pre-release tag format). Only enable on repos whose history was
-#   written by a pre-0.100 warden.
+#   Legacy AES-CFB v1 payloads are refused on decrypt ALWAYS — V1 has no
+#   integrity tag, so even a wrong-key decrypt can produce valid UTF-8.
+#   The key itself is retained only for backwards-compatible policy
+#   parsing and cannot re-enable the unsafe path; legacy ciphertexts must
+#   be recovered from a trusted plaintext source and re-encrypted as V2.
