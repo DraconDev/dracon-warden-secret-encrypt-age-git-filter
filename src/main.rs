@@ -3214,7 +3214,19 @@ fn backfill_env_headers_repo(repo: &Path, apply: bool) -> Result<(usize, usize)>
         let full = repo.join(&rel);
         let bytes = match read_tracked_repair_file(&full, None) {
             Ok(TrackedRepairFile::Missing) => continue,
-            Ok(TrackedRepairFile::TooLarge(_)) => unreachable!("backfill has no read size limit"),
+            // `None` installs no size limit, so the `TooLarge` arm is
+            // unreachable today — but it was a latent panic one signature
+            // change away from a live crash in the hardening path
+            // (audit F115, 2026-10-08). Skip-and-warn matches every other
+            // read failure in this loop and fails safe.
+            Ok(TrackedRepairFile::TooLarge(why)) => {
+                eprintln!(
+                    "⚠️ skipping header backfill of {}: {}",
+                    full.display(),
+                    why
+                );
+                continue;
+            }
             Ok(TrackedRepairFile::Contents(bytes)) => bytes,
             Err(error) => {
                 eprintln!(
