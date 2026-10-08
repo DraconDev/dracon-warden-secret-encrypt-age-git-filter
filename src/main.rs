@@ -790,9 +790,18 @@ impl WardenPolicy {
 /// behavior.
 pub(crate) fn wire_managed_patterns_from_policy() -> bool {
     let Ok(policy_path) = resolve_policy_path_local() else {
+        veprintln!(
+            2,
+            "dracon-warden: no warden policy found; using default encryption behavior"
+        );
         return false;
     };
     let Ok(policy) = WardenPolicy::load(&policy_path) else {
+        veprintln!(
+            2,
+            "dracon-warden: policy at {} is unreadable or invalid; using default encryption behavior",
+            policy_path.display()
+        );
         return false;
     };
     set_managed_patterns(policy.effective_protected_patterns());
