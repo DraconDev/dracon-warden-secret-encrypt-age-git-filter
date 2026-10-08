@@ -126,25 +126,42 @@ plaintext_patterns = []
 # media_protected_patterns = ["internal-dashboards/**"]
 
 # Glob patterns for hygiene checks (files that should NOT exist in repo).
-# These are the shipped defaults: Pi harness state, browser trace logs, and
-# regeneratable frontend build caches stay machine-local. Set an explicit list
-# to extend or replace them for a particular installation.
+# The first block below is the shipped default; the second block is a
+# PRODUCT-SPECIFIC EXTENSION for this fleet (audit evidence and game-loop
+# scratch paths) — those entries are NOT compiled defaults, they are what a
+# working dracon-platform checkout should add. Set an explicit list to extend
+# or replace the defaults for a particular installation.
 hygiene_patterns = [
+    # --- shipped defaults ---
     "**/.pi*",
     # 2026-09-30 audit: aider working memory (`.aider.chat.history.md`,
     # `.aider.input.history`) — aider's own docs recommend ignoring it.
     "**/.aider*",
-    # Product-default machine-local audit/cache hygiene (2026-08-30).
-    # These artifacts are regeneratable and must not rebloat repositories.
+    "**/chrometrace.log",
+    "**/.svelte-kit/",
+    "**/.vite/",
+    "**/.turbo/",
+    "**/.cache/",
+    # --- product-specific extension (not compiled defaults) ---
+    # 2026-08-30: regeneratable audit/cache artifacts that must not rebloat
+    # repositories.
     "web/games/audit-evidence/",
     "**/audit-evidence/",
     "**/.pi-glla/",
     "**/.bucket-cache/",
     "web/games/wip/football-forever/docs/audit/",
     "web/games/wip/football-forever/audit-evidence/",
-    "**/chrometrace.log",
-    "**/.svelte-kit/",
-    "**/.vite/",
-    "**/.turbo/",
-    "**/.cache/",
 ]
+
+# --- Other policy keys (documented here for discoverability) ---
+#
+# filter_max_bytes = 10485760
+#   Byte ceiling for a single file through the filter. A file over the
+#   limit is REFUSED (fail closed) rather than committed unencrypted.
+#   Default 10 MiB; 64 MiB ceiling. Raise it with the oversize
+#   conversation dumps in mind rather than disabling the filter.
+#
+# allow_v1_fallback = false
+#   Accept legacy v1-tagged payloads on decrypt. Default false (v1 was
+#   the pre-release tag format). Only enable on repos whose history was
+#   written by a pre-0.100 warden.
