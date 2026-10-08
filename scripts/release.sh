@@ -467,6 +467,28 @@ REQ_SEC="$(grep -oP 'dracon-security-kit[^}]*version = "\K[^"]+' "$CRATE_TOML" |
 if [[ -z "$REQ_SEC" ]]; then
     die_pub "could not extract the required dracon-security version from Cargo.toml — publish order unverifiable"
 fi
+# ADDED 2026-10-08 (audit F116): the path dep masks WHERE the published
+# twin comes from — `cargo publish` rewrites `path = "src/security"` to
+# `version = "$REQ_SEC"`, so the packaged binary carries the REGISTRY twin.
+# If a src/security source change forgot to bump src/security/Cargo.toml
+# AND the warden's requirement, the local gates pass (path dep sees the new
+# code), the registry check below passes (registry twin still satisfies the
+# unchanged requirement), and the PUBLISHED binary resolves the stale
+# registry twin — the 2026-08-09 incident class, invisible to every gate.
+# Pin the shipped source version to the required version: the requirement
+# must describe exactly the crate that is about to be published.
+if [[ -f "$SEC_TOML" ]]; then
+    SRC_SEC="$(crate_manifest_version "$SEC_TOML")"
+    if [[ -z "$SRC_SEC" ]]; then
+        die_pub "no [package] version found in $SEC_TOML — the dracon-security source version is unverifiable"
+    fi
+    if [[ "$SRC_SEC" != "$REQ_SEC" ]]; then
+        die_pub "src/security/Cargo.toml is $SRC_SEC but Cargo.toml requires dracon-security $REQ_SEC — publish src/security $SRC_SEC first and bump the dracon-security-kit requirement (the path dep would otherwise ship the stale registry twin: the 2026-08-09 incident class)"
+    fi
+    ok "  security source version OK: src/security $SRC_SEC == required $REQ_SEC"
+else
+    die_pub "$SEC_TOML not found — cannot verify the dracon-security source version matches the published twin"
+fi
 if [[ $DRY_RUN -eq 0 ]]; then
     REG_SEC="$(cargo search dracon-security --limit 1 2>/dev/null | head -1 | grep -oP 'dracon-security = "\K[^"]+' || true)"
     if [[ -z "$REG_SEC" ]]; then
