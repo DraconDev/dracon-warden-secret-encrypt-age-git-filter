@@ -3221,7 +3221,7 @@ fn backfill_env_headers_repo(repo: &Path, apply: bool) -> Result<(usize, usize)>
             // read failure in this loop and fails safe.
             Ok(TrackedRepairFile::TooLarge(why)) => {
                 eprintln!(
-                    "⚠️ skipping header backfill of {}: {}",
+                    "⚠️ skipping header backfill of {}: {} bytes exceeds the read limit",
                     full.display(),
                     why
                 );
