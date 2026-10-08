@@ -299,10 +299,11 @@ fi
 # `^version =` line in the file: a future [workspace.package] block above it
 # would otherwise be the line that gets compared (audit 2026-10-01).
 crate_manifest_version() {
+    local manifest="${1:-$CRATE_TOML}"
     awk -F'"' '
         /^\[/ { in_package = ($0 == "[package]"); next }
         in_package && /^version[[:space:]]*=/ { print $2; exit }
-    ' "$CRATE_TOML"
+    ' "$manifest"
 }
 CURRENT_VERSION="$(crate_manifest_version)"
 [[ -n "$CURRENT_VERSION" ]] || die_pre "no [package] version found in $CRATE_TOML"
@@ -477,6 +478,7 @@ fi
 # registry twin — the 2026-08-09 incident class, invisible to every gate.
 # Pin the shipped source version to the required version: the requirement
 # must describe exactly the crate that is about to be published.
+SEC_TOML="$CRATE_DIR/src/security/Cargo.toml"
 if [[ -f "$SEC_TOML" ]]; then
     SRC_SEC="$(crate_manifest_version "$SEC_TOML")"
     if [[ -z "$SRC_SEC" ]]; then
