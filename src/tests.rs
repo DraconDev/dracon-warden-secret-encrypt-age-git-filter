@@ -672,6 +672,47 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-10-09 (audit D12): the plaintext-sibling hatch used
+    /// to grant a silent allow — a stray `.plaintext` sibling could
+    /// push a secret-bearing file plain with zero output and zero
+    /// record. The hook now prints one `hatched: <path>` notice per
+    /// skipped candidate so the push output names every file the
+    /// hatch exempted. This test covers the notice emission: a file
+    /// with a `.plaintext` sibling and a secret-shaped value pushes
+    /// clean, the hook exits 0, and stderr contains the notice
+    /// naming the path.
+    #[test]
+    fn pre_push_hook_announces_hatched_candidates() {
+        let (td, hook) = make_repo_with_pre_push_hook("hook_announce_hatch");
+        let repo = td.path();
+        // Add the file and its `.plaintext` sibling in a single
+        // commit so the text-diff loop and the added-blob loop both
+        // see it — the test asserts the notice fires in at least
+        // one of the two paths.
+        fs::write(
+            repo.join("secrets.json"),
+            b"password = \"synthetic-explicit-fixture\"\n",
+        )
+        .unwrap();
+        fs::write(repo.join("secrets.json.plaintext"), "operator exception")
+            .unwrap();
+        run_git_in(repo, &["add", "--", "secrets.json", "secrets.json.plaintext"]);
+        run_git_in(repo, &["commit", "-qm", "intentional plaintext"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        let (status, stderr) = run_hook(repo, &hook, &head, ZERO_SHA);
+        assert!(
+            status.success(),
+            "hatched push should pass, got: {stderr}",
+        );
+        assert!(
+            stderr.contains("hatched: secrets.json"),
+            "push output must name the hatched path, got stderr: {stderr}",
+        );
+    }
+
     /// ADDED 2026-07-21 (v0.112.32, audit M32/F4.6): a secret-shaped
     /// line in a file whose name contains a SPACE must still be
     /// caught. The pre-fix hook iterated
