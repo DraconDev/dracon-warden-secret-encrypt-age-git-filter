@@ -5520,24 +5520,25 @@ trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$CHANGED_NUL" "$REFS_FILE" "$REMOT
 # FIXED 2026-10-09 (audit D15, formerly finding F129): fail closed on a
 # path that contains a NEWLINE.
 #
-# Every scan below reads a `git diff-tree -z` list, which is exactly
-# "one path, one NUL". The old code flattened each list with
-# `tr '\0' '\n'` and iterated it with `IFS= read -r`, so a filename
-# containing a newline was split into two fragments that do not exist
-# on disk: the real file was never a pathspec for the diff-line scan,
-# never entered the added-blob scan, never reached the hatch check and
-# never reached the binary-modified check — it pushed with ZERO output.
-# That bypass is documented (see the residual doc named in the header),
-# and the residual was accepted because /bin/sh has no `read -d ''`,
-# so NUL-aware iteration was judged to need a loop restructuring.
+# Every scan below reads a `git diff-tree -z` list, whose format is
+# exactly "one path, one NUL" — git emits NO other newlines in -z mode
+# (that is the entire point of the format). The old code flattened each
+# list with `tr '\0' '\n'` and iterated it with `IFS= read -r`, so a
+# filename containing a newline was split into two fragments that do not
+# exist on disk: the real file was never a pathspec for the diff-line
+# scan, never entered the added-blob scan, never reached the hatch check
+# and never reached the binary-modified check — it pushed with ZERO
+# output. That bypass is documented (see the residual doc named in the
+# header), and the residual was accepted because /bin/sh has no
+# `read -d ''`, so NUL-aware iteration was judged to need a loop
+# restructuring.
 #
-# Flattening is only lossy for the one byte a filename may legally
-# contain that the separator conversion destroys, and the count of the
-# two byte classes detects it exactly: NUL count = number of paths,
-# newline count = newlines embedded inside paths. When the newline
-# count exceeds the NUL count there is no way to reconstruct the real
-# name (the newline bytes are gone), so the honest options are "refuse"
-# or "restructure into real NUL iteration".
+# Because newline is the ONLY byte the separator conversion can lose
+# (a filename may legally contain any byte but NUL and `/`), the
+# detection is exact: ANY newline byte in a -z stream is inside a path,
+# and once `tr` has destroyed the boundary there is no way to
+# reconstruct the real name. The honest options are "refuse" or
+# "restructure into real NUL iteration".
 #
 # Real NUL iteration was evaluated and rejected for this hook: the only
 # portable construct is `xargs -0`, which spawns a child shell in which
@@ -5556,9 +5557,8 @@ trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$CHANGED_NUL" "$REFS_FILE" "$REMOT
 reject_newline_paths() {
     nul_list="$1"
     stage="$2"
-    nul_count=$(tr -dc '\0' < "$nul_list" | wc -c)
     nl_count=$(tr -dc '\n' < "$nul_list" | wc -c)
-    [ "$nl_count" -gt "$nul_count" ] || return 0
+    [ "$nl_count" -gt 0 ] || return 0
     echo "❌ dracon-warden: refusing to push — $stage contains a path with an" >&2
     echo "   embedded NEWLINE character." >&2
     echo "   The warden's -z path list cannot be flattened safely, so that file" >&2
