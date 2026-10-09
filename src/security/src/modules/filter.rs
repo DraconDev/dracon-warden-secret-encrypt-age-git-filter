@@ -87,6 +87,45 @@ pub fn is_hatched_in_repo(root: &std::path::Path, path: &str) -> bool {
     std::path::Path::new(&sibling).exists()
 }
 
+/// ADDED 2026-10-09 (audit D11): hatch lookup rooted to the FILE'S OWN
+/// path, not the process CWD. This is what `smart_clean_with_path`
+/// actually wants — the filter protocol guarantees CWD = repo root in
+/// production, but a library caller (or a future daemon path) may
+/// invoke it with a different CWD, and the hatch is a property of the
+/// file's repo, not the caller's working directory.
+///
+/// Rules:
+/// * absolute path: walk up the file's directory looking for `.git`;
+///   the first `.git` ancestor is the repo root and the lookup goes
+///   through `is_hatched_in_repo`, so a stray `.plaintext` sibling
+///   outside that root can never hatch the file. If no `.git` is
+///   reachable, fail CLOSED (return false) — the file is not in a
+///   repo we can verify, so it does not get the plaintext opt-in.
+/// * relative path: production (git filter protocol) passes
+///   repo-relative paths with CWD = repo root, so anchor to
+///   CWD-as-root. Tests that need CWD-different-from-repo pass an
+///   absolute path and exercise the rule above.
+fn is_hatched_via_path(path_str: &str) -> bool {
+    if path_str.is_empty() {
+        return false;
+    }
+    let p = std::path::Path::new(path_str);
+    if p.is_absolute() {
+        let mut cur = p.parent();
+        while let Some(dir) = cur {
+            if dir.join(".git").exists() {
+                return is_hatched_in_repo(dir, path_str);
+            }
+            cur = dir.parent();
+        }
+        return false;
+    }
+    match std::env::current_dir() {
+        Ok(cwd) => is_hatched_in_repo(&cwd, path_str),
+        Err(_) => false,
+    }
+}
+
 /// Returns true if `path_str` matches ANY of the Git-attribute-style glob
 /// patterns in `protected_patterns`. This is the gate that determines
 /// whether the `SecretScanner` is allowed to run on a file.
@@ -215,7 +254,21 @@ impl WardenSecurity {
         // the working tree, the user has explicitly opted this file in to
         // plaintext storage. Return content unchanged. See
         // `docs/design/warden-plaintext-sibling.md`.
-        if is_hatched(path_str) {
+        //
+        // CHANGED 2026-10-09 (audit D11): the old CWD-relative
+        // `is_hatched(path_str)` made this function unsafe to call from
+        // a CWD other than the file's repo (the sibling lookup
+        // resolved against the wrong root and a hatch could be missed,
+        // or a stray sibling under a foreign CWD could hatch a file
+        // that was never opted in). Resolve the hatch against the
+        // FILE'S OWN PATH: walk up the file's directory to find the
+        // enclosing repo (`.git`), and delegate to
+        // `is_hatched_in_repo` so the sibling is strictly under that
+        // root. Production (git filter protocol) passes
+        // repo-relative paths with CWD at the repo root, so the
+        // CWD-anchored fallback still matches. See
+        // `is_hatched_via_path` for the full rule.
+        if is_hatched_via_path(path_str) {
             return Ok(content.to_vec());
         }
 
