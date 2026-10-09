@@ -802,8 +802,6 @@ fn test_prepush_newline_named_file_refuses_instead_of_skipping() {
 
     // A file whose NAME contains a newline, holding a live secret shape.
     // `printf '%b'` is the only portable way to create such a name.
-    let name = "evil\nsecrets.env";
-    let full = repo.join(name.replace('\n', "\\n"));
     // Write via a shell so the newline is literal in the filename.
     let status = std::process::Command::new("sh")
         .arg("-c")
