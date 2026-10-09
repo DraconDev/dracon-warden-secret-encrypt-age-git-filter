@@ -738,3 +738,107 @@ fn test_precommit_warden_keys_dir_without_config_blocks_as_drift() {
         "keys-without-config drift must block with the filter demand, got: {stderr}"
     );
 }
+
+/// 2026-10-09 (audit D15, formerly finding F129): a path containing a
+/// NEWLINE must REFUSE the push instead of being silently skipped.
+///
+/// Pre-fix behaviour: every scan reads a `git diff-tree -z` list that
+/// was flattened with `tr '\0' '\n'` and iterated with `IFS= read -r`,
+/// so `evil\nfile.txt` split into two non-existent fragments. The real
+/// file was never a pathspec for the diff-line scan, never entered the
+/// added-blob scan, never reached the hatch check and never reached the
+/// binary-modified check — it pushed with ZERO output even when it
+/// contained a live secret.
+///
+/// This test drives the real installed hook against a real repo with a
+/// real newline-named file (created with `printf '%b'`) and asserts the
+/// push is refused, names the reason, and — the security property — that
+/// it is refused even when the file holds an unmistakable secret shape.
+#[test]
+fn test_prepush_newline_named_file_refuses_instead_of_skipping() {
+    let (_tmp, repo) = create_untemplated_test_repo();
+    let hooks = install_local_hooks(&repo);
+
+    // A file whose NAME contains a newline, holding a live secret shape.
+    // `printf '%b'` is the only portable way to create such a name.
+    let name = "evil\nsecrets.env";
+    let full = repo.join(name.replace('\n', "\\n"));
+    // Write via a shell so the newline is literal in the filename.
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "cd {} && printf '%s' 'AWS_SECRET_ACCESS_KEY = wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY\n' > \"$(printf 'evil\\nsecrets.env')\"",
+            repo.display()
+        ))
+        .status()
+        .unwrap();
+    assert!(status.success(), "could not create the newline-named file");
+    assert!(full.join("..").exists());
+    assert!(
+        std::fs::read_dir(&repo)
+            .unwrap()
+            .any(|e| e.unwrap().file_name().to_string_lossy().contains('\n')),
+        "the fixture must hold a path with an embedded newline"
+    );
+
+    git_cmd(&repo, &["add", "-A"]);
+    let commit = git_cmd(&repo, &["commit", "-q", "-m", "newline-named secret"]);
+    assert!(
+        commit.status.success(),
+        "the fixture commit must succeed: {}",
+        String::from_utf8_lossy(&commit.stderr)
+    );
+
+    // A separate repo acts as the push target so the push is real.
+    let remote_dir = _tmp.path().join("remote.git");
+    std::fs::create_dir_all(&remote_dir).unwrap();
+    git_cmd(&remote_dir, &["init", "-q", "--bare", "-b", "master"]);
+    git_cmd(&repo, &["remote", "add", "origin", remote_dir.to_str().unwrap()]);
+
+    let push = push_local_hooks(&repo, &hooks, "origin", "master");
+    let stderr = String::from_utf8_lossy(&push.stderr).to_string();
+    assert!(
+        !push.status.success(),
+        "a newline-named path must REFUSE the push — the pre-fix hook pushed it with zero output: {stderr}"
+    );
+    assert!(
+        stderr.contains("NEWLINE") || stderr.contains("newline"),
+        "the refusal must name the cause, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("cannot be checked") || stderr.contains("silently"),
+        "the refusal must say the file could not be verified, got: {stderr}"
+    );
+}
+
+/// 2026-10-09 (audit D15, positive control): the SAME scan still passes a
+/// normal push whose paths contain spaces — the F4.6 guarantee the
+/// NUL handling was introduced for must not regress.
+#[test]
+fn test_prepush_space_named_file_still_pushes() {
+    let (_tmp, repo) = create_untemplated_test_repo();
+    let hooks = install_local_hooks(&repo);
+
+    std::fs::create_dir_all(repo.join("sub dir")).unwrap();
+    std::fs::write(repo.join("sub dir/prod secrets.env"), "HOST=example.com\n").unwrap();
+    std::fs::write(repo.join("plain.txt"), "nothing secret-shaped here\n").unwrap();
+    git_cmd(&repo, &["add", "-A"]);
+    let commit = git_cmd(&repo, &["commit", "-q", "-m", "space-named files"]);
+    assert!(
+        commit.status.success(),
+        "the fixture commit must succeed: {}",
+        String::from_utf8_lossy(&commit.stderr)
+    );
+
+    let remote_dir = _tmp.path().join("remote.git");
+    std::fs::create_dir_all(&remote_dir).unwrap();
+    git_cmd(&remote_dir, &["init", "-q", "--bare", "-b", "master"]);
+    git_cmd(&repo, &["remote", "add", "origin", remote_dir.to_str().unwrap()]);
+
+    let push = push_local_hooks(&repo, &hooks, "origin", "master");
+    let stderr = String::from_utf8_lossy(&push.stderr).to_string();
+    assert!(
+        push.status.success(),
+        "paths containing SPACES must still push clean: {stderr}"
+    );
+}
