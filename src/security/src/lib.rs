@@ -2575,6 +2575,36 @@ API_KEY=secret"#;
         assert_eq!(smudged, "prefix hunter2 suffix");
     }
 
+    // Regression guard for audit F137 (2026-10-09): the smudge tag scan
+    // terminates at the FIRST `]`, so a tampered or truncated tag whose
+    // base64 body contains a `]` used to decode only a prefix, fail, and
+    // be emitted verbatim with zero output — silent ciphertext
+    // passthrough on a security-relevant path. The emitted bytes must
+    // stay exactly as before (fail closed, matching the audit-L9
+    // non-UTF8 rule); only the silence is removed.
+    #[test]
+    fn test_malformed_inline_tag_is_left_verbatim_and_reported() {
+        let security = test_security_with_identity();
+        let real = security.encrypt_v2_to_b64_tag(b"payload").unwrap();
+        let real_str = String::from_utf8(real).unwrap();
+        // Splice a `]` into the base64 body so the scan closes the tag
+        // early and decodes only the prefix.
+        let tampered = real_str.replacen(':', ":AA]BB", 1);
+        assert!(tampered.contains("]"), "tamper must introduce an early bracket");
+        let smudged = security.smart_smudge(&tampered).unwrap();
+        assert!(
+            smudged.contains("[DRACON_SECRET:"),
+            "a malformed tag must stay verbatim (fail closed), got: {smudged}"
+        );
+        assert!(
+            !smudged.contains("payload"),
+            "the plaintext must not leak through a malformed tag, got: {smudged}"
+        );
+        // A well-formed tag still decrypts normally.
+        let smudged_ok = security.smart_smudge(&real_str).unwrap();
+        assert_eq!(smudged_ok, "payload");
+    }
+
     /// FIXED 2026-08-11 (audit MEDIUM): whole-file-tag recognition
     /// was purely SYNTACTIC (starts `[DRACON_SECRET:` + ends `]`). A
     /// protected file whose PLAINTEXT was tag-shaped (template,
