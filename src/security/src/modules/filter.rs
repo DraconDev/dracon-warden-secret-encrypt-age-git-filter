@@ -245,7 +245,7 @@ pub fn is_llm_conversation_dump(filename: &str) -> bool {
 
 impl WardenSecurity {
     pub fn smart_clean(&self, content: &str) -> Result<String> {
-        let scanner = SecretScanner::new()?;
+        let scanner = SecretScanner::new()?.with_secret_tag_prefix(&self.secret_marker);
         self.smart_clean_with_scanner(content, &scanner)
     }
 
@@ -314,7 +314,8 @@ impl WardenSecurity {
         {
             return match std::str::from_utf8(content) {
                 Ok(text_content) => {
-                    let scanner = SecretScanner::new_tier1()?;
+                    let scanner =
+                        SecretScanner::new_tier1()?.with_secret_tag_prefix(&self.secret_marker);
                     Ok(self
                         .smart_clean_with_scanner(text_content, &scanner)?
                         .into_bytes())
@@ -497,7 +498,8 @@ impl WardenSecurity {
                 // but still catches other embedded secrets like API keys.
                 let is_identity_file = filename == "master.age" || filename == "identity.age";
                 let cleaned = if is_identity_file {
-                    let scanner = SecretScanner::new_without_age_keys()?;
+                    let scanner = SecretScanner::new_without_age_keys()?
+                        .with_secret_tag_prefix(&self.secret_marker);
                     self.smart_clean_with_scanner(text_content, &scanner)?
                 } else {
                     self.smart_clean(text_content)?

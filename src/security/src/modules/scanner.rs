@@ -15,6 +15,11 @@ pub struct SecretFinding {
 pub struct SecretScanner {
     patterns: Vec<(String, Regex)>,
     full_regex: Regex,
+    /// The ONE secret-tag prefix this scanner treats as "already
+    /// encrypted" when skipping a match. FIXED 2026-10-09 (audit F123):
+    /// was implicitly "any `[<name>_SECRET:`", which suppressed the scan
+    /// for tokens wrapped in a marker nothing else recognizes.
+    secret_tag_prefix: String,
 }
 
 /// Return a display snippet capped at `max_bytes` without splitting a UTF-8
@@ -711,7 +716,17 @@ impl SecretScanner {
         Ok(Self {
             patterns,
             full_regex,
+            secret_tag_prefix: format!("[{}:", crate::DEFAULT_SECRET_MARKER),
         })
+    }
+
+    /// Restrict tag recognition to a specific marker.
+    /// `WardenSecurity` calls this with its configured `secret_marker` so
+    /// the scanner's "already encrypted" short-circuit matches exactly the
+    /// prefix `encrypt_v2_to_b64_tag` writes and `smart_smudge` decrypts.
+    pub fn with_secret_tag_prefix(mut self, marker: &str) -> Self {
+        self.secret_tag_prefix = format!("[{}:", marker);
+        self
     }
 
     pub fn new_with_custom_patterns(custom: &[(&str, &str)]) -> Result<Self> {
@@ -828,7 +843,7 @@ impl SecretScanner {
 
                     // SAFEGUARD: Ignore secrets already inside an encrypted tag.
                     // Accepts any marker name that ends with "_SECRET".
-                    if is_inside_secret_tag(content, start_idx) {
+                    if is_inside_secret_tag(content, start_idx, &self.secret_tag_prefix) {
                         continue;
                     }
 
@@ -874,7 +889,7 @@ impl SecretScanner {
             let matched_str = mat.as_str();
 
             // 1. SAFEGUARD: Check if we are inside an existing tag
-            if is_inside_secret_tag(content, mat.start()) {
+            if is_inside_secret_tag(content, mat.start(), &self.secret_tag_prefix) {
                 continue;
             }
 
