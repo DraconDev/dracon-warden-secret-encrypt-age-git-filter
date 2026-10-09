@@ -555,24 +555,32 @@ impl WardenSecurity {
                 let absolute_end = absolute_start + end_offset + 1;
                 let b64 = &content[absolute_start + marker_len..absolute_end - 1];
 
-                match general_purpose::STANDARD.decode(b64.trim()) {
-                    Ok(encrypted) => match self.unlock_payload(&encrypted) {
-                        Ok(plaintext) => match String::from_utf8(plaintext) {
-                            Ok(text) => result.push_str(&text),
-                            // FIXED 2026-10-03 (audit L9): non-UTF8
-                            // plaintext can never be represented in
-                            // `String` smudge output — the old
-                            // `from_utf8_lossy` corrupted it (U+FFFD)
-                            // and the next clean re-encrypted the
-                            // corruption. Preserve the tag verbatim
-                            // (fail closed, like the Err arms).
-                            Err(_) => {
-                                result.push_str(&content[absolute_start..absolute_end]);
-                            }
-                        },
-                        Err(_) => result.push_str(&content[absolute_start..absolute_end]),
-                    },
-                    Err(_) => result.push_str(&content[absolute_start..absolute_end]),
+                // FIXED 2026-10-09 (audit F137): the tag terminates at the
+                // FIRST `]`, so an editor-tampered or truncated tag whose
+                // base64 body contains a `]` decoded only a prefix, failed,
+                // and was emitted verbatim with NO output. That is silent
+                // passthrough of ciphertext on a security-relevant path, and
+                // the residual tail is re-scanned on the next clean. Fail
+                // closed exactly as the previous Err arms did, but name it.
+                //
+                // The three former arms (base64-decode failure,
+                // `unlock_payload` failure, non-UTF8 plaintext — the last
+                // preserved verbatim since audit L9) collapse to the same
+                // `None`; their emitted bytes are unchanged.
+                let plaintext = general_purpose::STANDARD
+                    .decode(b64.trim())
+                    .ok()
+                    .and_then(|encrypted| self.unlock_payload(&encrypted).ok())
+                    .and_then(|bytes| String::from_utf8(bytes).ok());
+                match plaintext {
+                    Some(text) => result.push_str(&text),
+                    None => {
+                        eprintln!(
+                            "⚠️ dracon-warden: malformed or undecryptable secret tag at byte {} left as-is — the clean filter may have been bypassed",
+                            absolute_start
+                        );
+                        result.push_str(&content[absolute_start..absolute_end]);
+                    }
                 }
                 last_end = absolute_end;
             } else {
