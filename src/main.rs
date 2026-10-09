@@ -5721,7 +5721,11 @@ while read local_ref local_sha remote_ref remote_sha; do
     for scan_commit in $NEW_COMMITS; do
     # Collect non-hatched files (skip files with a `.plaintext` sibling)
     : > "$SCAN_FILES_NUL"
-    git diff-tree --root -m -r --no-commit-id --name-only -z "$scan_commit" 2>/dev/null | tr '\0' '\n' | while IFS= read -r f; do
+    # FIXED 2026-10-09 (audit D15 / former F129): capture the -z list and
+    # validate it BEFORE flattening — see reject_newline_paths.
+    git diff-tree --root -m -r --no-commit-id --name-only -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL"
+    reject_newline_paths "$CHANGED_NUL" "commit $scan_commit" || exit 1
+    tr '\0' '\n' < "$CHANGED_NUL" | while IFS= read -r f; do
         # FIXED 2026-10-03 (audit R4-W-08): anchor to $REPO — the old
         # CWD-relative check assumed the hook runs at the repo root
         # (never verified against git source).
@@ -5775,7 +5779,9 @@ while read local_ref local_sha remote_ref remote_sha; do
     # the first time. Modified text files keep the added-lines scan;
     # modified binaries compare secret matches with parent blobs below
     # so unrelated edits do not re-trip on grandfathered matches.
-    git diff-tree --root -m -r --no-commit-id -M100% --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null | tr '\0' '\n' > "$ADDED_FILES"
+    git diff-tree --root -m -r --no-commit-id -M100% --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL"
+    reject_newline_paths "$CHANGED_NUL" "the added files of $scan_commit" || exit 1
+    tr '\0' '\n' < "$CHANGED_NUL" > "$ADDED_FILES"
     while IFS= read -r af; do
         # Skip files hatched via a `.plaintext` sibling, matching the
         # text scan above. Anchored to $REPO (R4-W-08), not CWD.
