@@ -5670,7 +5670,15 @@ while read local_ref local_sha remote_ref remote_sha; do
         # CWD-relative check assumed the hook runs at the repo root
         # (never verified against git source).
         if [ -f "$REPO/$f.plaintext" ]; then
-            # Hatched file — silently allow
+            # CHANGED 2026-10-09 (audit D12): the hatch used to be
+            # silent. A stray `.plaintext` sibling could push a
+            # secret-bearing file plain with zero output and zero
+            # record. Emit one notice line per skipped candidate so
+            # the push output names every file the hatch exempted —
+            # the operator can see the exemption and a future
+            # regression that lets a stray sibling slip through
+            # shows up in the push log instead of vanishing.
+            echo "hatched: $f" >&2
             continue
         fi
         printf '%s\0' "$f" >> "$SCAN_FILES_NUL"
@@ -5715,7 +5723,7 @@ while read local_ref local_sha remote_ref remote_sha; do
     while IFS= read -r af; do
         # Skip files hatched via a `.plaintext` sibling, matching the
         # text scan above. Anchored to $REPO (R4-W-08), not CWD.
-        [ -f "$REPO/$af.plaintext" ] && continue
+        [ -f "$REPO/$af.plaintext" ] && { echo "hatched: $af" >&2; continue; }
         if git cat-file blob "$scan_commit:$af" 2>/dev/null | grep -aqE "$SECRET_RE"; then
             # FIXED 2026-10-03 (audit L10): blob-novelty check — a blob
             # already present on a remote is grandfathered, not a new
@@ -5742,7 +5750,7 @@ while read local_ref local_sha remote_ref remote_sha; do
     PARENTS=$(git show -s --format=%P "$scan_commit") || exit 1
     while IFS= read -r bf; do
         # Anchored to $REPO (R4-W-08), not CWD — see above.
-        [ -f "$REPO/$bf.plaintext" ] && continue
+        [ -f "$REPO/$bf.plaintext" ] && { echo "hatched: $bf" >&2; continue; }
         if ! git diff-tree --root -m -r --no-commit-id --numstat "$scan_commit" -- "$bf" |
             awk '$1 == "-" && $2 == "-" { binary=1 } END { exit(binary ? 0 : 1) }'; then
             continue
