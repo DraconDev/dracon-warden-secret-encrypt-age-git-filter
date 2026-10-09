@@ -5427,22 +5427,31 @@ protected_patterns = ["secrets.json"]
 
         // Negative: remove the .plaintext sibling and re-run with a
         // CWD that is still unrelated. The file is NOT hatched, so
-        // smart_clean must encrypt it. If the old CWD-relative bug
-        // were back, a stray .plaintext under <td>/elsewhere could
-        // hatch it instead — this assertion would catch that.
+        // smart_clean must run the scanner. Use a guaranteed scanner
+        // match (OpenAI sk- key) so encryption is observable; if the
+        // old CWD-relative bug were back, a stray `.plaintext` under
+        // the foreign CWD could hatch the file and the assertion
+        // below would see raw plaintext.
         fs::remove_file(repo.join("secrets.env.plaintext"))
             .expect("remove hatch");
+        let sk = concat!("sk-", "abcdef0123456789abcdef0123456789");
+        let plaintext = format!("password = \"{sk}\"\n");
         let encrypted = security
-            .smart_clean_with_path(b"password = \"hunter2\"\n", &abs)
+            .smart_clean_with_path(plaintext.as_bytes(), &abs)
             .expect("clean must succeed");
         assert_ne!(
-            encrypted, b"password = \"hunter2\"\n",
-            "non-hatched file must be encrypted, not passed through",
+            encrypted, plaintext.as_bytes(),
+            "non-hatched file must be encrypted, not passed through (CWD stray hatch?)",
         );
-        // The encryption embeds a DRACON_SECRET marker (the scanner
-        // hit on `hunter2` is borderline; the inline marker is the
-        // reliable signal). At minimum the output must not be the raw
-        // plaintext — the inequality above already enforces that.
+        let encrypted_text = String::from_utf8_lossy(&encrypted);
+        assert!(
+            encrypted_text.contains("DRACON_SECRET"),
+            "encrypted output must carry the DRACON_SECRET marker, got: {encrypted_text}",
+        );
+        assert!(
+            !encrypted_text.contains(sk),
+            "the raw key must not survive encryption, got: {encrypted_text}",
+        );
     }
 
     /// Guard that temporarily changes the process CWD and restores it
