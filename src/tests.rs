@@ -3775,7 +3775,7 @@ watch_roots = ["/tmp/test"]
 
     #[test]
     fn filter_clean_encrypts_content_with_secret_marker() {
-        let content = b"[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyQ1gzSGp0NU1UOC93b1A3Rm5oYmFPYm5VSzgwOVRCdmxpeVRkdEZWQmo0CmxhTDBIZ1RZeENnZTdBUXJXYyt5V0QzTXBFSWgrNXhSeTVGT1J4WnkyVEUKLT4gWDI1NTE5IEVEbGZsL09QaVpKc21GZGlvMTE1cU5XYnhXSnAwR09HRS9DTVd6VmMzbm8KNkVqTTFxaTE1OWNGc0g1RExwZDRaR0VUaE54T1dRSXBrR21zajdOSmxpRQotPiBYMjU1MTkgU05MYUUvQnltdG5PakNQeWhNcDhMWTFNL1psZ1NXOWpSQkRZbTBNNzJEQQp5dURXRjhMTE0xcmxxUkJQTkxaNTVjVWM5UTRWTE00VWNhZmFqb291OGlFCi0+IFgyNTUxOSBEL0gxUWZ3SFlvVHo4OWsybnZ3d0dlVFZ4bGZtdkRqSENTMUVKeTVOWWhrCk1iQ2JxWDhLa3pFcjB0MUtyWnRRWUk4cnVzb0toaEVtQks3RXE0OTVNNVEKLT4gWDI1NTE5IEtYeUQxVkJrMW51WXQzK2tGTWRBVktWQ3BYc0tGVXJIWTBiVlFWdFk1MFUKNGJwdEQ2SWI3VUdkTG5nMnV2M1dYK3NOaUNLV0w5Tk5rbjR5VzVXZnQ1YwotPiBcTlQtZ3JlYXNlClliY05mZk1EV09aYnlvN1pUSWozVmRNZDJ2blN2amJhS0dGM3M1QmVZTnhzNytGMkJva1FrWW1vVTFHcGRYVUQKV0NFV1BKM0JJdXRsY2hLaWxwZW1YVitTCi0tLSBpb2NqdmpYZmFxKzhHbjBUalhYK09MR3FwcVVCTkE1eHMxdjlpUWR2ZzlrCpx8Hlr7plwtj9ORoXGhdJ7qfQIda/vpHrwFfXVR0dkLcEQ2HIploKeqzBiMf9qVRJVzEwW60p4bdK73TM6yJvFWBIe4NAHBbJdDlo28]\n";
+        let content = b"secret_api_key = \"super_secret_value_12345\"\n";
         let warden = DraconWarden::new().expect("create warden");
         let result = warden.clean(content, Some("config.env")).expect("clean");
         // Clean should either encrypt or pass through; result should be valid bytes
