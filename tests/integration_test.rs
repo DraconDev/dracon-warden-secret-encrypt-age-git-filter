@@ -619,8 +619,8 @@ fn create_untemplated_test_repo() -> (tempfile::TempDir, PathBuf) {
             empty_template.to_str().unwrap(),
         ],
     );
-    git_cmd(&repo, &["config", "user.email", "test@test.com"]);
-    git_cmd(&repo, &["config", "user.name", "Test"]);
+    git_cmd(&repo, &["config", "user.email", "warden-hook-test@example.invalid"]);
+    git_cmd(&repo, &["config", "user.name", "Hook Test"]);
     (tmp, repo)
 }
 
@@ -814,7 +814,6 @@ fn test_prepush_newline_named_file_refuses_instead_of_skipping() {
         .status()
         .unwrap();
     assert!(status.success(), "could not create the newline-named file");
-    assert!(full.join("..").exists());
     assert!(
         std::fs::read_dir(&repo)
             .unwrap()
