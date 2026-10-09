@@ -739,6 +739,47 @@ fn test_precommit_warden_keys_dir_without_config_blocks_as_drift() {
     );
 }
 
+/// Install the warden hooks LOCALLY (repo-local .git/hooks), which is
+/// what makes the pre-push test hermetic: no ~/.config/git/hooks writes.
+fn install_local_hooks(repo: &std::path::Path) -> PathBuf {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
+        .arg("setup-hooks")
+        .arg("--local")
+        .arg(repo)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "setup-hooks --local must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let hooks = repo.join(".git/hooks");
+    assert!(
+        hooks.join("pre-push").exists(),
+        "setup-hooks must install a local pre-push hook"
+    );
+    hooks
+}
+
+/// Push with the repo's LOCAL hooks dir only, so no host hook interferes.
+fn push_local_hooks(
+    repo: &PathBuf,
+    hooks: &std::path::Path,
+    remote: &str,
+    refspec: &str,
+) -> std::process::Output {
+    git_cmd(
+        repo,
+        &[
+            "-c",
+            &format!("core.hooksPath={}", hooks.display()),
+            "push",
+            remote,
+            refspec,
+        ],
+    )
+}
+
 /// 2026-10-09 (audit D15, formerly finding F129): a path containing a
 /// NEWLINE must REFUSE the push instead of being silently skipped.
 ///
