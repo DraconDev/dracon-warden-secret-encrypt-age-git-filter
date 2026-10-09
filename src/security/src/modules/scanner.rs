@@ -1218,3 +1218,33 @@ mod tests {
         assert!(finding.snippet.is_char_boundary(finding.snippet.len()));
     }
 }
+
+// Regression guard for audit F123 (2026-10-09): before the fix,
+// `is_inside_secret_tag` accepted ANY `[<name>_SECRET:` window, so a token
+// wrapped in a foreign marker was treated as already-encrypted and skipped
+// by both scanner entry points — while every recognition path
+// (`secret_tag_prefixes`, `decrypt_whole_file_tag`, `smart_smudge`) still
+// only knew the configured marker. The result was a plaintext secret
+// committed to the repo and a literal foreign tag left on disk by smudge.
+#[test]
+fn foreign_marker_does_not_suppress_the_scan() {
+    let scanner = SecretScanner::new_without_age_keys()
+        .unwrap()
+        .with_secret_tag_prefix("DRACON_SECRET");
+
+    let body = "[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBqMFVoTC9FTCtRMFo2UkhLTEgra0NLSTJqWjRVNzM2TFRiZVpsSmF0bjNVCm5NaGFTSXlLaHUxR3c4Uzl4TkZHTzhXZmhsMHhqYjFrcGZKWTdmT1ROL1UKLT4gWDI1NTE5IGU1N3puVVlYQUZxTm9kc2VNM3hab3ZKZnFEMEZJNUJjSGxndG93VkpTMDgKSko0eVZyelpjRURCWmg1alJCSVZ1Vlh0TjVLNlo3cEp2TVgzN0hON3BhVQotPiBYMjU1MTkgT3Z5d0IveW1QaitOak1Ed2p3OWx0Qm04VFlWOHhXU1VGWDd6dDRXZnBnVQppWDVJN3VGVmZjakV2UHBYckhKRDRkNytoc2dXbXdpUzU1N1hzWExUdnd3Ci0+IFgyNTUxOSB4ZlFoSTFkUjNyMXdZWlh0MDlIRUtKMmh6K09qTmx0K0F2d1o5a0xQdUFjCnlBQy9FeXdoWU90RW93ckg2QTFFcVdTeTV2Vyt1Z0pnTmxHR3ZxTVRrNlkKLT4gWDI1NTE5IENMSER0QXgybk1YeitFVW9WdTZEL3JTTE9Ma1BSZ3JsSy9ocUY1dXZlVWsKRGNUQ0JKcXBwV0NySitqenBZdXBDL0Q3WTJubjdYU1V3WDJpTDZub1NzdwotPiBLLXQqQ1V6LWdyZWFzZSBJLEZZTnUKRUdBSWtaU2VZZWJZNE5NT3JJVHN5SU5wR2huQ3JGRmVtVE1jZUl6T2ErdERYUXo4QUFBOVBGQWpDaWpnR3RVCi0tLSBlRUErWW1nYWkrWVd2a0RSb1h1KzQvaG9xcjhTN1NpVHZaMDhScHRrUzFVCsicgZM2us03RWspYrFIvig3YdkFO3Z+FOsjjTzaF4FPQkhGDNeFYYCOgWY52NeibOhRfX0qznZYh+guE5RjS6vQpdH+XN1guw==]";
+    assert_eq!(body.len(), 40, "token must satisfy the {36,255} body shape");
+
+    // The attack: a hand-written tag whose marker nothing recognizes.
+    let smuggled = format!("[MY_SECRET:{body}]");
+    let out = scanner.scan_and_replace(&smuggled, |_, _| "[ENCRYPTED]".to_string());
+    assert!(
+        out.contains("[ENCRYPTED]"),
+        "a foreign *_SECRET marker must not hide the token from the scan, got: {out}"
+    );
+
+    // The configured marker still short-circuits (no double-encryption).
+    let own = format!("[DRACON_SECRET:{body}]");
+    let out = scanner.scan_and_replace(&own, |_, _| "[ENCRYPTED]".to_string());
+    assert_eq!(out, own, "the configured marker must still fold the scan");
+}
