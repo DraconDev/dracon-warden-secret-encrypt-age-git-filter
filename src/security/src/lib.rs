@@ -2590,7 +2590,10 @@ API_KEY=secret"#;
         // Splice a `]` into the base64 body so the scan closes the tag
         // early and decodes only the prefix.
         let tampered = real_str.replacen(':', ":AA]BB", 1);
-        assert!(tampered.contains("]"), "tamper must introduce an early bracket");
+        assert!(
+            tampered.contains("]"),
+            "tamper must introduce an early bracket"
+        );
         let smudged = security.smart_smudge(&tampered).unwrap();
         assert!(
             smudged.contains("[DRACON_SECRET:"),
@@ -3164,9 +3167,18 @@ API_KEY=secret"#;
     #[test]
     fn test_is_inside_secret_tag_detection() {
         let content = "prefix [DRACON_SECRET:abc] suffix";
-        assert!(is_inside_secret_tag(content, 24, "[DRACON_SECRET:"), "inside tag");
-        assert!(!is_inside_secret_tag(content, 5, "[DRACON_SECRET:"), "before tag");
-        assert!(!is_inside_secret_tag(content, 30, "[DRACON_SECRET:"), "after tag");
+        assert!(
+            is_inside_secret_tag(content, 24, "[DRACON_SECRET:"),
+            "inside tag"
+        );
+        assert!(
+            !is_inside_secret_tag(content, 5, "[DRACON_SECRET:"),
+            "before tag"
+        );
+        assert!(
+            !is_inside_secret_tag(content, 30, "[DRACON_SECRET:"),
+            "after tag"
+        );
     }
 
     // Regression guard for audit F123 (2026-10-09): a foreign marker must
@@ -3193,7 +3205,11 @@ API_KEY=secret"#;
         );
         // The configured marker itself still short-circuits the scan.
         let own = "[DRACON_SECRET:QUJD]";
-        assert!(is_inside_secret_tag(own, own.find("QUJD").unwrap(), "[DRACON_SECRET:"));
+        assert!(is_inside_secret_tag(
+            own,
+            own.find("QUJD").unwrap(),
+            "[DRACON_SECRET:"
+        ));
     }
 
     #[test]

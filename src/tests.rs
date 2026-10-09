@@ -694,19 +694,18 @@ mod tests {
             b"password = \"synthetic-explicit-fixture\"\n",
         )
         .unwrap();
-        fs::write(repo.join("secrets.json.plaintext"), "operator exception")
-            .unwrap();
-        run_git_in(repo, &["add", "--", "secrets.json", "secrets.json.plaintext"]);
+        fs::write(repo.join("secrets.json.plaintext"), "operator exception").unwrap();
+        run_git_in(
+            repo,
+            &["add", "--", "secrets.json", "secrets.json.plaintext"],
+        );
         run_git_in(repo, &["commit", "-qm", "intentional plaintext"]);
         let head = git_in_output(repo, &["rev-parse", "HEAD"])
             .trim()
             .to_string();
 
         let (status, stderr) = run_hook(repo, &hook, &head, ZERO_SHA);
-        assert!(
-            status.success(),
-            "hatched push should pass, got: {stderr}",
-        );
+        assert!(status.success(), "hatched push should pass, got: {stderr}",);
         assert!(
             stderr.contains("hatched: secrets.json"),
             "push output must name the hatched path, got stderr: {stderr}",
@@ -5434,8 +5433,7 @@ protected_patterns = ["secrets.json"]
         fs::create_dir_all(&repo).expect("repo dir");
         fs::create_dir_all(repo.join(".git")).expect(".git dir");
         let file = repo.join("secrets.env");
-        fs::write(&file, b"password = \"synthetic-explicit-fixture\"\n")
-            .expect("write file");
+        fs::write(&file, b"password = \"synthetic-explicit-fixture\"\n").expect("write file");
         fs::write(repo.join("secrets.env.plaintext"), "operator exception")
             .expect("write hatch sibling");
 
@@ -5473,15 +5471,15 @@ protected_patterns = ["secrets.json"]
         // old CWD-relative bug were back, a stray `.plaintext` under
         // the foreign CWD could hatch the file and the assertion
         // below would see raw plaintext.
-        fs::remove_file(repo.join("secrets.env.plaintext"))
-            .expect("remove hatch");
+        fs::remove_file(repo.join("secrets.env.plaintext")).expect("remove hatch");
         let sk = concat!("sk-", "abcdef0123456789abcdef0123456789");
         let plaintext = format!("password = \"{sk}\"\n");
         let encrypted = security
             .smart_clean_with_path(plaintext.as_bytes(), &abs)
             .expect("clean must succeed");
         assert_ne!(
-            encrypted, plaintext.as_bytes(),
+            encrypted,
+            plaintext.as_bytes(),
             "non-hatched file must be encrypted, not passed through (CWD stray hatch?)",
         );
         let encrypted_text = String::from_utf8_lossy(&encrypted);
