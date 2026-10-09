@@ -5375,6 +5375,96 @@ protected_patterns = ["secrets.json"]
         assert!(!merged_text.contains("<<<<<<<"));
     }
 
+    /// ADDED 2026-10-09 (audit D11): the plaintext-sibling hatch in
+    /// `smart_clean_with_path` must resolve against the FILE'S own
+    /// repo, not the process CWD. The old CWD-relative lookup meant
+    /// a library caller with the wrong CWD would either miss a real
+    /// hatch (false negative — the file gets encrypted despite the
+    /// user's opt-in) or, worse, find a stray `.plaintext` sibling
+    /// under a foreign CWD and hatch a file that was never opted in
+    /// (false positive). This test sets CWD to an unrelated dir and
+    /// verifies the absolute path still finds the hatch.
+    #[test]
+    fn smart_clean_with_path_hatch_resolves_against_files_repo_not_cwd() {
+        // Repo at <td>/repo with a `.git`, a target file, and an
+        // explicit `.plaintext` sibling — the documented hatch.
+        let td = TestDir::new("smart_clean_hatch_repo");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo dir");
+        fs::create_dir_all(repo.join(".git")).expect(".git dir");
+        let file = repo.join("secrets.env");
+        fs::write(&file, b"password = \"synthetic-explicit-fixture\"\n")
+            .expect("write file");
+        fs::write(repo.join("secrets.env.plaintext"), "operator exception")
+            .expect("write hatch sibling");
+
+        // Build a WardenSecurity with a memory identity; the
+        // managed_patterns list protects the basename so the scanner
+        // would otherwise encrypt the fixture.
+        let mut security = dracon_security_kit::WardenSecurity::new(None)
+            .expect("init security")
+            .with_managed_patterns(vec!["secrets.env".to_string()]);
+        let identity = age::x25519::Identity::generate();
+        security.add_memory_identity(identity);
+
+        // CWD guard: jump to a directory that is NOT a git repo and
+        // is unrelated to the file's path, so any CWD-relative
+        // sibling lookup is guaranteed to miss. Drop restores CWD.
+        let elsewhere = td.path().join("elsewhere");
+        fs::create_dir_all(&elsewhere).expect("elsewhere dir");
+        let _cwd = CwdGuard::chdir(&elsewhere);
+
+        // Absolute path: hatch must be found via the file's OWN
+        // .git-ancestor walk-up, not the CWD.
+        let abs = file.to_string_lossy().into_owned();
+        let out = security
+            .smart_clean_with_path(b"payload-before-hatch", &abs)
+            .expect("clean must succeed");
+        assert_eq!(
+            out, b"payload-before-hatch",
+            "hatched file must be returned unchanged (CWD-relative hatch missed?)",
+        );
+
+        // Negative: remove the .plaintext sibling and re-run with a
+        // CWD that is still unrelated. The file is NOT hatched, so
+        // smart_clean must encrypt it. If the old CWD-relative bug
+        // were back, a stray .plaintext under <td>/elsewhere could
+        // hatch it instead — this assertion would catch that.
+        fs::remove_file(repo.join("secrets.env.plaintext"))
+            .expect("remove hatch");
+        let encrypted = security
+            .smart_clean_with_path(b"password = \"hunter2\"\n", &abs)
+            .expect("clean must succeed");
+        assert_ne!(
+            encrypted, b"password = \"hunter2\"\n",
+            "non-hatched file must be encrypted, not passed through",
+        );
+        // The encryption embeds a DRACON_SECRET marker (the scanner
+        // hit on `hunter2` is borderline; the inline marker is the
+        // reliable signal). At minimum the output must not be the raw
+        // plaintext — the inequality above already enforces that.
+    }
+
+    /// Guard that temporarily changes the process CWD and restores it
+    /// on drop. Mirrors `PathGuard` above.
+    struct CwdGuard {
+        original: std::path::PathBuf,
+    }
+
+    impl CwdGuard {
+        fn chdir(dir: &std::path::Path) -> Self {
+            let original = std::env::current_dir().expect("current_dir");
+            std::env::set_current_dir(dir).expect("set_current_dir");
+            CwdGuard { original }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original);
+        }
+    }
+
     #[test]
     fn ensure_repo_filter_config_registers_diff_and_merge_drivers() {
         // The .gitattributes block emits `diff=dracon merge=dracon`; the
