@@ -5475,8 +5475,11 @@ const PRE_PUSH_HOOK: &str = r##"#!/bin/sh
 # scan AND the push output prints one `hatched: <path>` line per skipped
 # candidate (audit D12, 2026-10-09) so a stray sibling cannot grant a
 # silent allow. See docs/design/warden-plaintext-sibling.md.
-# Accepted scan residuals (Tier-2 gap, newline-in-filename, binary
-# parent-match): docs/design/warden-hook-tier2-residuals-2026-10-03.md.
+# Accepted scan residuals (Tier-2 gap, binary parent-match):
+# docs/design/warden-hook-tier2-residuals-2026-10-03.md. The
+# newline-in-filename residual that doc also records was CLOSED
+# 2026-10-09 (audit D15) — it now refuses the push, see
+# reject_newline_paths below.
 #
 # CHANGED 2026-07-21 (v0.112.32, audit M32/F4.6): filenames are
 # handled NUL-delimited. The previous
@@ -5484,13 +5487,21 @@ const PRE_PUSH_HOOK: &str = r##"#!/bin/sh
 # whitespace: a file named `prod secrets.env` split into `prod` and
 # `secrets.env`, neither fragment was scanned, and a plaintext
 # secret in a space-containing filename pushed clean. We now iterate
-# `git diff --name-only -z` (via `tr '\0' '\n'` + `IFS= read -r`,
-# which preserves spaces; the residual newline-in-filename edge is
-# accepted as absurd) and pass the accepted files to the second diff
-# as arguments via `xargs -0` (no word-splitting, no glob expansion
+# `git diff --name-only -z` and pass the accepted files to the second
+# diff as arguments via `xargs -0` (no word-splitting, no glob expansion
 # of metacharacters; `-r` = --no-run-if-empty on GNU xargs).
 # `--pathspec-from-file` was tried first but `git diff` does NOT
 # support it (usage error, exit 129 — verified against git 2.51.2).
+#
+# FIXED 2026-10-09 (audit D15, formerly finding F129): the newline-
+# in-filename residual this paragraph used to declare accepted is
+# CLOSED. Each -z list is validated by `reject_newline_paths` before it
+# is flattened, and a path containing a newline now REFUSES the push
+# (loud, with instructions) instead of being split into two
+# non-existent fragments that no scan ever sees. See the function's
+# comment for why real NUL iteration was rejected for this hook.
+# The remaining Tier-2 residual documented for this hook is the
+# binary parent-match one only.
 
 # Accumulator for the per-ref accepted file list (NUL-delimited).
 SCAN_FILES_NUL=$(mktemp)
