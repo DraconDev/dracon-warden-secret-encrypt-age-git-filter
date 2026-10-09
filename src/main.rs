@@ -5812,7 +5812,13 @@ while read local_ref local_sha remote_ref remote_sha; do
     # merge commit listed the same modified file N times and each iteration
     # re-scanned all N parents — O(parents x blob size) per merge push.
     # `awk '!seen[$0]++'` de-duplicates while preserving first-seen order.
-    git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=M -z "$scan_commit" 2>/dev/null | tr '\0' '\n' | awk '!seen[$0]++' > "$ADDED_FILES"
+    git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=M -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL"
+    reject_newline_paths "$CHANGED_NUL" "the modified files of $scan_commit" || exit 1
+    # FIXED 2026-10-09 (audit F138): `-m` emits one row per parent, so a
+    # merge commit listed the same modified file N times and each iteration
+    # re-scanned all N parents — O(parents x blob size) per merge push.
+    # `awk '!seen[$0]++'` de-duplicates while preserving first-seen order.
+    tr '\0' '\n' < "$CHANGED_NUL" | awk '!seen[$0]++' > "$ADDED_FILES"
     PARENTS=$(git show -s --format=%P "$scan_commit") || exit 1
     while IFS= read -r bf; do
         # Anchored to $REPO (R4-W-08), not CWD — see above.
