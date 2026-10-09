@@ -5497,11 +5497,65 @@ SCAN_FILES_NUL=$(mktemp)
 # Accumulator for added-file paths (newline-delimited) — used by the
 # added-blob scan below.
 ADDED_FILES=$(mktemp)
+# NUL-delimited capture of a `git diff-tree -z` path list, kept so it can
+# be VALIDATED before being flattened (see reject_newline_paths).
+CHANGED_NUL=$(mktemp)
 # Lazily-populated remote object list for the blob-novelty check
 # (R3-L21; assigned inside `remote_blob_is_published`). The EXIT
 # trap expands at exit time, so the late assignment is covered.
 REMOTE_OBJECTS=""
-trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$REFS_FILE" "$REMOTE_OBJECTS"' EXIT
+trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$CHANGED_NUL" "$REFS_FILE" "$REMOTE_OBJECTS"' EXIT
+
+# FIXED 2026-10-09 (audit D15, formerly finding F129): fail closed on a
+# path that contains a NEWLINE.
+#
+# Every scan below reads a `git diff-tree -z` list, which is exactly
+# "one path, one NUL". The old code flattened each list with
+# `tr '\0' '\n'` and iterated it with `IFS= read -r`, so a filename
+# containing a newline was split into two fragments that do not exist
+# on disk: the real file was never a pathspec for the diff-line scan,
+# never entered the added-blob scan, never reached the hatch check and
+# never reached the binary-modified check — it pushed with ZERO output.
+# That bypass is documented (see the residual doc named in the header),
+# and the residual was accepted because /bin/sh has no `read -d ''`,
+# so NUL-aware iteration was judged to need a loop restructuring.
+#
+# Flattening is only lossy for the one byte a filename may legally
+# contain that the separator conversion destroys, and the count of the
+# two byte classes detects it exactly: NUL count = number of paths,
+# newline count = newlines embedded inside paths. When the newline
+# count exceeds the NUL count there is no way to reconstruct the real
+# name (the newline bytes are gone), so the honest options are "refuse"
+# or "restructure into real NUL iteration".
+#
+# Real NUL iteration was evaluated and rejected for this hook: the only
+# portable construct is `xargs -0`, which spawns a child shell in which
+# `exit 1` cannot abort the push (a fail-OPEN trap) and in which the
+# blob-novelty helper's lazily-cached remote object list could not be
+# shared without duplicating that helper or making it eager for every
+# push. `while IFS= read -r -d ''` is bash-only, and this hook is
+# shipped with `#!/bin/sh` behind crates.io.
+#
+# So: refuse the push, loudly and with instructions. This is fail-closed
+# — the pathological file cannot be verified, so it does not go up
+# unnoticed. The only cost is that a repo whose paths legitimately
+# contain newlines must rename them (or bypass the hook with
+# `git push --no-verify`, which is already documented as this hook's
+# general bypass).
+reject_newline_paths() {
+    nul_list="$1"
+    stage="$2"
+    nul_count=$(tr -dc '\0' < "$nul_list" | wc -c)
+    nl_count=$(tr -dc '\n' < "$nul_list" | wc -c)
+    [ "$nl_count" -gt "$nul_count" ] || return 0
+    echo "❌ dracon-warden: refusing to push — $stage contains a path with an" >&2
+    echo "   embedded NEWLINE character." >&2
+    echo "   The warden's -z path list cannot be flattened safely, so that file" >&2
+    echo "   cannot be checked for plaintext secrets and the scan would skip it" >&2
+    echo "   silently. Rename the file (replace the newline with a space) and" >&2
+    echo "   amend, then push again." >&2
+    return 1
+}
 
 # Secret shapes scanned against added diff lines AND added file blobs
 # (see the added-blob scan below). Kept case-sensitive deliberately:
