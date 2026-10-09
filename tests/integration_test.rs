@@ -619,7 +619,10 @@ fn create_untemplated_test_repo() -> (tempfile::TempDir, PathBuf) {
             empty_template.to_str().unwrap(),
         ],
     );
-    git_cmd(&repo, &["config", "user.email", "warden-hook-test@example.invalid"]);
+    git_cmd(
+        &repo,
+        &["config", "user.email", "warden-hook-test@example.invalid"],
+    );
     git_cmd(&repo, &["config", "user.name", "Hook Test"]);
     (tmp, repo)
 }
@@ -813,9 +816,11 @@ fn test_prepush_newline_named_file_refuses_instead_of_skipping() {
         .unwrap();
     assert!(status.success(), "could not create the newline-named file");
     assert!(
-        std::fs::read_dir(&repo)
+        std::fs::read_dir(&repo).unwrap().any(|e| e
             .unwrap()
-            .any(|e| e.unwrap().file_name().to_string_lossy().contains('\n')),
+            .file_name()
+            .to_string_lossy()
+            .contains('\n')),
         "the fixture must hold a path with an embedded newline"
     );
 
@@ -831,7 +836,10 @@ fn test_prepush_newline_named_file_refuses_instead_of_skipping() {
     let remote_dir = _tmp.path().join("remote.git");
     std::fs::create_dir_all(&remote_dir).unwrap();
     git_cmd(&remote_dir, &["init", "-q", "--bare", "-b", "master"]);
-    git_cmd(&repo, &["remote", "add", "origin", remote_dir.to_str().unwrap()]);
+    git_cmd(
+        &repo,
+        &["remote", "add", "origin", remote_dir.to_str().unwrap()],
+    );
 
     let push = push_local_hooks(&repo, &hooks, "origin", "master");
     let stderr = String::from_utf8_lossy(&push.stderr).to_string();
@@ -871,7 +879,10 @@ fn test_prepush_space_named_file_still_pushes() {
     let remote_dir = _tmp.path().join("remote.git");
     std::fs::create_dir_all(&remote_dir).unwrap();
     git_cmd(&remote_dir, &["init", "-q", "--bare", "-b", "master"]);
-    git_cmd(&repo, &["remote", "add", "origin", remote_dir.to_str().unwrap()]);
+    git_cmd(
+        &repo,
+        &["remote", "add", "origin", remote_dir.to_str().unwrap()],
+    );
 
     let push = push_local_hooks(&repo, &hooks, "origin", "master");
     let stderr = String::from_utf8_lossy(&push.stderr).to_string();
