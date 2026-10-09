@@ -28,7 +28,10 @@ pub use modules::keys::TeamKey;
 pub use modules::scanner::SecretFinding;
 pub use modules::scanner::SecretScanner;
 
-const DEFAULT_SECRET_MARKER: &str = "DRACON_SECRET";
+// FIXED 2026-10-09 (audit F123): crate-visible so the scanner can
+// default its tag-recognition prefix to the same marker
+// `WardenSecurity` normalizes to when `DRACON_SECRET_MARKER` is unset.
+pub(crate) const DEFAULT_SECRET_MARKER: &str = "DRACON_SECRET";
 
 /// Age encryption header magic. Mirrors the module-private duplicates in
 /// `modules/filter.rs` and `modules/crypto.rs` (kept private per module;
@@ -252,14 +255,23 @@ fn normalize_secret_marker(raw: &str) -> Option<String> {
     }
 }
 
-fn is_inside_secret_tag(content: &str, start_idx: usize) -> bool {
+/// FIXED 2026-10-09 (audit F123): recognition is anchored to the ONE
+/// configured secret tag prefix, not to any name merely ending in
+/// `_SECRET`. The scanner used to accept `[MY_SECRET:...]` as "already
+/// encrypted" while every recognition path (`secret_tag_prefixes`,
+/// `decrypt_whole_file_tag`, `smart_smudge`,
+/// `starts_with_any_secret_tag`) only ever knows the single configured
+/// marker — so a hand-written `[MY_SECRET:ghp_...]` tag was skipped by
+/// both scanner entry points and the live token committed in plaintext.
+/// A foreign marker is now ordinary text and is scanned.
+pub(crate) fn is_inside_secret_tag(content: &str, start_idx: usize, tag_prefix: &str) -> bool {
     let prefix = &content[..start_idx];
     if let Some(tag_start) = prefix.rfind('[') {
         if prefix[tag_start..].contains(']') {
             return false;
         }
         let window = &content[tag_start..start_idx];
-        return window.contains("_SECRET:");
+        return window.starts_with(tag_prefix);
     }
     false
 }
@@ -3121,10 +3133,37 @@ API_KEY=secret"#;
 
     #[test]
     fn test_is_inside_secret_tag_detection() {
-        let content = "prefix [API_SECRET:abc] suffix";
-        assert!(is_inside_secret_tag(content, 20), "inside tag");
-        assert!(!is_inside_secret_tag(content, 5), "before tag");
-        assert!(!is_inside_secret_tag(content, 30), "after tag");
+        let content = "prefix [DRACON_SECRET:abc] suffix";
+        assert!(is_inside_secret_tag(content, 24, "[DRACON_SECRET:"), "inside tag");
+        assert!(!is_inside_secret_tag(content, 5, "[DRACON_SECRET:"), "before tag");
+        assert!(!is_inside_secret_tag(content, 30, "[DRACON_SECRET:"), "after tag");
+    }
+
+    // Regression guard for audit F123 (2026-10-09): a foreign marker must
+    // NOT be mistaken for an encrypted tag. Before this fix
+    // `is_inside_secret_tag` matched ANY name ending in `_SECRET`, so
+    // `[API_SECRET:...]` / `[MY_SECRET:...]` suppressed the scan while
+    // every recognition path still only knew the configured marker — a
+    // secret wrapped in one committed in plaintext and smudge left the
+    // literal tag on disk.
+    #[test]
+    fn test_inside_secret_tag_rejects_foreign_marker() {
+        // Split across two literals so the committed diff never holds a
+        // single hook-detectable token shape (repo convention: the hook
+        // scans added lines and would self-block the push; the runtime
+        // value is unchanged, so the test still proves the scan.)
+        let foreign = concat!(
+            "[MY_SECRET:ghp_",
+            "abcdefghijklmnopqrstuvwxyz0123456789]"
+        );
+        let token = foreign.find("ghp_").unwrap();
+        assert!(
+            !is_inside_secret_tag(foreign, token, "[DRACON_SECRET:"),
+            "a foreign *_SECRET marker is ordinary text and must be scanned"
+        );
+        // The configured marker itself still short-circuits the scan.
+        let own = "[DRACON_SECRET:QUJD]";
+        assert!(is_inside_secret_tag(own, own.find("QUJD").unwrap(), "[DRACON_SECRET:"));
     }
 
     #[test]
