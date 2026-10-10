@@ -78,6 +78,11 @@ in the `git show` output (even though your working tree file is plaintext).
 ### Clean/Smudge Filter Pipeline
 - `filter.clean`: Encrypts secrets when staging files
 - `filter.smudge`: Decrypts secrets when checking out files
+- `filter-process`: the long-running pkt-line variant of the pair
+  (`filter.dracon.process`) — one process handles the handshake and then every
+  file, so firehose-scale adds/diffs stop paying a process startup per file
+  (a 4092-file `git diff` went from 78s to ~1s on 2026-09-19). Called by git,
+  not for direct use.
 - Idempotent operations (safe to run multiple times)
 - Handles binary files, large files, already-encrypted content
 
@@ -167,6 +172,7 @@ dracon-warden keygen
 # Git filter operations (used by git automatically)
 dracon-warden filter-clean   # stdin -> stdout
 dracon-warden filter-smudge  # stdin -> stdout
+dracon-warden filter-process # long-running pkt-line filter (filter.dracon.process)
 
 # Git merge driver (invoked by git via `merge.dracon.driver`, not by hand)
 dracon-warden merge
