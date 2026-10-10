@@ -3194,10 +3194,7 @@ API_KEY=secret"#;
         // single hook-detectable token shape (repo convention: the hook
         // scans added lines and would self-block the push; the runtime
         // value is unchanged, so the test still proves the scan.)
-        let foreign = concat!(
-            "[MY_SECRET:ghp_",
-            "abcdefghijklmnopqrstuvwxyz0123456789]"
-        );
+        let foreign = concat!("[MY_SECRET:ghp_", "abcdefghijklmnopqrstuvwxyz0123456789]");
         let token = foreign.find("ghp_").unwrap();
         assert!(
             !is_inside_secret_tag(foreign, token, "[DRACON_SECRET:"),
