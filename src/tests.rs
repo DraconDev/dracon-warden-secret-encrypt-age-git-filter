@@ -4257,10 +4257,18 @@ protected_patterns = ["secrets.json"]
             .to_string();
 
         let local_hook = repo.join(".git/hooks/pre-push");
-        fs::write(&local_hook, "#!/bin/sh\ncat >/dev/null\necho ran > .git/local-upload\n").expect("write local hook");
+        fs::write(
+            &local_hook,
+            "#!/bin/sh\ncat >/dev/null\necho ran > .git/local-upload\n",
+        )
+        .expect("write local hook");
         chmod_755(&local_hook);
         let foreign_hook = repo.join("test-hooks/foreign");
-        fs::write(&foreign_hook, "#!/bin/sh\ncat >/dev/null\necho ran > .git/foreign-upload\n").unwrap();
+        fs::write(
+            &foreign_hook,
+            "#!/bin/sh\ncat >/dev/null\necho ran > .git/foreign-upload\n",
+        )
+        .unwrap();
         chmod_755(&foreign_hook);
         fs::write(&hook_path, render_hook(PRE_PUSH_HOOK, Some(&foreign_hook))).unwrap();
 
@@ -4287,11 +4295,17 @@ protected_patterns = ["secrets.json"]
         let (td, hook_path) = make_repo_with_pre_push_hook("chain_push_all_refs");
         let repo = td.path();
         run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "clean"]);
-        let sha = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+        let sha = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
         let foreign_hook = repo.join("test-hooks/foreign");
         let local_hook = repo.join(".git/hooks/pre-push");
         for (hook, name) in [(&foreign_hook, "foreign"), (&local_hook, "local")] {
-            fs::write(hook, format!("#!/bin/sh\ncat > .git/{name}-refs\necho {name} >> .git/order\n")).unwrap();
+            fs::write(
+                hook,
+                format!("#!/bin/sh\ncat > .git/{name}-refs\necho {name} >> .git/order\n"),
+            )
+            .unwrap();
             chmod_755(hook);
         }
         fs::write(&hook_path, render_hook(PRE_PUSH_HOOK, Some(&foreign_hook))).unwrap();
@@ -4299,13 +4313,22 @@ protected_patterns = ["secrets.json"]
         let denied = format!("{clean}(delete) {ZERO_SHA} refs/heads/old {sha}\n");
         let (status, stderr) = run_hook_input(repo, &hook_path, &denied);
         assert!(!status.success(), "deletion must refuse: {stderr}");
-        assert!(!repo.join(".git/order").exists(), "no early hook on first clean ref");
+        assert!(
+            !repo.join(".git/order").exists(),
+            "no early hook on first clean ref"
+        );
         let allowed = format!("{clean}refs/heads/other {sha} refs/heads/other {ZERO_SHA}\n");
         let (status, stderr) = run_hook_input(repo, &hook_path, &allowed);
         assert!(status.success(), "clean refs must pass: {stderr}");
-        assert_eq!(fs::read_to_string(repo.join(".git/order")).unwrap(), "foreign\nlocal\n");
+        assert_eq!(
+            fs::read_to_string(repo.join(".git/order")).unwrap(),
+            "foreign\nlocal\n"
+        );
         for name in ["foreign", "local"] {
-            assert_eq!(fs::read_to_string(repo.join(format!(".git/{name}-refs"))).unwrap(), allowed);
+            assert_eq!(
+                fs::read_to_string(repo.join(format!(".git/{name}-refs"))).unwrap(),
+                allowed
+            );
         }
     }
 
