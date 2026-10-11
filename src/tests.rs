@@ -4234,14 +4234,14 @@ protected_patterns = ["secrets.json"]
         assert_eq!(
             status.code(),
             Some(3),
-            "repo-local hook failure must abort the push (chained before the scan)"
+            "repo-local hook failure must abort the push (chained after the scan)"
         );
     }
 
     #[test]
     fn pre_push_hook_scan_survives_local_hook_stdin_consumption() {
-        // A repo-local hook that consumes stdin must not starve
-        // warden's own scan (refs are buffered and replayed).
+        // Neither foreign nor local upload-capable hooks may run when
+        // the Warden scan refuses a secret, regardless of stdin consumption.
         let (td, hook_path) = make_repo_with_pre_push_hook("chain_push_stdin");
         let repo = td.path();
         // Literal is concat-split so the warden's own live hook never
@@ -4257,8 +4257,12 @@ protected_patterns = ["secrets.json"]
             .to_string();
 
         let local_hook = repo.join(".git/hooks/pre-push");
-        fs::write(&local_hook, "#!/bin/sh\ncat >/dev/null\nexit 0\n").expect("write local hook");
+        fs::write(&local_hook, "#!/bin/sh\ncat >/dev/null\necho ran > .git/local-upload\n").expect("write local hook");
         chmod_755(&local_hook);
+        let foreign_hook = repo.join("test-hooks/foreign");
+        fs::write(&foreign_hook, "#!/bin/sh\ncat >/dev/null\necho ran > .git/foreign-upload\n").unwrap();
+        chmod_755(&foreign_hook);
+        fs::write(&hook_path, render_hook(PRE_PUSH_HOOK, Some(&foreign_hook))).unwrap();
 
         let (status, stderr) = run_hook(
             repo,
@@ -4268,12 +4272,41 @@ protected_patterns = ["secrets.json"]
         );
         assert!(
             !status.success(),
-            "warden scan must still run after the chained hook consumed stdin"
+            "warden scan must refuse before either upload-capable hook runs"
         );
         assert!(
             stderr.contains("Possible plaintext secrets"),
             "expected secret-block message, got: {stderr}"
         );
+        assert!(!repo.join(".git/local-upload").exists());
+        assert!(!repo.join(".git/foreign-upload").exists());
+    }
+
+    #[test]
+    fn pre_push_hook_checks_all_refs_before_chaining_and_replays_input() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("chain_push_all_refs");
+        let repo = td.path();
+        run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "clean"]);
+        let sha = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+        let foreign_hook = repo.join("test-hooks/foreign");
+        let local_hook = repo.join(".git/hooks/pre-push");
+        for (hook, name) in [(&foreign_hook, "foreign"), (&local_hook, "local")] {
+            fs::write(hook, format!("#!/bin/sh\ncat > .git/{name}-refs\necho {name} >> .git/order\n")).unwrap();
+            chmod_755(hook);
+        }
+        fs::write(&hook_path, render_hook(PRE_PUSH_HOOK, Some(&foreign_hook))).unwrap();
+        let clean = format!("refs/heads/main {sha} refs/heads/main {ZERO_SHA}\n");
+        let denied = format!("{clean}(delete) {ZERO_SHA} refs/heads/old {sha}\n");
+        let (status, stderr) = run_hook_input(repo, &hook_path, &denied);
+        assert!(!status.success(), "deletion must refuse: {stderr}");
+        assert!(!repo.join(".git/order").exists(), "no early hook on first clean ref");
+        let allowed = format!("{clean}refs/heads/other {sha} refs/heads/other {ZERO_SHA}\n");
+        let (status, stderr) = run_hook_input(repo, &hook_path, &allowed);
+        assert!(status.success(), "clean refs must pass: {stderr}");
+        assert_eq!(fs::read_to_string(repo.join(".git/order")).unwrap(), "foreign\nlocal\n");
+        for name in ["foreign", "local"] {
+            assert_eq!(fs::read_to_string(repo.join(format!(".git/{name}-refs"))).unwrap(), allowed);
+        }
     }
 
     #[test]

@@ -5504,13 +5504,13 @@ const PRE_PUSH_HOOK: &str = r##"#!/bin/sh
 # binary parent-match one only.
 
 # Accumulator for the per-ref accepted file list (NUL-delimited).
-SCAN_FILES_NUL=$(mktemp)
+SCAN_FILES_NUL=$(mktemp) || exit 1
 # Accumulator for added-file paths (newline-delimited) — used by the
 # added-blob scan below.
-ADDED_FILES=$(mktemp)
+ADDED_FILES=$(mktemp) || exit 1
 # NUL-delimited capture of a `git diff-tree -z` path list, kept so it can
 # be VALIDATED before being flattened (see reject_newline_paths).
-CHANGED_NUL=$(mktemp)
+CHANGED_NUL=$(mktemp) || exit 1
 # Lazily-populated remote object list for the blob-novelty check
 # (R3-L21; assigned inside `remote_blob_is_published`). The EXIT
 # trap expands at exit time, so the late assignment is covered.
@@ -5618,26 +5618,22 @@ SECRET_RE='(-----BEGIN [A-Z]+ PRIVATE KEY|password\s*=\s*["'\''][^"'\'']+|secret
 #    follow-up) ──────────────────────────────────────────────────────
 # Global core.hooksPath shadows .git/hooks for every repo; the H-10
 # fix chained repository-local hooks for pre-commit only, leaving THIS hook
-# silently shadowing any repository-local pre-push. Chain first, like
-# pre-commit: git feeds the push refs on stdin exactly once, so
-# buffer them, hand the buffer to the local hook, and reuse it for
-# warden's own scan below — a local hook that consumes stdin cannot
-# starve the scan. The scan keeps its main-shell form
+# silently shadowing any repository-local pre-push. Git feeds the push refs
+# on stdin exactly once, so buffer them for the scan and chained hooks.
+# Run upload-capable foreign/local hooks ONLY AFTER all refs pass Warden's
+# checks: refusing the Git push after an LFS upload is too late to prevent
+# that upload. This ordering alone does not authorize LFS payload contents. The scan keeps its main-shell form
 # (`done < "$REFS_FILE"`, not a pipe): inside a piped subshell `exit
 # 1` would exit only the subshell and the hook would return 0,
 # silently defeating the guard. The "Dracon Warden" grep skips our
 # own seeded copies (no recursion). DRACON_ALLOW_REWRITE does NOT
 # gate this: that bypass is scoped to the history guard inside the
 # loop; a repo-local hook failure must abort the push regardless.
-REFS_FILE=$(mktemp)
-cat > "$REFS_FILE"
+REFS_FILE=$(mktemp) || exit 1
+cat > "$REFS_FILE" || exit 1
 
-# Preserve and invoke any pre-existing foreign global pre-push hook. The ref
-# stream is buffered so both hooks receive identical Git input.
+# Resolve preserved hooks now; defer invocation until every ref is checked.
 DRACON_FOREIGN_HOOK=__DRACON_FOREIGN_HOOK__
-if [ -n "$DRACON_FOREIGN_HOOK" ] && [ -x "$DRACON_FOREIGN_HOOK" ]; then
-    "$DRACON_FOREIGN_HOOK" "$@" < "$REFS_FILE" || exit $?
-fi
 
 # FIXED 2026-10-03 (audit R4-W-11): refuse to run without repo
 # context — see the pre-commit hook for the rationale. Bare repos
@@ -5659,9 +5655,6 @@ LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-push"
 LOCAL_IS_WARDEN=0
 grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
 grep -q 'Installed by: dracon-warden setup-hooks' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
-if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
-    "$LOCAL_HOOK" "$@" < "$REFS_FILE" || exit $?
-fi
 
 # Blob-novelty helper (R3-L21): is $1 already on a remote? The remote
 # object list is enumerated ONCE per push into $REMOTE_OBJECTS, lazily
@@ -5895,6 +5888,16 @@ while read local_ref local_sha remote_ref remote_sha; do
         fi
     fi
 done < "$REFS_FILE"
+
+# All refs passed Warden's checks. Preserve foreign-before-local ordering and
+# replay the exact buffered ref stream and original arguments to both hooks.
+# A failure still aborts the Git push; no transfer/raw fallback is attempted.
+if [ -n "$DRACON_FOREIGN_HOOK" ] && [ -x "$DRACON_FOREIGN_HOOK" ]; then
+    "$DRACON_FOREIGN_HOOK" "$@" < "$REFS_FILE" || exit $?
+fi
+if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
+    "$LOCAL_HOOK" "$@" < "$REFS_FILE" || exit $?
+fi
 "##;
 
 /// ADDED 2026-07-25 (v0.113.0): refuse rebases that would rewrite
