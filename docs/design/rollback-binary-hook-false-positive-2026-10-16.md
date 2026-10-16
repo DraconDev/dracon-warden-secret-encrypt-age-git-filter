@@ -59,6 +59,14 @@ Operator event-log and ledger edits were preserved and committed by the daemon.
   `4fb623263d..0980eb4d0f`. No force or guard overrides. The daemon then resumed
   committing the accumulated event/ledger and ignore changes; newly ahead
   commits are subsequent work, not the original frozen 21-commit backlog.
+- A second ordinary guarded forward push sent subsequent commit `211be08faa`.
+  Final verification shows both daemon-home and doomtap at `0 behind / 0 ahead`
+  of origin/main. This establishes upstream convergence, not an independent
+  confirmation of every forge mirror. Evidence: `final-verification.txt`.
+- While waiting, a separate browser-extensions pre-push occupied the serialized
+  push slot. The existing 15-minute cancellation path fired and its worker
+  joined; other repositories resumed. Required hooks were not skipped or killed
+  manually to speed this up. Doomtap edits were only observed, never modified.
 
 Warden is invoked as a Git filter/hook helper, not a daemon service; replacing
 it atomically affects subsequent invocations without a Sync restart. Sync and
