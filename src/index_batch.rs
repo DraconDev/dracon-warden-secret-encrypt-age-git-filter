@@ -204,24 +204,11 @@ impl PipeChild {
         use std::os::unix::process::CommandExt;
         use std::process::Stdio;
         // A new group is mandatory: never signal the invoking Git's group.
-        // The outer sync inspection may SIGKILL Warden's group on timeout;
-        // this helper has its own group, so arm parent-death cleanup too.
         #[cfg(target_os = "linux")]
         {
             let owner = unsafe { libc::getpid() };
-            // SAFETY: the child executes only async-signal-safe syscalls here.
-            unsafe {
-                cmd.pre_exec(move || {
-                    if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    // Close the fork-to-prctl race: the owner may already be dead.
-                    if libc::getppid() != owner {
-                        libc::_exit(1);
-                    }
-                    Ok(())
-                });
-            }
+            // SAFETY: only async-signal-safe operations/syscalls run after fork.
+            unsafe { cmd.pre_exec(move || arm_helper_guardian(owner)) };
         }
         let mut child = cmd
             .process_group(0)
@@ -271,6 +258,68 @@ impl PipeChild {
             }
             tick(self.deadline)?;
         }
+    }
+}
+
+/// The guardian is a member of the helper's isolated group, not a detached
+/// thread. Its own live PID pins the PGID until kill(0) signals the group.
+#[cfg(target_os = "linux")]
+extern "C" fn kill_helper_group(_: libc::c_int) {
+    // SAFETY: kill and _exit are async-signal-safe; no allocation or unwinding.
+    unsafe {
+        libc::kill(0, libc::SIGKILL);
+        libc::_exit(1);
+    }
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn arm_helper_guardian(owner: libc::pid_t) -> std::io::Result<()> {
+    // Repeat setpgid explicitly before fork: guardian must never join the outer
+    // Git's group, regardless of std's process_group/pre_exec ordering.
+    if libc::setpgid(0, 0) != 0 || libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if libc::getppid() != owner {
+        libc::_exit(1);
+    }
+    let helper = libc::getpid();
+    match libc::fork() {
+        -1 => Err(std::io::Error::last_os_error()),
+        0 => {
+            // Nothing from Rust's runtime is usable here. Block notification
+            // until the handler is installed and parent-death is armed. A death
+            // before prctl is caught by getppid; a later one is pending/handled.
+            let mut blocked: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut blocked);
+            libc::sigaddset(&mut blocked, libc::SIGUSR1);
+            let mut action: libc::sigaction = std::mem::zeroed();
+            action.sa_sigaction = kill_helper_group as *const () as usize;
+            libc::sigemptyset(&mut action.sa_mask);
+            if libc::sigprocmask(libc::SIG_BLOCK, &blocked, std::ptr::null_mut()) != 0
+                || libc::sigaction(libc::SIGUSR1, &action, std::ptr::null_mut()) != 0
+                || libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGUSR1) != 0
+            {
+                kill_helper_group(0);
+            }
+            if libc::getppid() != helper {
+                kill_helper_group(0);
+            }
+            // Close ALL inherited descriptors, including Rust spawn's exec-error
+            // pipe and the filter's input/output. Keeping any of these would
+            // itself wedge spawn, EOF, or parent protocol completion. Linux 5.9+
+            // close_range is required; failure kills the group, never runs an
+            // unguarded helper. This syscall does not execute allocator/runtime.
+            if libc::syscall(libc::SYS_close_range, 0u32, u32::MAX, 0u32) != 0 {
+                kill_helper_group(0);
+            }
+            let mut empty: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut empty);
+            loop {
+                // Atomic unblock + wait: no check-to-pause lost notification.
+                libc::sigsuspend(&empty);
+            }
+        }
+        _ => Ok(()), // direct helper continues exec with Warden-PDEATHSIG intact
     }
 }
 
