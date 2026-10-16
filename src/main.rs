@@ -5211,6 +5211,8 @@ const PRE_PUSH_HOOK: &str = r##"#!/bin/sh
 
 # Accumulator for the per-ref accepted file list (NUL-delimited).
 SCAN_FILES_NUL=$(mktemp) || exit 1
+# Private scratch for one blob; never put potential key bytes in shell variables.
+BLOB_SCAN=$(mktemp) || exit 1
 # Accumulator for added-file paths (newline-delimited) — used by the
 # added-blob scan below.
 ADDED_FILES=$(mktemp) || exit 1
@@ -5221,7 +5223,7 @@ CHANGED_NUL=$(mktemp) || exit 1
 # (R3-L21; assigned inside `remote_blob_is_published`). The EXIT
 # trap expands at exit time, so the late assignment is covered.
 REMOTE_OBJECTS=""
-trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$CHANGED_NUL" "$REFS_FILE" "$REMOTE_OBJECTS"' EXIT
+trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$CHANGED_NUL" "$REFS_FILE" "$REMOTE_OBJECTS" "$BLOB_SCAN"' EXIT
 
 # FIXED 2026-10-09 (audit D15, formerly finding F129): fail closed on a
 # path that contains a NEWLINE.
@@ -5379,6 +5381,39 @@ remote_blob_is_published() {
     grep -q "^$1" "$REMOTE_OBJECTS"
 }
 
+# Return secret shapes without treating the PEM vocabulary compiled into
+# crypto libraries as private keys. Text keeps the conservative header rule;
+# binary PEM labels need adjacent armored material, not a filename exemption.
+# Provider-token and assignment detection is unchanged, including in binaries.
+blob_secret_matches() {
+    git cat-file blob "$1" > "$BLOB_SCAN" 2>/dev/null || return 2
+    if LC_ALL=C grep -Iq . "$BLOB_SCAN"; then
+        grep -aoE "$SECRET_RE" "$BLOB_SCAN" || [ "$?" = 1 ]
+        return $?
+    fi
+    grep -aoE "$SECRET_RE" "$BLOB_SCAN" | grep -v '^-----''BEGIN ' || true
+    # NUL separates compiled string literals. Do NOT join material across it.
+    # A valid (or truncated) PEM body starts with base64, with optional legacy
+    # encryption metadata. One-line armor is checked too. No payload is emitted.
+    tr '\000' '\n' < "$BLOB_SCAN" | LC_ALL=C awk '
+        BEGIN { header = "-----" "BEGIN [A-Z ]*PRIVATE KEY-----"; pending = 0 }
+        {
+            line = $0
+            if (match(line, header)) {
+                line = substr(line, RSTART + RLENGTH)
+                pending = 1
+            } else if (!pending) { next }
+            sub(/\r$/, "", line)
+            if (line ~ /^[A-Za-z0-9+\/=]{16,}/) {
+                print "PEM-PRIVATE-KEY-MATERIAL"; pending = 0
+            } else if (line == "" || line ~ /^(Proc-Type|DEK-Info):/) {
+                # Blank line permits the standard header newline. A NUL
+                # boundary resets below via a separate separator marker.
+            } else { pending = 0 }
+        }
+    '
+}
+
 # Read push info from stdin (remote URL and branch refs)
 while read local_ref local_sha remote_ref remote_sha; do
     # ── History-rewrite guard (ADDED 2026-07-25, v0.113.0) ──────
@@ -5496,7 +5531,8 @@ while read local_ref local_sha remote_ref remote_sha; do
         # Skip files hatched via a `.plaintext` sibling, matching the
         # text scan above. Anchored to $REPO (R4-W-08), not CWD.
         [ -f "$REPO/$af.plaintext" ] && { echo "hatched: $af" >&2; continue; }
-        if git cat-file blob "$scan_commit:$af" 2>/dev/null | grep -aqE "$SECRET_RE"; then
+        MATCHES=$(blob_secret_matches "$scan_commit:$af") || { echo 'warden: blob scan failed' >&2; exit 1; }
+        if [ -n "$MATCHES" ]; then
             # FIXED 2026-10-03 (audit L10): blob-novelty check — a blob
             # already present on a remote is grandfathered, not a new
             # leak (republished content). Pure renames never reach here
@@ -5538,9 +5574,9 @@ while read local_ref local_sha remote_ref remote_sha; do
             continue
         fi
         OLD_MATCHES=$(for parent in $PARENTS; do
-            git cat-file blob "$parent:$bf" 2>/dev/null | grep -aoE "$SECRET_RE" || true
-        done)
-        NEW_MATCHES=$(git cat-file blob "$scan_commit:$bf" 2>/dev/null | grep -aoE "$SECRET_RE" || true)
+            blob_secret_matches "$parent:$bf" || exit 2
+        done) || { echo 'warden: parent blob scan failed' >&2; exit 1; }
+        NEW_MATCHES=$(blob_secret_matches "$scan_commit:$bf") || { echo 'warden: blob scan failed' >&2; exit 1; }
         printf '%s\n' "$NEW_MATCHES" | while IFS= read -r candidate; do
             [ -z "$candidate" ] && continue
             if ! printf '%s\n' "$OLD_MATCHES" | grep -qFx -- "$candidate"; then
