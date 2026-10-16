@@ -1,0 +1,220 @@
+Iteration 1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.05s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Iteration 2
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.03s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Iteration 3
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.03s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Iteration 4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.35s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.03s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Iteration 5
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.04s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Iteration 6
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.04s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Iteration 7
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.07s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Iteration 8
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.31s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.03s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Iteration 9
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.04s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Iteration 10
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
+
+running 2 tests
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 215 filtered out; finished in 0.03s
+
+     Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/storage_stream.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/storage_stream-c8b77ffe6ae046d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

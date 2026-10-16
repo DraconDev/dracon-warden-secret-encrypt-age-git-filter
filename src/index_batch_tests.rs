@@ -199,3 +199,152 @@ fn index_batch_reuses_authenticated_staged_ciphertext() {
         ciphertext
     );
 }
+
+// Invoked only as one exact test in a separate process, never a recursive suite.
+#[cfg(target_os = "linux")]
+#[test]
+fn index_batch_abrupt_owner_fixture() {
+    let Some(path) = std::env::var_os("WARDEN_ABRUPT_OWNER_READY") else {
+        return;
+    };
+    let mut cmd = Command::new("sh");
+    cmd.args([
+        "-c",
+        "sleep 60 & printf '%s %s\\n' $$ $! > \"$1\"; wait",
+        "fixture",
+    ])
+    .arg(path);
+    let _owned = PipeChild::spawn(&mut cmd, Instant::now() + Duration::from_secs(30)).unwrap();
+    loop {
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn process_is_running(pid: i32) -> bool {
+    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Ok(stat) => !stat.rsplit_once(") ").unwrap().1.starts_with(['Z', 'X']),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => panic!("cannot inspect synthetic child: {e}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn abrupt_cleanup_fixture(kill_owner: bool) {
+    use std::os::unix::process::CommandExt;
+    let dir = tempfile::tempdir().unwrap();
+    let ready = dir.path().join("ready");
+    let mut owner = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "index_batch::tests::index_batch_abrupt_owner_fixture",
+            "--nocapture",
+        ])
+        .env("WARDEN_ABRUPT_OWNER_READY", &ready)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    // This guard owns only the isolated fixture owner, and never signals its
+    // PGID after reap. Helper/guardian ownership is exercised, not emulated.
+    struct Owner<'a>(&'a mut std::process::Child);
+    impl Drop for Owner<'_> {
+        fn drop(&mut self) {
+            unsafe {
+                libc::kill(-(self.0.id() as i32), libc::SIGKILL);
+            }
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while self.0.try_wait().unwrap().is_none() {
+                assert!(Instant::now() < deadline, "fixture owner did not reap");
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+    }
+    let guard = Owner(&mut owner);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let ids = loop {
+        if let Ok(text) = std::fs::read_to_string(&ready) {
+            let ids: Vec<i32> = text
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            if ids.len() == 2 {
+                break ids;
+            }
+        }
+        assert!(Instant::now() < deadline, "fixture did not start");
+        std::thread::sleep(Duration::from_millis(2));
+    };
+    // Discover both the sleep and independently owned guardian. Verify they are
+    // live before cancellation, so a missing/failed guardian cannot pass vacuously.
+    let children =
+        std::fs::read_to_string(format!("/proc/{}/task/{}/children", ids[0], ids[0])).unwrap();
+    let children: Vec<i32> = children
+        .split_whitespace()
+        .map(|s| s.parse().unwrap())
+        .collect();
+    assert_eq!(children.len(), 2, "expected sleep plus guardian");
+    assert!(children.contains(&ids[1]));
+    assert!(children.iter().all(|pid| process_is_running(*pid)));
+    let guardian = *children.iter().find(|pid| **pid != ids[1]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if std::fs::read_dir(format!("/proc/{guardian}/fd"))
+            .unwrap()
+            .next()
+            .is_none()
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "guardian retained inherited descriptors"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let pgid = unsafe { libc::getpgid(ids[0]) };
+    assert_eq!(pgid, ids[0]);
+    assert_ne!(pgid, unsafe { libc::getpgid(guard.0.id() as i32) });
+    for pid in &children {
+        assert_eq!(unsafe { libc::getpgid(*pid) }, pgid);
+    }
+    if kill_owner {
+        // Production-like outer GroupKillGuard: SIGKILL the owner's group. The
+        // separately grouped helper cannot be reached by this signal directly.
+        assert_eq!(
+            unsafe { libc::kill(-(guard.0.id() as i32), libc::SIGKILL) },
+            0
+        );
+    } else {
+        assert_eq!(unsafe { libc::kill(ids[0], libc::SIGKILL) }, 0);
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while std::iter::once(&ids[0])
+        .chain(children.iter())
+        .any(|pid| process_is_running(*pid))
+    {
+        assert!(
+            Instant::now() < deadline,
+            "synthetic helper/guardian/descendant survived cancellation"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // Killing the direct helper must not terminate the still-live owner.
+    if !kill_owner {
+        assert!(process_is_running(guard.0.id() as i32));
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn index_batch_outer_owner_sigkill_cleans_isolated_helper_group() {
+    abrupt_cleanup_fixture(true);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn index_batch_direct_helper_sigkill_cleans_descendants_without_drop() {
+    abrupt_cleanup_fixture(false);
+}

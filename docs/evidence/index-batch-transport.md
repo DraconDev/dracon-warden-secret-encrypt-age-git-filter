@@ -14,6 +14,25 @@ Header/resolver output are capped at 1 MiB; bodies at 64 MiB (same batch cap).
 No timer runs between lookups: an idle persistent cat-file is legal.
 
 Every helper starts in its own process group, isolated from the invoking Git.
+On Linux, pre-exec arms direct-helper PR_SET_PDEATHSIG(SIGKILL) and starts an
+independent in-group guardian using raw clone with fork semantics (no libc
+pthread_atfork callbacks, shared memory, or shared FD table). The guardian blocks
+SIGUSR1, installs a group-kill handler, arms SIGUSR1 parent-death notification,
+and checks getppid to cover death before prctl. It closes every inherited FD via
+close_range, including the exec-error pipe and data pipes, then sigsuspend
+atomically unblocks/waits. The handler uses only kill(0, SIGKILL) and _exit.
+The guardian's live group membership pins the PGID while signalling. Thus abrupt
+Warden death kills the direct helper, whose death triggers guardian group kill;
+direct-helper death without Warden Drop also triggers group kill. A normal helper
+exit cannot leave its descendants or guardian running. Pre-exec explicitly sets
+the isolated group before cloning; no privileged or process-wide subreaper setup.
+Fork-to-prctl races on both generations are checked before normal operation.
+
+Linux 5.9+ close_range (or a backport) is required for guarded helpers. A syscall
+failure kills the isolated group instead of executing an unguarded helper; index
+reuse then fails safely toward fresh encryption. No fallback performs unbounded
+FD loops or retains unknown inherited descriptors.
+
 The owner sends SIGKILL to that group BEFORE reaping the leader, avoiding signals
 to a reused PGID. Resolver status uses waitid(WNOWAIT), preserving ownership until
 cleanup. Drop then polls try_wait with a 1-second grace. No direct child is
@@ -37,7 +56,10 @@ blocking helpers (not cross-compiled here).
 
 Run from dracon-warden, under outer `timeout 120s` watchdogs:
 
-- `cargo test -p dracon-warden --locked index_batch --no-fail-fast`: 11 passed.
+- `cargo test -p dracon-warden --locked index_batch --no-fail-fast`: 14 passed (13 substantive tests plus the exact-worker fixture entry).
+- `cargo test -p dracon-warden --locked sigkill --no-fail-fast` repeated 10 times
+  under one 120-second outer watchdog: all 20 abrupt-death checks passed
+  (`index-batch-abrupt-repeat.log`).
 - `cargo test -p dracon-warden --locked filter_transform_batch_matches_oneshot`:
   1 passed.
 - `cargo clippy -p dracon-warden --bin dracon-warden --tests --locked -- -D warnings`:
@@ -53,8 +75,20 @@ ciphertext for protected text/binary, authenticated byte-exact reuse and rejecti
 of changed plaintext. A real staged-ciphertext test verifies lookup + authenticated
 reuse. Direct-child waitpid verifies ECHILD after cleanup; Linux /proc additionally
 verifies the stdout-retaining descendant is absent or dead (zombie), not running.
+Two Linux abrupt-death regressions start only the exact fixture-worker test in
+an isolated owner process group. They wait for a live helper, sleep descendant,
+and guardian (with zero retained descriptors), verify the helper PGID is separate
+from the owner, then SIGKILL either the outer owner's group or the direct helper.
+All three helper-group processes must cease running within 2 seconds, without
+calling PipeChild Drop; the direct-death case also verifies the owner stays alive.
+The outer owner is boundedly reaped. No recursive test suite or live processes
+are involved. Guardian setup/readiness waits also have bounded assertions.
+
 Whole-file binary equality is verified by clean_reusing_index's authenticated
 smudge predicate, without passing bytes through a lossy string API.
+
+The guardian made an exited resolver's stdout close promptly, exposing an empty
+resolver-output case: empty paths are now rejected rather than joined to cwd.
 
 Early fixture failures used a plain non-secret scanning-only path, then .env's
 intentional version-header behavior; final fixtures use whole-file `credentials`
@@ -67,7 +101,11 @@ spawn/exec setup, filesystem metadata and pathological kernel I/O can themselves
 block in the kernel; no thread deadline safely cancels those operations. Kernel-
 uninterruptible children cannot be guaranteed reaped; the bounded-reap fail-stop
 is explicit, not a claim otherwise. Tests do not induce kernel failures or exercise
-that final process exit. Helpers escaping the dedicated process group are outside
+that final process exit. Linux guardian notification still depends on kernel
+signal delivery/scheduling, not a hard wall-clock guarantee. Non-Linux Unix has
+ordinary owned Drop cleanup only: abrupt Warden death is NOT covered there.
+Non-Unix batch reuse remains disabled. Linux architectures other than the tested
+x86_64 host have not been cross-compiled. Helpers escaping the dedicated process group are outside
 this normal Git-helper model. Descendant zombies belong to the system reaper, not
 Warden (no process-wide subreaper side effects); group kill stops them but cannot
 waitpid nonchildren. The Linux fixture documents this distinction explicitly.

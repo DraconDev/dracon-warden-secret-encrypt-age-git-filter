@@ -1,13 +1,16 @@
    Compiling dracon-warden v0.113.15 (/home/dracon/Dev/dracon-utilities/dracon-warden)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.24s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.39s
      Running unittests src/main.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/dracon_warden-afa88e79b8633f79)
 
-running 11 tests
+running 14 tests
+test index_batch::tests::index_batch_abrupt_owner_fixture ... ok
 test index_batch::tests::index_batch_descendant_has_no_live_process_after_cleanup ... ok
 test index_batch::tests::index_batch_descendant_retained_stdout_is_cancelled ... ok
+test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
 test index_batch::tests::index_batch_drop_reaps_direct_child_and_kills_group ... ok
 test index_batch::tests::index_batch_invalid_framing_and_exit_recover ... ok
 test index_batch::tests::index_batch_nonreading_stdin_recovers ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
 test index_batch::tests::index_batch_resolver_deadline_recovers ... ok
 test index_batch::tests::index_batch_reuses_authenticated_staged_ciphertext ... ok
 test index_batch::tests::index_batch_silent_and_partial_response_recover ... ok
@@ -15,7 +18,7 @@ test tests::tests::index_batch_lock_skips_and_recovers ... ok
 test tests::tests::index_batch_respawns_after_stage ... ok
 test tests::tests::index_batch_returns_staged_blob_not_worktree ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 203 filtered out; finished in 3.85s
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 203 filtered out; finished in 4.34s
 
      Running tests/integration_test.rs (/home/dracon/Dev/dracon-utilities/target/debug/deps/integration_test-4caad63cddedaf79)
 

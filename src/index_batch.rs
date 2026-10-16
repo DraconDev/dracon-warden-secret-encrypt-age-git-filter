@@ -97,7 +97,12 @@ impl IndexBatch {
             if output.len() > 1024 * 1024 || !resolver.exited_successfully()? {
                 return Err(invalid());
             }
-            let dir = PathBuf::from(String::from_utf8_lossy(&output).trim());
+            let resolved = String::from_utf8_lossy(&output);
+            let resolved = resolved.trim();
+            if resolved.is_empty() {
+                return Err(invalid());
+            }
+            let dir = PathBuf::from(resolved);
             let dir = match &self.cwd {
                 Some(cwd) if dir.is_relative() => cwd.join(dir),
                 _ => dir,
@@ -283,7 +288,30 @@ unsafe fn arm_helper_guardian(owner: libc::pid_t) -> std::io::Result<()> {
         libc::_exit(1);
     }
     let helper = libc::getpid();
-    match libc::fork() {
+    // Raw clone with fork semantics: libc::fork would run arbitrary registered
+    // pthread_atfork callbacks in this already-forked, potentially multithreaded
+    // runtime snapshot. No CLONE_VM/thread/files flags: memory and FDs are copied.
+    // s390x alone reverses the first two raw clone arguments; all remaining
+    // optional pointers are null so architecture-specific tail order is immaterial.
+    #[cfg(target_arch = "s390x")]
+    let guardian = libc::syscall(
+        libc::SYS_clone,
+        0usize,
+        libc::SIGCHLD as libc::c_ulong,
+        0usize,
+        0usize,
+        0usize,
+    );
+    #[cfg(not(target_arch = "s390x"))]
+    let guardian = libc::syscall(
+        libc::SYS_clone,
+        libc::SIGCHLD as libc::c_ulong,
+        0usize,
+        0usize,
+        0usize,
+        0usize,
+    );
+    match guardian {
         -1 => Err(std::io::Error::last_os_error()),
         0 => {
             // Nothing from Rust's runtime is usable here. Block notification
