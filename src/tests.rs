@@ -957,6 +957,45 @@ mod tests {
     /// concat-split so the warden's own push of this test file does not
     /// trip the hook it tests.
     #[test]
+    fn pre_push_binary_pem_labels_are_not_private_keys_but_material_is_blocked() {
+        let header = concat!("-----", "BEGIN RSA PRIVATE KEY-----");
+        for (name, payload, blocked) in [
+            ("compiled-label", format!("ELF\0{header}\0crypto error\n"), false),
+            ("compiled-label-next-literal", format!("ELF\0{header}\0\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\n"), false),
+            ("armored-key", format!("ELF\0{header}\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\n"), true),
+            ("one-line-key", format!("ELF\0{header}ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\0"), true),
+            ("legacy-key", format!("ELF\0{header}\r\nProc-Type: 4,ENCRYPTED\r\nDEK-Info: AES-256-CBC,00\r\n\r\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\r\n"), true),
+            ("bare-text-marker", format!("{header}\n"), true),
+        ] {
+            let (td, hook_path) = make_repo_with_pre_push_hook(name);
+            let repo = td.path();
+            fs::write(repo.join("artifact.bin"), payload).unwrap();
+            run_git_in(repo, &["add", "artifact.bin"]);
+            run_git_in(repo, &["commit", "-q", "-m", "add fixture"]);
+            let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+            let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+            assert_eq!(!status.success(), blocked, "{name}: {stderr}");
+        }
+    }
+
+    #[test]
+    fn pre_push_modified_binary_still_blocks_new_pem_material() {
+        let (td, hook) = make_repo_with_pre_push_hook("modified-pem");
+        let repo = td.path();
+        let header = concat!("-----", "BEGIN PRIVATE KEY-----");
+        fs::write(repo.join("artifact.bin"), format!("ELF\0{header}\0labels")).unwrap();
+        run_git_in(repo, &["add", "artifact.bin"]);
+        run_git_in(repo, &["commit", "-q", "-m", "baseline labels"]);
+        let old = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+        fs::write(repo.join("artifact.bin"), format!("ELF\0{header}\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\n")).unwrap();
+        run_git_in(repo, &["add", "artifact.bin"]);
+        run_git_in(repo, &["commit", "-q", "-m", "introduce key body"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+        let (status, stderr) = run_hook(repo, &hook, &head, &old);
+        assert!(!status.success(), "new binary key body must block: {stderr}");
+    }
+
+    #[test]
     fn pre_push_hook_blocks_secret_in_added_binary() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_binary_secret");
         let repo = td.path();

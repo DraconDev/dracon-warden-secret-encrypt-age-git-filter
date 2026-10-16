@@ -5395,21 +5395,24 @@ blob_secret_matches() {
     # NUL separates compiled string literals. Do NOT join material across it.
     # A valid (or truncated) PEM body starts with base64, with optional legacy
     # encryption metadata. One-line armor is checked too. No payload is emitted.
-    tr '\000' '\n' < "$BLOB_SCAN" | LC_ALL=C awk '
+    tr '\000' '\001' < "$BLOB_SCAN" | LC_ALL=C awk '
         BEGIN { header = "-----" "BEGIN [A-Z ]*PRIVATE KEY-----"; pending = 0 }
         {
-            line = $0
-            if (match(line, header)) {
-                line = substr(line, RSTART + RLENGTH)
-                pending = 1
-            } else if (!pending) { next }
-            sub(/\r$/, "", line)
-            if (line ~ /^[A-Za-z0-9+\/=]{16,}/) {
-                print "PEM-PRIVATE-KEY-MATERIAL"; pending = 0
-            } else if (line == "" || line ~ /^(Proc-Type|DEK-Info):/) {
-                # Blank line permits the standard header newline. A NUL
-                # boundary resets below via a separate separator marker.
-            } else { pending = 0 }
+            count = split($0, segments, "\001")
+            for (i = 1; i <= count; i++) {
+                if (i > 1) { pending = 0 }
+                line = segments[i]
+                if (match(line, header)) {
+                    line = substr(line, RSTART + RLENGTH)
+                    pending = 1
+                } else if (!pending) { continue }
+                sub(/\r$/, "", line)
+                if (line ~ /^[A-Za-z0-9+\/=]{16,}/) {
+                    print "PEM-PRIVATE-KEY-MATERIAL"; pending = 0
+                } else if (line == "" || line ~ /^(Proc-Type|DEK-Info):/) {
+                    # Permit standard newlines and legacy encryption metadata.
+                } else { pending = 0 }
+            }
         }
     '
 }
