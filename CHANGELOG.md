@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed (push-stuck recovery 2026-10-17)
+
+- The global pre-push hook accepts operator-reviewed non-secret matches via content-bound receipts (`reviewed_text_matches`): each receipt binds a complete blob SHA-256 to an individual regex-match SHA-256 in the hook template, so any byte change invalidates it and unknown matches still block. Covers one synthetic `storage.test.mjs` fixture literal and three AWS-SDK property-read expressions in the bundled runner (source and deployed copies). Unblocked the `dracon-sync` (30 ahead) and daemon-home (21 ahead) push-stucks with no history rewrite, no path exemptions, and no regex relaxation. Review record: `docs/design/reviewed-hook-matches-2026-10-17.md`. Carries the behavioral test `pre_push_review_receipt_binds_blob_and_individual_match`, proven to fail pre-fix (acceptance, blob-change refusal, and adjacent-unreviewed-match refusal).
+
 ## [0.113.15] - 2026-10-03
 
 ### Fixed (workspace audit 2026-10-03, ROUND3)
