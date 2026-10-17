@@ -5381,6 +5381,31 @@ remote_blob_is_published() {
     grep -q "^$1" "$REMOTE_OBJECTS"
 }
 
+# Operator-reviewed false positives (2026-10-17). Bind each individual
+# match to the COMPLETE blob SHA-256, not a path, extension or mutable
+# worktree marker. Any byte change invalidates the receipt. Unknown matches
+# remain blocked. Review record: docs/design/reviewed-hook-matches-2026-10-17.md.
+reviewed_text_matches() {
+    reviewed_blob=$(sha256sum "$BLOB_SCAN") || return 2
+    reviewed_blob=${reviewed_blob%% *}
+    while IFS= read -r reviewed_candidate; do
+        [ -n "$reviewed_candidate" ] || continue
+        reviewed_match=$(printf '%s' "$reviewed_candidate" | sha256sum) || return 2
+        reviewed_match=${reviewed_match%% *}
+        case "$reviewed_blob:$reviewed_match" in
+            f8687f3a17de5d4b236770e5860aed778480e3885f63c4b8942eb1cecc77ca4a:9e0bc72796a817546301febd8583d0a7929c3114bde9e9dcdf8ea562aa61fee7|\
+            04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:8bca1bb2c590d8da610b1f5991a27cf8f598a17ba3e913c52b06f1b968d8ce73|\
+            04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:ec8b975e7d58592b7739c81b1549fd472c8174fc03e2a6f88f5ded441eb7cf98|\
+            04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:5a1e908a7dee00419725c2ed891fa753ec55b6b73a4d45d492ce9fad3c403ff0|\
+            f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:8bca1bb2c590d8da610b1f5991a27cf8f598a17ba3e913c52b06f1b968d8ce73|\
+            f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:ec8b975e7d58592b7739c81b1549fd472c8174fc03e2a6f88f5ded441eb7cf98|\
+            f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:5a1e908a7dee00419725c2ed891fa753ec55b6b73a4d45d492ce9fad3c403ff0)
+                echo "warden: reviewed non-secret match blob=$reviewed_blob match=$reviewed_match" >&2 ;;
+            *) printf '%s\n' "$reviewed_candidate" ;;
+        esac
+    done
+}
+
 # Return secret shapes without treating the PEM vocabulary compiled into
 # crypto libraries as private keys. Text keeps the conservative header rule;
 # binary PEM labels need adjacent armored material, not a filename exemption.
@@ -5388,7 +5413,12 @@ remote_blob_is_published() {
 blob_secret_matches() {
     git cat-file blob "$1" > "$BLOB_SCAN" 2>/dev/null || return 2
     if LC_ALL=C grep -Iq . "$BLOB_SCAN"; then
-        grep -aoE "$SECRET_RE" "$BLOB_SCAN" || [ "$?" = 1 ]
+        text_matches=$(grep -aoE "$SECRET_RE" "$BLOB_SCAN") || {
+            text_status=$?
+            [ "$text_status" = 1 ] && return 0
+            return 2
+        }
+        printf '%s\n' "$text_matches" | reviewed_text_matches
         return $?
     fi
     grep -aoE "$SECRET_RE" "$BLOB_SCAN" | grep -v '^-----''BEGIN ' || true
