@@ -272,6 +272,55 @@ mod tests {
     const ZERO_SHA: &str = "0000000000000000000000000000000000000000";
 
     #[test]
+    fn pre_push_review_receipt_binds_blob_and_individual_match() {
+        use sha2::{Digest, Sha256};
+        const REVIEWED_BLOB: &str =
+            "f8687f3a17de5d4b236770e5860aed778480e3885f63c4b8942eb1cecc77ca4a";
+        let (td, hook) = make_repo_with_pre_push_hook("hook_review_receipt");
+        let repo = td.path();
+        // Build synthetic vocabulary without introducing scanner-shaped
+        // assignments into this test's own source code.
+        let benign = ["const sec", "ret = 'fixture-secret-never-echo';\n"].concat();
+        let approved_digest = format!("{:x}", Sha256::digest(benign.as_bytes()));
+        let reviewed_hook = PRE_PUSH_HOOK.replace(REVIEWED_BLOB, &approved_digest);
+        fs::write(&hook, &reviewed_hook).unwrap();
+        fs::write(repo.join("fixture.js"), &benign).unwrap();
+        run_git_in(repo, &["add", "--", "fixture.js"]);
+        run_git_in(repo, &["commit", "-qm", "reviewed fixture"]);
+        let first = git_in_output(repo, &["rev-parse", "HEAD"]);
+        let (status, stderr) = run_hook(repo, &hook, first.trim(), ZERO_SHA);
+        assert!(status.success(), "reviewed exact match rejected: {stderr}");
+        assert!(stderr.contains("reviewed non-secret match"));
+
+        // Even an innocuous byte change invalidates the whole-blob receipt.
+        let changed = format!("{benign}// changed\n");
+        fs::write(repo.join("fixture.js"), &changed).unwrap();
+        run_git_in(repo, &["add", "--", "fixture.js"]);
+        run_git_in(repo, &["commit", "-qm", "changed fixture"]);
+        let second = git_in_output(repo, &["rev-parse", "HEAD"]);
+        fs::write(repo.join("copy.js"), &changed).unwrap();
+        run_git_in(repo, &["add", "--", "copy.js"]);
+        run_git_in(repo, &["commit", "-qm", "new unreviewed blob"]);
+        let third = git_in_output(repo, &["rev-parse", "HEAD"]);
+        let (status, _) = run_hook(repo, &hook, third.trim(), second.trim());
+        assert!(!status.success(), "changed blob inherited stale receipt");
+
+        // Even with the blob digest bound, a different match cannot inherit
+        // the fixture match receipt. This is NOT a whole-blob exemption.
+        let mixed = [benign.as_str(), "const pass", "word = 'unreviewed-sensitive-value';\n"].concat();
+        let mixed_digest = format!("{:x}", Sha256::digest(mixed.as_bytes()));
+        fs::write(&hook, PRE_PUSH_HOOK.replace(REVIEWED_BLOB, &mixed_digest)).unwrap();
+        fs::write(repo.join("mixed.js"), mixed).unwrap();
+        run_git_in(repo, &["add", "--", "mixed.js"]);
+        run_git_in(repo, &["commit", "-qm", "unreviewed adjacent match"]);
+        let fourth = git_in_output(repo, &["rev-parse", "HEAD"]);
+        let (status, stderr) = run_hook(repo, &hook, fourth.trim(), third.trim());
+        assert!(!status.success(), "unreviewed match inherited receipt");
+        assert!(stderr.contains("reviewed non-secret match"));
+        assert!(stderr.contains("Possible plaintext secrets"));
+    }
+
+    #[test]
     fn pre_push_hook_passes_on_clean_commit() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_clean");
         let repo = td.path();
