@@ -307,7 +307,12 @@ mod tests {
 
         // Even with the blob digest bound, a different match cannot inherit
         // the fixture match receipt. This is NOT a whole-blob exemption.
-        let mixed = [benign.as_str(), "const pass", "word = 'unreviewed-sensitive-value';\n"].concat();
+        let mixed = [
+            benign.as_str(),
+            "const pass",
+            "word = 'unreviewed-sensitive-value';\n",
+        ]
+        .concat();
         let mixed_digest = format!("{:x}", Sha256::digest(mixed.as_bytes()));
         fs::write(&hook, PRE_PUSH_HOOK.replace(REVIEWED_BLOB, &mixed_digest)).unwrap();
         fs::write(repo.join("mixed.js"), mixed).unwrap();
@@ -1035,13 +1040,24 @@ mod tests {
         fs::write(repo.join("artifact.bin"), format!("ELF\0{header}\0labels")).unwrap();
         run_git_in(repo, &["add", "artifact.bin"]);
         run_git_in(repo, &["commit", "-q", "-m", "baseline labels"]);
-        let old = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
-        fs::write(repo.join("artifact.bin"), format!("ELF\0{header}\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\n")).unwrap();
+        let old = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        fs::write(
+            repo.join("artifact.bin"),
+            format!("ELF\0{header}\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\n"),
+        )
+        .unwrap();
         run_git_in(repo, &["add", "artifact.bin"]);
         run_git_in(repo, &["commit", "-q", "-m", "introduce key body"]);
-        let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
         let (status, stderr) = run_hook(repo, &hook, &head, &old);
-        assert!(!status.success(), "new binary key body must block: {stderr}");
+        assert!(
+            !status.success(),
+            "new binary key body must block: {stderr}"
+        );
     }
 
     #[test]
