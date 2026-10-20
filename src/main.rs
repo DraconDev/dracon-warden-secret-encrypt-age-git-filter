@@ -5393,6 +5393,7 @@ reviewed_text_matches() {
         reviewed_match=$(printf '%s' "$reviewed_candidate" | sha256sum) || return 2
         reviewed_match=${reviewed_match%% *}
         case "$reviewed_blob:$reviewed_match" in
+            fa6dd2617c93db078813c1114b1943cdabc1b3dfbb9dc4e93e6bace6ab46be0e:3213230dcff83ccd0e528cca269e406be83ab56c539411c3ba1a9d8df278a53f|\
             f8687f3a17de5d4b236770e5860aed778480e3885f63c4b8942eb1cecc77ca4a:9e0bc72796a817546301febd8583d0a7929c3114bde9e9dcdf8ea562aa61fee7|\
             04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:8bca1bb2c590d8da610b1f5991a27cf8f598a17ba3e913c52b06f1b968d8ce73|\
             04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:ec8b975e7d58592b7739c81b1549fd472c8174fc03e2a6f88f5ded441eb7cf98|\

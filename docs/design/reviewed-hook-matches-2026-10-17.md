@@ -59,3 +59,18 @@ The production receipts remain the seven reviewed pairs above.
 `cargo test -p dracon-warden --locked pre_push_`: 36 passed, zero failed.
 Full qualification and live push outcomes are recorded separately after
 deployment. A passing dry run alone does not establish remote convergence.
+
+## db-gateway synthetic scanner fixture — 2026-10-20
+
+The historical tests/secret_scan.rs blob introduced by 1c14b46c contains one
+assignment match. Its value exactly equals the synthetic test value assembled
+from fragments in the current scanner tests; it is not a deployed credential.
+The current file has zero hook matches, but the hook correctly scans every
+unpushed commit. Forward fixes therefore cannot clear this historical match.
+
+The added receipt binds blob SHA-256
+`fa6dd2617c93db078813c1114b1943cdabc1b3dfbb9dc4e93e6bace6ab46be0e`
+to match SHA-256
+`3213230dcff83ccd0e528cca269e406be83ab56c539411c3ba1a9d8df278a53f`.
+The existing receipt regression checks changed blobs and additional matches
+still refuse. No path exemption or history rewrite is involved.
