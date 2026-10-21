@@ -148,10 +148,7 @@ fn index_batch_descendant_has_no_live_process_after_cleanup() {
     let deadline = Instant::now() + Duration::from_secs(10);
     let ids: Vec<i32> = loop {
         let raw = std::fs::read_to_string(&pids).unwrap_or_default();
-        let parsed: Vec<i32> = raw
-            .split_whitespace()
-            .map(|s| s.parse().unwrap())
-            .collect();
+        let parsed: Vec<i32> = raw.split_whitespace().map(|s| s.parse().unwrap()).collect();
         if parsed.len() >= 2 {
             break parsed;
         }

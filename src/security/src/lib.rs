@@ -2141,7 +2141,9 @@ mod tests {
         let mut security = WardenSecurity::new(None).unwrap();
         security.add_memory_identity(age::x25519::Identity::generate());
         let v1 = "# =============================================================================\n# Dracon Warden Encrypted Environment File\n# This file is encrypted by dracon-warden for secure team collaboration.\n# Version: 1\n# DO NOT EDIT THE ENCRYPTED CONTENT MANUALLY - Use `dracon-warden smudge` to decrypt.\n# =============================================================================\nAPI_KEY=secret\nTRAIL=value\n\n";
-        let encrypted = security.smart_clean_with_path(v1.as_bytes(), ".env").unwrap();
+        let encrypted = security
+            .smart_clean_with_path(v1.as_bytes(), ".env")
+            .unwrap();
         let decrypted = security
             .smart_smudge(&String::from_utf8_lossy(&encrypted))
             .unwrap();
