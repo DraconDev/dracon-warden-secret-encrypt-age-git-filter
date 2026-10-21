@@ -2145,7 +2145,7 @@ mod tests {
         let decrypted = security
             .smart_smudge(&String::from_utf8_lossy(&encrypted))
             .unwrap();
-        let decrypted_str = String::from_utf8_lossy(&decrypted);
+        let decrypted_str = decrypted.as_str();
         assert!(
             decrypted_str.contains("# Version: 2"),
             "header version must increment: {}",
