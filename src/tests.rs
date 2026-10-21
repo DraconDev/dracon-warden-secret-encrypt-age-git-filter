@@ -3884,7 +3884,7 @@ watch_roots = ["/tmp/test"]
         // used to come from the operator's key search path — which does not
         // exist on a CI runner, so the encryption had no recipient there
         // ("No master identity or public recipients found for encryption").
-        let mut security = WardenSecurity::new(None).unwrap();
+        let mut security = dracon_security_kit::WardenSecurity::new(None).unwrap();
         security.add_memory_identity(age::x25519::Identity::generate());
         let result = security
             .smart_clean_with_path(content, "config.env")
