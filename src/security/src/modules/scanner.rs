@@ -1233,7 +1233,13 @@ fn foreign_marker_does_not_suppress_the_scan() {
         .unwrap()
         .with_secret_tag_prefix("DRACON_SECRET");
 
-    let body = "[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA2KzFiUG5oc2ZmUVJGUDlvTWdjMVFIQ1lTSDJIeDJMTmprNDZqbjdNU0FJCmtaNGxUN3lnUDFXNjYrb29PeUJBY0gwUk5NRUpzbkRqdWY0NzQzU3paQUUKLT4gWDI1NTE5IHBRZGR2UlROZjE3bTVIUXRnaVQvcXRTZmk5bGt1Nm9QQjdiL3duT25xVlUKKzhDSUc1dmdZa21GRkRiUGs4TnRERTIyWWttdzZWbDBZQ0hUaGV0T3NaVQotPiBYMjU1MTkgc1NzMjc3Z1JRQ0NESXVza3IwWXUzbm1uUy9ZUkh1ZC9lbndaUGhldzVnawp4My9EWEIzS0phb2Z1SU9XdU9TVnRSZW4zbjRvVEQzQnhPSzcyRTVFeUhJCi0+IFgyNTUxOSBoZ0JtMXdKVGd4TWVRb0ViSU9xQzFkdlkzaDZ0NUlkUTBBUWlGWDVsYXo0CmlhTlhDVHVCbzdObVZMUTZiZUFxRVFXM1V6Y2pWSjBORDZjTGFmNHNsRWcKLT4gWDI1NTE5IDIrdG05NWd6L3YyRHFYc25sSEk3K0o2RXBXRmtPSGlnQnpDVEszVzN3eVkKQlB6aEtZN3Y2YkNHZHJFQTROK21rVXV3YUlaYVl2YythK0wwWnNhWTNubwotPiB+XGpAYyV2Xi1ncmVhc2UgK2BKRF8gPitqTF8gVSAhZm0reApkRU1RVFlWZlVjN0FST28zUUtVR0hPQlRzb0hhb3orME5aTlovZ1pUVmt4aVQ4VWIxU09vMllCQTI0cVFKbUtBCmJVcW1SSTRLQkk2NgotLS0gVTAyTGYvWStEaUZLRis4SmJUY09ZanViZTcwZlBaazYzRHNCdDhKNm9TawohXgLiodBS5V7epXya+AediXKOTSP0D4/GzSi7DPdBFPLFGJLNzrJlT1EN8DmM5sxC96RtKGzcnlf9mTfoAEjG8KQ8nTtVJ/U=]";
+    // The body is assembled at runtime, not written as one literal. The
+    // warden's clean filter encrypts a contiguous secret-shaped literal in
+    // source: committing this test verbatim rewrote the body into a
+    // `[DRACON_SECRET:...]` tag (1016 bytes), and the committed source then
+    // failed its own 40-byte assertion. Splitting the literal keeps the
+    // file free of a matchable token, so the filter leaves it alone.
+    let body = format!("ghp_{}", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
     assert_eq!(body.len(), 40, "token must satisfy the 36..255 body shape");
 
     // The attack: a hand-written tag whose marker nothing recognizes.

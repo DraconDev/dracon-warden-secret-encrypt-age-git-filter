@@ -1616,20 +1616,24 @@ mod tests {
             0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF, 0xFE,
         ];
         assert!(std::str::from_utf8(&png).is_err());
-        let security = || {
-            test_security_with_identity()
-                .with_managed_media_patterns(vec!["internal-dashboards/**".to_string()])
-        };
-        // Opted-in path: whole-file tag, byte-identical smudge roundtrip.
-        let tagged = security()
+        let security = test_security_with_identity()
+            .with_managed_media_patterns(vec!["internal-dashboards/**".to_string()]);
+        // One security object for the whole round trip. The old closure
+        // built a NEW one per call, and each one carried a freshly
+        // generated identity: the body was encrypted with one identity and
+        // decrypted with another, which only passed where a stable identity
+        // happened to be loaded from the operator's key search path. On a
+        // machine without one (CI), the smudge could not decrypt its own
+        // output. The identity now belongs to the object under test.
+        let tagged = security
             .smart_clean_with_path(&png, "internal-dashboards/shot.png")
             .unwrap();
         assert_ne!(tagged, png);
-        let back = smudge_with_security(&security(), &tagged).unwrap();
+        let back = smudge_with_security(&security, &tagged).unwrap();
         assert_eq!(back, png);
         // Same bytes, non-media path: passthrough.
         assert_eq!(
-            security()
+            security
                 .smart_clean_with_path(&png, "assets/shot.png")
                 .unwrap(),
             png
@@ -2127,10 +2131,20 @@ mod tests {
         // the older 4-line adjacent fixture never exercised the
         // production parser and hid the version-reset bug (audit
         // 2026-08-11 disapproval).
-        let warden = DraconWarden::new().unwrap();
+        // The re-encryption path needs an identity it can encrypt to AND
+        // decrypt with. The old version used the production singleton
+        // (`DraconWarden`), which takes its identities from the operator's
+        // key search path: on a machine without one there was nothing to
+        // encrypt to ("No master identity or public recipients found"). The
+        // object under test is the managed-.env re-encryption, so it is
+        // driven directly with an in-memory identity.
+        let mut security = WardenSecurity::new(None).unwrap();
+        security.add_memory_identity(age::x25519::Identity::generate());
         let v1 = "# =============================================================================\n# Dracon Warden Encrypted Environment File\n# This file is encrypted by dracon-warden for secure team collaboration.\n# Version: 1\n# DO NOT EDIT THE ENCRYPTED CONTENT MANUALLY - Use `dracon-warden smudge` to decrypt.\n# =============================================================================\nAPI_KEY=secret\nTRAIL=value\n\n";
-        let encrypted = warden.clean(v1.as_bytes(), Some(".env")).unwrap();
-        let decrypted = warden.smudge(&encrypted, Some(".env")).unwrap();
+        let encrypted = security.smart_clean_with_path(v1.as_bytes(), ".env").unwrap();
+        let decrypted = security
+            .smart_smudge(&String::from_utf8_lossy(&encrypted))
+            .unwrap();
         let decrypted_str = String::from_utf8_lossy(&decrypted);
         assert!(
             decrypted_str.contains("# Version: 2"),
@@ -2229,7 +2243,12 @@ API_KEY=secret"#;
 
     #[test]
     fn test_env_versioning_increment_flow() {
-        let security = WardenSecurity::new(None).unwrap();
+        // An in-memory identity, so the test encrypts and decrypts with the
+        // same key wherever it runs. Without one the encryption had no
+        // recipient ("No master identity or public recipients found for
+        // encryption") on any machine without a key in the search path.
+        let mut security = WardenSecurity::new(None).unwrap();
+        security.add_memory_identity(age::x25519::Identity::generate());
 
         let v1_content = r#"# =============================================================================
 # Dracon Warden Encrypted Environment File
