@@ -4,7 +4,7 @@ set -euo pipefail
 expected=bc1a81ee8b6288433d9f496bd74fd8654cf3d15931b7aaa12a8d0592c5ee3657
 [[ $(sha256sum target/release/dracon-warden | cut -d' ' -f1) == "$expected" ]]
 backup="$HOME/.local/state/dracon/rollback-binaries/warden-hook-$(date -u +%Y%m%d-%H%M%S)"
-mkdir -p -m 700 "$backup"
+mkdir -p "$backup" && chmod 700 "$backup"
 printf 'started=%s\nrollback=%s\n' "$(date -u +%FT%TZ)" "$backup"
 cp -p "$HOME/.local/bin/dracon-warden" "$backup/dracon-warden"
 cp -p "$HOME/.config/git/hooks/pre-push" "$backup/pre-push"
