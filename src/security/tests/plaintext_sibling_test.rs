@@ -151,7 +151,13 @@ fn clean_encrypts_absolute_hatched_path_fail_closed() {
     fs::write(&path, secret).unwrap();
     fs::write(&sibling, "").unwrap();
 
-    let security = WardenSecurity::new(None).unwrap();
+    let mut security = WardenSecurity::new(None).unwrap();
+    // The clean path encrypts, so it needs a recipient. The identity used
+    // to come from the operator's key search path; on a machine without
+    // one the encryption had nowhere to go ("No master identity or public
+    // recipients found for encryption") and the test failed. An in-memory
+    // identity makes it hermetic.
+    security.add_memory_identity(age::x25519::Identity::generate());
     let cleaned = security
         .smart_clean_with_path(secret.as_bytes(), path.to_str().unwrap())
         .expect("clean should succeed");
@@ -179,7 +185,11 @@ fn clean_encrypts_normally_without_plaintext_sibling() {
     fs::write(&path, secret).unwrap();
     // No `.plaintext` sibling
 
-    let security = WardenSecurity::new(None).unwrap();
+    let mut security = WardenSecurity::new(None).unwrap();
+    // An in-memory identity: the clean path encrypts, and the identity used
+    // to come from the operator's key search path, which does not exist on
+    // a CI runner.
+    security.add_memory_identity(age::x25519::Identity::generate());
     let cleaned = security
         .smart_clean_with_path(secret.as_bytes(), path.to_str().unwrap())
         .expect("clean should succeed");
@@ -246,7 +256,11 @@ fn clean_with_empty_sibling_path_is_a_noop() {
     // Defensive: empty path_str must NOT match `<empty>.plaintext` at CWD
     // and accidentally skip encryption. The hatch is opt-in: empty path = no
     // hatch decision.
-    let security = WardenSecurity::new(None).unwrap();
+    let mut security = WardenSecurity::new(None).unwrap();
+    // An in-memory identity: the clean path encrypts, and the identity used
+    // to come from the operator's key search path, which does not exist on
+    // a CI runner.
+    security.add_memory_identity(age::x25519::Identity::generate());
     let secret = concat!(
         "AGE",
         "-SECRET",

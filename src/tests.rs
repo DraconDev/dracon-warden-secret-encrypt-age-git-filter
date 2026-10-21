@@ -3880,8 +3880,15 @@ watch_roots = ["/tmp/test"]
     #[test]
     fn filter_clean_encrypts_content_with_secret_marker() {
         let content = b"secret_api_key = \"super_secret_value_12345\"\n";
-        let warden = DraconWarden::new().expect("create warden");
-        let result = warden.clean(content, Some("config.env")).expect("clean");
+        // An in-memory identity: the clean path encrypts, and the identity
+        // used to come from the operator's key search path — which does not
+        // exist on a CI runner, so the encryption had no recipient there
+        // ("No master identity or public recipients found for encryption").
+        let mut security = WardenSecurity::new(None).unwrap();
+        security.add_memory_identity(age::x25519::Identity::generate());
+        let result = security
+            .smart_clean_with_path(content, "config.env")
+            .expect("clean");
         // Clean should either encrypt or pass through; result should be valid bytes
         assert!(!result.is_empty(), "clean output should not be empty");
     }
