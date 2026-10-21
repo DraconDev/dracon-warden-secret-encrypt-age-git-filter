@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed
+
+- The security crate's tests no longer depend on the machine they run on. The encryption round trips took their identity from the operator's key search path, so on a runner without one the encryption had no recipient ("No master identity or public recipients found for encryption") and the tests failed; each now uses an in-memory age identity. The round-trip tests also use ONE security object, so the body is encrypted and decrypted with the same key — before, each call built a new object with a newly generated identity, and the round trip only passed where a stable identity happened to be loaded from the search path.
+- The scan regression test for a foreign secret marker assembles its token at run time instead of holding a secret-shaped literal. The warden's clean filter encrypts such a literal in source, so committing the test rewrote its body into a `[DRACON_SECRET:...]` tag — 1016 bytes where the test asserts 40 — and the committed source failed its own assertion.
+- The filter-clean regression test drives the security object directly with an in-memory identity instead of the process-global instance, whose identities come from the key search path.
+
 ## [0.113.16] - 2026-10-17
 
 ### Fixed (push-stuck recovery 2026-10-17)
