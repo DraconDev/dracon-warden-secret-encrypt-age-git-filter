@@ -140,8 +140,27 @@ fn index_batch_descendant_has_no_live_process_after_cleanup() {
         pids.display()
     ));
     assert_eq!(batch.lookup("file", 1024), None);
-    let ids = std::fs::read_to_string(&pids).unwrap();
-    let ids: Vec<i32> = ids.split_whitespace().map(|s| s.parse().unwrap()).collect();
+    // The pids file is written by the batch's own shell: the redirect
+    // creates the file before the write lands, so a read straight after
+    // the batch can see an empty file. That happened in the Nix sandbox,
+    // where the read lost the race and the next line indexed an empty
+    // vector. Wait for the content, with a bound.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let ids: Vec<i32> = loop {
+        let raw = std::fs::read_to_string(&pids).unwrap_or_default();
+        let parsed: Vec<i32> = raw
+            .split_whitespace()
+            .map(|s| s.parse().unwrap())
+            .collect();
+        if parsed.len() >= 2 {
+            break parsed;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the batch never reported its pids: {raw:?}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
     let mut status = 0;
     assert_eq!(
         unsafe { libc::waitpid(ids[0], &mut status, libc::WNOHANG) },
