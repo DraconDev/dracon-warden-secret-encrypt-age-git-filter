@@ -5432,6 +5432,7 @@ canonical_secret_matches() {
     # credential elsewhere in the same match still survives and blocks.
     sed -E 's/^[^[:alnum:]_](sk-)/\1/' |
     sed -E 's/\[DRACON_SECRET:[^]]*\]//g' |
+    sed -E 's/(password|secret|api_key)[[:space:]]*=[[:space:]]*["'\\''][[:space:]]*["'\\'']//g' |
     grep -v '^[[:space:]]*$'
 }
 
