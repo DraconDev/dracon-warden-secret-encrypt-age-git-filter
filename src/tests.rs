@@ -288,6 +288,11 @@ mod tests {
         let approved_digest = format!("{:x}", Sha256::digest(reported_match.as_bytes()));
         let reviewed_hook = PRE_PUSH_HOOK.replace(REVIEWED_BLOB, &approved_digest);
         fs::write(&hook, &reviewed_hook).unwrap();
+        assert_eq!(
+            reviewed_hook.matches(REVIEWED_BLOB).count(),
+            0,
+            "the fixture digest must replace the receipt line it binds"
+        );
         fs::write(repo.join("fixture.js"), &benign).unwrap();
         run_git_in(repo, &["add", "--", "fixture.js"]);
         run_git_in(repo, &["commit", "-qm", "reviewed fixture"]);
