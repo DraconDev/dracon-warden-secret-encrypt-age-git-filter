@@ -326,6 +326,85 @@ mod tests {
     }
 
     #[test]
+    fn pre_push_hook_openai_boundary_ignores_asset_names_not_credentials() {
+        let (td, hook) = make_repo_with_pre_push_hook("openai_asset_boundary");
+        let repo = td.path();
+        let asset = format!(
+            "<link rel=\"mask-icon\" href=\"/assets/govuk-icon-mask-{}.svg\">\n",
+            "a".repeat(64)
+        );
+        fs::write(repo.join("public.html"), &asset).unwrap();
+        run_git_in(repo, &["add", "--", "public.html"]);
+        run_git_in(repo, &["commit", "-qm", "public asset fingerprint"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"]);
+        let (status, error) = run_hook(repo, &hook, base.trim(), ZERO_SHA);
+        assert!(status.success(), "public filename rejected: {error}");
+
+        // The same HTML path must still reject a genuinely separate key.
+        let key = format!("{}{}", "sk-", "b".repeat(32));
+        fs::write(repo.join("public.html"), format!("{asset}\"{key}\"\n")).unwrap();
+        run_git_in(repo, &["commit", "-qam", "synthetic credential"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"]);
+        let (status, error) = run_hook(repo, &hook, head.trim(), base.trim());
+        assert!(!status.success(), "HTML path accidentally exempted");
+        assert!(error.contains("Possible plaintext secrets"), "{error}");
+    }
+
+    #[test]
+    fn pre_push_hook_openai_boundary_preserves_real_text_and_binary_detection() {
+        for prefix in ["sk-", "sk-proj-", "sk-svcacct-"] {
+            for binary in [false, true] {
+                let (td, hook) = make_repo_with_pre_push_hook("openai_real_boundaries");
+                let repo = td.path();
+                fs::write(repo.join("base.txt"), "clean\n").unwrap();
+                run_git_in(repo, &["add", "--", "base.txt"]);
+                run_git_in(repo, &["commit", "-qm", "clean baseline"]);
+                let base = git_in_output(repo, &["rev-parse", "HEAD"]);
+                let key = format!("{prefix}{}", "b".repeat(32));
+                // A NUL-delimited token still needs the full binary-safe scan.
+                let payload = if binary {
+                    format!("payload\0{key}\0tail").into_bytes()
+                } else {
+                    format!("\"{key}\"\n").into_bytes()
+                };
+                fs::write(repo.join("candidate.dat"), &payload).unwrap();
+                run_git_in(repo, &["add", "--", "candidate.dat"]);
+                run_git_in(repo, &["commit", "-qm", "synthetic added token"]);
+                let added = git_in_output(repo, &["rev-parse", "HEAD"]);
+                let (status, error) = run_hook(repo, &hook, added.trim(), base.trim());
+                assert!(!status.success(), "added token escaped (binary={binary})");
+                assert!(error.contains("Possible plaintext secrets"), "{error}");
+
+                // Modified-file scanning must likewise detect a new token,
+                // rather than depending only on the added-file path above.
+                let replacement = String::from_utf8(payload).unwrap().replace('b', "c");
+                fs::write(repo.join("candidate.dat"), replacement).unwrap();
+                run_git_in(repo, &["commit", "-qam", "different synthetic token"]);
+                let head = git_in_output(repo, &["rev-parse", "HEAD"]);
+                let (status, error) = run_hook(repo, &hook, head.trim(), added.trim());
+                assert!(!status.success(), "modified token escaped (binary={binary})");
+                assert!(error.contains("Possible plaintext secrets"), "{error}");
+            }
+        }
+    }
+
+    #[test]
+    fn pre_push_hook_openai_boundary_canonicalizes_inherited_binary_matches() {
+        let (td, hook) = make_repo_with_pre_push_hook("openai_binary_delimiter");
+        let repo = td.path();
+        let key = format!("{}{}", "sk-", "b".repeat(32));
+        fs::write(repo.join("asset.bin"), format!("\0\"{key}\"\n")).unwrap();
+        run_git_in(repo, &["add", "--", "asset.bin"]);
+        run_git_in(repo, &["commit", "-qm", "published synthetic baseline"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"]);
+        fs::write(repo.join("asset.bin"), format!("\0:{key}\n")).unwrap();
+        run_git_in(repo, &["commit", "-qam", "unrelated delimiter change"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"]);
+        let (status, error) = run_hook(repo, &hook, head.trim(), base.trim());
+        assert!(status.success(), "unchanged inherited key re-triggered: {error}");
+    }
+
+    #[test]
     fn pre_push_hook_passes_on_clean_commit() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_clean");
         let repo = td.path();
