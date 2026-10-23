@@ -276,6 +276,12 @@ mod tests {
         use sha2::{Digest, Sha256};
         const REVIEWED_BLOB: &str =
             "f8687f3a17de5d4b236770e5860aed778480e3885f63c4b8942eb1cecc77ca4a";
+        // The receipt is a PAIR (whole-blob digest : exact match digest).
+        // Substituting only the blob half would leave the frozen match digest
+        // in place, so the fixture would prove nothing about the match binding
+        // and would fail for a reason unrelated to the assertion below.
+        const REVIEWED_MATCH: &str =
+            "9e0bc72796a817546301febd8583d0a7929c3114bde9e9dcdf8ea562aa61fee7";
         let (td, hook) = make_repo_with_pre_push_hook("hook_review_receipt");
         let repo = td.path();
         // Build synthetic vocabulary without introducing scanner-shaped
@@ -288,12 +294,15 @@ mod tests {
         let reported_end = benign.rfind('\'').expect("fixture closes its value") + 1;
         let reported_match = &benign[reported_start..reported_end];
         let approved_digest = format!("{:x}", Sha256::digest(reported_match.as_bytes()));
-        let reviewed_hook = PRE_PUSH_HOOK.replace(REVIEWED_BLOB, &approved_digest);
+        let reviewed_hook = PRE_PUSH_HOOK.replace(
+            &format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"),
+            &approved_digest,
+        );
         fs::write(&hook, &reviewed_hook).unwrap();
         assert_eq!(
             reviewed_hook.matches(REVIEWED_BLOB).count(),
             0,
-            "the fixture digest must replace the receipt line it binds"
+            "the fixture must replace the receipt it binds"
         );
         fs::write(repo.join("fixture.js"), &benign).unwrap();
         run_git_in(repo, &["add", "--", "fixture.js"]);
@@ -325,7 +334,17 @@ mod tests {
         ]
         .concat();
         let mixed_digest = format!("{:x}", Sha256::digest(mixed.as_bytes()));
-        fs::write(&hook, PRE_PUSH_HOOK.replace(REVIEWED_BLOB, &mixed_digest)).unwrap();
+        // Keep the APPROVED match digest and vary only the blob, so a
+        // rejection here proves the whole-blob binding rather than a stale pair.
+        let approved_pair = format!(
+            "{mixed_digest}:{}",
+            &approved_digest[..approved_digest.find(':').unwrap_or(approved_digest.len())]
+        );
+        fs::write(
+            &hook,
+            PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &approved_pair),
+        )
+        .unwrap();
         fs::write(repo.join("mixed.js"), mixed).unwrap();
         run_git_in(repo, &["add", "--", "mixed.js"]);
         run_git_in(repo, &["commit", "-qm", "unreviewed adjacent match"]);
