@@ -287,19 +287,19 @@ mod tests {
         // Build synthetic vocabulary without introducing scanner-shaped
         // assignments into this test's own source code.
         let benign = ["const sec", "ret = 'fixture-secret-never-echo';\n"].concat();
-        // The receipt binds the EXACT match text, so it must be computed from
-        // what the hook reports (the assignment through its closing quote),
-        // not from the whole fixture line.
+        // The receipt is a PAIR (whole-blob : exact match). Replace BOTH
+        // halves with this fixture's digests: keeping the frozen pair would
+        // prove nothing about the binding and would fail for an unrelated
+        // reason. The hook hashes the match as printed, without its newline.
         let reported_start = benign.find("secret").expect("fixture has the keyword");
         let reported_end = benign.rfind('\'').expect("fixture closes its value") + 1;
-        // The hook hashes the grep MATCH as printed, which keeps the line's
-        // terminator; binding only the trimmed text would never match.
-        let reported_match = format!("{}\n", &benign[reported_start..reported_end]);
-        let approved_digest = format!("{:x}", Sha256::digest(reported_match.as_bytes()));
-        let reviewed_hook = PRE_PUSH_HOOK.replace(
-            &format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"),
-            &approved_digest,
+        let reported_match = &benign[reported_start..reported_end];
+        let pair = format!(
+            "{:x}:{:x}",
+            Sha256::digest(benign.as_bytes()),
+            Sha256::digest(reported_match.as_bytes())
         );
+        let reviewed_hook = PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &pair);
         fs::write(&hook, &reviewed_hook).unwrap();
         assert_eq!(
             reviewed_hook.matches(REVIEWED_BLOB).count(),
@@ -335,16 +335,14 @@ mod tests {
             "word = 'unreviewed-sensitive-value';\n",
         ]
         .concat();
-        let mixed_digest = format!("{:x}", Sha256::digest(mixed.as_bytes()));
-        // Keep the APPROVED match digest and vary only the blob, so a
-        // rejection here proves the whole-blob binding rather than a stale pair.
-        let approved_pair = format!(
-            "{mixed_digest}:{}",
-            &approved_digest[..approved_digest.find(':').unwrap_or(approved_digest.len())]
+        let mixed_pair = format!(
+            "{:x}:{:x}",
+            Sha256::digest(mixed.as_bytes()),
+            Sha256::digest(reported_match.as_bytes())
         );
         fs::write(
             &hook,
-            PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &approved_pair),
+            PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &mixed_pair),
         )
         .unwrap();
         fs::write(repo.join("mixed.js"), mixed).unwrap();
