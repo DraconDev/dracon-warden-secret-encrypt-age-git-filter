@@ -5430,10 +5430,10 @@ canonical_secret_matches() {
         # The core scanner skips a complete warden ciphertext tag; the hook
         # must agree, or correctly encrypted content can never publish.
         line=$(printf '%s\n' "$line" | sed -E 's/\[DRACON_SECRET:[^]]*\]//g')
-        rest=$(printf '%s' "$line" | tr -d '"\047' | tr -d '[:space:]')
-        # The single-quote class consumes one delimiter, so a quoted value
-        # that closes immediately also leaves a trailing quote behind.
-        case "$rest" in password=|secret=|api_key=|password="|secret="|api_key="|password="'|secret="'|api_key="') continue ;; esac
+        # Only identifier characters and `=` survive, so quote/whitespace
+        # residue from the consumed delimiter can never enter the pattern.
+        rest=$(printf '%s' "$line" | tr -cd '[:alnum:]_=')
+        case "$rest" in password=|secret=|api_key=) continue ;; esac
         printf '%s\n' "$line"
     done
 }
