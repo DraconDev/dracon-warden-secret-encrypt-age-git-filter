@@ -5055,51 +5055,90 @@ grep -v '^[[:space:]]*#' "$REPO/.gitattributes" 2>/dev/null | grep -q "filter=dr
 # `ledger-segments/`. Only unambiguous machine-local state and regenerable
 # frames are refused. Fix a refusal once, forward-only, with
 # `git rm --cached -- <path>`; history is never rewritten here.
-machine_local_violations=0
-staged_names="$(git -C "$REPO" diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)"
-if [ -n "$staged_names" ]; then
-    while IFS= read -r staged_path; do
-        [ -n "$staged_path" ] || continue
-        case "$staged_path" in
-            # Durable record surface - intentionally tracked.
-            .pi-glla/audit-loop/*.md|*/.pi-glla/audit-loop/*.md|\
-            .pi-glla/archive/*|.pi-glla/archive|*/.pi-glla/archive/*|\
-            .pi-glla/reviews/*|.pi-glla/reviews|*/.pi-glla/reviews/*|\
-            .pi-glla/ledger-segments/*|.pi-glla/ledger-segments|*/.pi-glla/ledger-segments/*) continue ;;
-            # Machine-local loop state, regeneratable frame dumps, the
-            # ledger's baseline copy, and the loop scratch/evidence trees.
-            .pi-glla/active.jsonl|*/.pi-glla/active.jsonl|\
-            .pi-glla/audits.jsonl|*/.pi-glla/audits.jsonl|\
-            .pi-glla/owner.json|*/.pi-glla/owner.json|\
-            .pi-glla/session-owner.json|*/.pi-glla/session-owner.json|\
-            .pi-glla/update-check.json|*/.pi-glla/update-check.json|\
-            .pi-glla/pending-approval-renders.json|*/.pi-glla/pending-approval-renders.json|\
-            .pi-glla/compactor-jobs/*|.pi-glla/compactor-jobs|*/.pi-glla/compactor-jobs/*|\
-            .pi-glla/scratch/*|.pi-glla/scratch|*/.pi-glla/scratch/*|\
-            .pi/chrome-screenshots/*|.pi/chrome-screenshots|*/.pi/chrome-screenshots/*|\
-            audit-*/screenshots/*|*/audit-*/screenshots/*|\
-            .pi-glla/audit-loop/findings.baseline.md|*/.pi-glla/audit-loop/findings.baseline.md|\
-            scratch/*|scratch|*/scratch/*|\
-            screenshots/*|screenshots|*/screenshots/*|\
-            audit-evidence/*|audit-evidence|*/audit-evidence/*)
-                echo "machine-local file is staged: $staged_path" >&2
-                echo "   This is loop bookkeeping, a regeneratable frame dump, or" >&2
-                echo "   working material - not repository content. Warden's ignore" >&2
-                echo "   rule never took effect because the file was already tracked." >&2
-                echo "   Fix once, forward-only:" >&2
-                echo "     git rm --cached -- '$staged_path'" >&2
-                echo "   History is not rewritten here; only future commits stop." >&2
-                machine_local_violations=$((machine_local_violations + 1))
-                ;;
-        esac
-    done <<EOF
-$staged_names
-EOF
-fi
-if [ "$machine_local_violations" -gt 0 ]; then
-    echo "pre-commit: $machine_local_violations machine-local file(s) blocked." >&2
+# Audit trees can also hold archived nondeterministic generator inputs and
+# curated evidence. Honor only effective, scoped file inclusions from the
+# repository's root .gitignore. Mere absence of an ignore rule, a global
+# exclusion override, or a blanket directory inclusion grants nothing.
+# Keep path plumbing NUL-delimited: spaces/newlines must not evade this gate.
+HYGIENE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/dracon-hygiene.XXXXXX") || exit 1
+trap 'rm -rf -- "$HYGIENE_TMP"' 0
+if ! git -C "$REPO" diff --cached --name-only --diff-filter=ACMR -z > "$HYGIENE_TMP/staged"; then
+    echo "pre-commit: cannot inspect staged machine-local paths; refusing commit." >&2
     exit 1
 fi
+cat > "$HYGIENE_TMP/inclusion" <<'DRACON_INCLUSION'
+# Arguments after the two bindings are Git's four NUL-delimited fields.
+[ "$#" -eq 6 ] || exit 1
+repo=$1 expected=$2 source=$3 line=$4 pattern=$5 path=$6
+[ "$path" = "$expected" ] && [ "$source" = .gitignore ] || exit 1
+case "$line" in ''|*[!0-9]*) exit 1 ;; esac
+case "$pattern" in !*) pattern=${pattern#?} ;; *) exit 1 ;; esac
+pattern=${pattern#/}
+case "$pattern" in *'**'*|*/) exit 1 ;; esac
+case "$pattern" in audit-evidence/*|*/audit-evidence/*) ;; *) exit 1 ;; esac
+parent=${pattern%/*}
+file=${pattern##*/}
+# Parent directories must be explicit. A file-type glob is acceptable only
+# inside an explicit run/subtree, not across the entire audit-evidence root.
+case "$parent" in *'*'*|*'?'*|*'['*) exit 1 ;; esac
+case "$file" in '*'|'*.*'|'') exit 1 ;; esac
+case "$parent" in audit-evidence|*/audit-evidence)
+    case "$file" in *'*'*|*'?'*|*'['*) exit 1 ;; esac ;;
+esac
+exit 0
+DRACON_INCLUSION
+cat > "$HYGIENE_TMP/paths" <<'DRACON_PATHS'
+repo=$1 tmp=$2
+shift 2
+violations=0
+for staged_path do
+    case "$staged_path" in
+        # Preserve the existing durable-record surface.
+        .pi-glla/audit-loop/*.md|*/.pi-glla/audit-loop/*.md|\
+        .pi-glla/archive/*|.pi-glla/archive|*/.pi-glla/archive/*|\
+        .pi-glla/reviews/*|.pi-glla/reviews|*/.pi-glla/reviews/*|\
+        .pi-glla/ledger-segments/*|.pi-glla/ledger-segments|*/.pi-glla/ledger-segments/*) continue ;;
+        # These stronger categories are never overridden by an audit inclusion.
+        .pi-glla/active.jsonl|*/.pi-glla/active.jsonl|\
+        .pi-glla/audits.jsonl|*/.pi-glla/audits.jsonl|\
+        .pi-glla/owner.json|*/.pi-glla/owner.json|\
+        .pi-glla/session-owner.json|*/.pi-glla/session-owner.json|\
+        .pi-glla/update-check.json|*/.pi-glla/update-check.json|\
+        .pi-glla/pending-approval-renders.json|*/.pi-glla/pending-approval-renders.json|\
+        .pi-glla/compactor-jobs/*|.pi-glla/compactor-jobs|*/.pi-glla/compactor-jobs/*|\
+        .pi-glla/scratch/*|.pi-glla/scratch|*/.pi-glla/scratch/*|\
+        .pi/chrome-screenshots/*|.pi/chrome-screenshots|*/.pi/chrome-screenshots/*|\
+        audit-*/screenshots/*|*/audit-*/screenshots/*|\
+        .pi-glla/audit-loop/findings.baseline.md|*/.pi-glla/audit-loop/findings.baseline.md|\
+        scratch/*|scratch|*/scratch/*|\
+        screenshots/*|screenshots|*/screenshots/*) ;;
+        audit-evidence/*|audit-evidence|*/audit-evidence/*)
+            printf '%s\000' "$staged_path" > "$tmp/query"
+            git -C "$repo" check-ignore --no-index --verbose -z --stdin < "$tmp/query" > "$tmp/ignore"
+            query_status=$?
+            case "$query_status" in
+                0|1) ;;
+                *) echo "pre-commit: cannot inspect audit inclusion; refusing commit." >&2; exit 1 ;;
+            esac
+            if xargs -0 -n 4 sh "$tmp/inclusion" "$repo" "$staged_path" < "$tmp/ignore"; then
+                continue
+            fi ;;
+        *) continue ;;
+    esac
+    printf 'machine-local file is staged: %s\n' "$staged_path" >&2
+    echo "   Confirm the intended content/ignore policy; preserve local bytes." >&2
+    echo "   Only explicitly scoped audit deliverables may override the audit category." >&2
+    echo "   Index-only removal is not a durable fix for deliberately included content." >&2
+    violations=$((violations + 1))
+done
+[ "$violations" -eq 0 ]
+DRACON_PATHS
+if ! xargs -0 sh "$HYGIENE_TMP/paths" "$REPO" "$HYGIENE_TMP" < "$HYGIENE_TMP/staged"; then
+    echo "pre-commit: machine-local staging policy blocked this commit." >&2
+    exit 1
+fi
+rm -rf -- "$HYGIENE_TMP"
+trap - 0
 
 # Check .gitattributes has filter=dracon patterns
 # FIXED 2026-10-03 (audit R3-M3): ignore `#` comments — only an ACTIVE
