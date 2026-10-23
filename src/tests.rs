@@ -1067,6 +1067,26 @@ mod tests {
             Some(0),
             "search text with no assigned value must not block: {stderr}"
         );
+        // The paired-value rule must still see a genuine JSON assignment.
+        // JSON's colon form is a separate, pre-existing gap (the unquoted
+        // value shape is unchanged here); what matters is that an `=` value
+        // between real quotes is NOT suppressed as an empty assignment.
+        fs::write(
+            repo.join("real.json"),
+            "{\"api_key\": \"abcdefghijklmnopqrstuvwxyz012345\"}\n",
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "real.json"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add real value"]);
+        let leak = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, stderr) = run_hook(repo, &hook_path, &leak, &head);
+        assert_eq!(
+            status.code(),
+            Some(1),
+            "a real quoted value must still block: {stderr}"
+        );
     }
 
     /// The hook must skip its OWN encrypted representation exactly as the core
