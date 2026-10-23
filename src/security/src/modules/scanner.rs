@@ -1206,6 +1206,39 @@ mod tests {
     }
 
     #[test]
+    fn test_openai_hook_boundary_matches_scanner_not_asset_substrings() {
+        let shapes: std::collections::HashMap<_, _> =
+            SecretScanner::hook_token_shapes_ere().into_iter().collect();
+        let hook = regex::Regex::new(shapes["OpenAI API Key"]).unwrap();
+        let scanner = SecretScanner::new_without_age_keys().unwrap();
+        let asset = format!("/assets/govuk-icon-mask-{}.svg", "a".repeat(64));
+        assert!(!hook.is_match(&asset));
+        assert!(!scanner
+            .scan(&asset)
+            .iter()
+            .any(|f| f.name == "OpenAI API Key"));
+        for prefix in ["sk-", "sk-proj-", "sk-svcacct-"] {
+            let key = format!("{prefix}{}", "b".repeat(32));
+            for delimiter in ["", "\"", ":", " ", "\0"] {
+                let candidate = format!("{delimiter}{key}");
+                assert!(hook.is_match(&candidate));
+                assert!(scanner
+                    .scan(&candidate)
+                    .iter()
+                    .any(|f| f.name == "OpenAI API Key"));
+            }
+            for word_prefix in ["ma", "ta", "_"] {
+                let candidate = format!("{word_prefix}{key}");
+                assert!(!hook.is_match(&candidate));
+                assert!(!scanner
+                    .scan(&candidate)
+                    .iter()
+                    .any(|f| f.name == "OpenAI API Key"));
+            }
+        }
+    }
+
+    #[test]
     fn test_scanner_truncates_utf8_snippet_at_char_boundary() {
         let scanner = SecretScanner::new().unwrap();
         let content = format!("password:\"{}\"", "🙂".repeat(20));

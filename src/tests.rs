@@ -382,7 +382,10 @@ mod tests {
                 run_git_in(repo, &["commit", "-qam", "different synthetic token"]);
                 let head = git_in_output(repo, &["rev-parse", "HEAD"]);
                 let (status, error) = run_hook(repo, &hook, head.trim(), added.trim());
-                assert!(!status.success(), "modified token escaped (binary={binary})");
+                assert!(
+                    !status.success(),
+                    "modified token escaped (binary={binary})"
+                );
                 assert!(error.contains("Possible plaintext secrets"), "{error}");
             }
         }
@@ -401,7 +404,10 @@ mod tests {
         run_git_in(repo, &["commit", "-qam", "unrelated delimiter change"]);
         let head = git_in_output(repo, &["rev-parse", "HEAD"]);
         let (status, error) = run_hook(repo, &hook, head.trim(), base.trim());
-        assert!(status.success(), "unchanged inherited key re-triggered: {error}");
+        assert!(
+            status.success(),
+            "unchanged inherited key re-triggered: {error}"
+        );
     }
 
     #[test]
