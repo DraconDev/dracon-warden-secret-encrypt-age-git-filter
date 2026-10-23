@@ -1014,6 +1014,95 @@ mod tests {
     /// github token, hyphen-class gitlab token, live stripe key). The
     /// token literals are concat-split so the warden's own push of this
     /// test file does not trip the hook it tests.
+    /// Real JSON search text ending in an empty `api_key=` assignment (the
+    /// platform GSC evidence export) must not read as a credential: the quote
+    /// after `=` is JSON's CLOSING delimiter, not the start of a value.
+    #[test]
+    fn pre_push_hook_ignores_unpaired_assignment_quote() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_unpaired_quote");
+        let repo = td.path();
+        fs::write(
+            repo.join("gsc.json"),
+            "{\"rows\":[{\"keys\":[\"how to find api_key=\"],\"clicks\":1}]}\n",
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "gsc.json"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add search evidence"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+        assert_eq!(
+            status.code(),
+            Some(0),
+            "search text with no assigned value must not block: {stderr}"
+        );
+    }
+
+    /// The hook must skip its OWN encrypted representation exactly as the core
+    /// scanner's `is_inside_secret_tag` does, or a repository that correctly
+    /// encrypted a secret can never publish the ciphertext.
+    #[test]
+    fn pre_push_hook_ignores_warden_ciphertext_assignment() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_ciphertext_tag");
+        let repo = td.path();
+        let body = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2";
+        fs::write(
+            repo.join("collected.html"),
+            format!("var cfg = {{ api_key='[DRACON_SECRET:{body}]' }};\n"),
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "collected.html"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add collected source"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+        assert_eq!(
+            status.code(),
+            Some(0),
+            "already-encrypted content must publish: {stderr}"
+        );
+    }
+
+    /// The encrypted-tag safeguard must not become a general bypass: a real
+    /// credential wrapped in a hand-written foreign tag still blocks, and a
+    /// plaintext assignment beside a tag still blocks.
+    #[test]
+    fn pre_push_hook_still_blocks_secrets_around_tags() {
+        for (name, body) in [
+            (
+                "foreign_tag",
+                format!(
+                    "api_key=\"[MY_SECRET:{}]\"\n",
+                    concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789")
+                ),
+            ),
+            (
+                "beside_tag",
+                format!(
+                    "a='[DRACON_SECRET:QUJD]'\napi_key=\"{}\"\n",
+                    concat!("gh", "p_abcdefghijklmnopqrstuvwxyz0123456789")
+                ),
+            ),
+        ] {
+            let (td, hook_path) = make_repo_with_pre_push_hook(&format!("hook_tag_{name}"));
+            let repo = td.path();
+            fs::write(repo.join("leak.env"), body).unwrap();
+            run_git_in(repo, &["add", "leak.env"]);
+            run_git_in(repo, &["commit", "-q", "-m", "leak"]);
+            let head = git_in_output(repo, &["rev-parse", "HEAD"])
+                .trim()
+                .to_string();
+            let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+            assert_eq!(
+                status.code(),
+                Some(1),
+                "{name}: a real credential must still block: {stderr}"
+            );
+        }
+    }
+
     #[test]
     fn pre_push_hook_blocks_github_token_shape() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_github_token");
