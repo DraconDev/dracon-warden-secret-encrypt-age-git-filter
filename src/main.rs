@@ -5431,7 +5431,9 @@ canonical_secret_matches() {
         # must agree, or correctly encrypted content can never publish.
         line=$(printf '%s\n' "$line" | sed -E 's/\[DRACON_SECRET:[^]]*\]//g')
         rest=$(printf '%s' "$line" | tr -d '"\047' | tr -d '[:space:]')
-        case "$rest" in password=|secret=|api_key=) continue ;; esac
+        # The single-quote class consumes one delimiter, so a quoted value
+        # that closes immediately also leaves a trailing quote behind.
+        case "$rest" in password=|secret=|api_key=|password="|secret="|api_key="|password="'|secret="'|api_key="') continue ;; esac
         printf '%s\n' "$line"
     done
 }
