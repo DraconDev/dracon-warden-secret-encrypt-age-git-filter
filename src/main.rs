@@ -4587,7 +4587,7 @@ fn shell_single_quote(value: &Path) -> String {
 /// survives POSIX single-quote parsing (2026-08-12), and `\\s`/`[^...]`
 /// are `grep -E` escapes, not Rust ones.
 #[cfg(test)]
-const HOOK_ASSIGNMENT_ALTERNATIVES: &str = "password\\s*=\\s*("[^"[:cntrl:]]*"|'[^'[:cntrl:]]*')|secret\\s*=\\s*("[^"[:cntrl:]]*"|'[^'[:cntrl:]]*')|api_key\\s*=\\s*("[^"[:cntrl:]]*"|'[^'[:cntrl:]]*')|password\\s*=\\s*[^[:space:]\"'']{6,}";
+const HOOK_ASSIGNMENT_ALTERNATIVES: &str = "(password\\s*=\\s*(\"[^\"[:cntrl:]]*\"|'[^'[:cntrl:]]*')|secret\\s*=\\s*(\"[^\"[:cntrl:]]*\"|'[^'[:cntrl:]]*')|api_key\\s*=\\s*(\"[^\"[:cntrl:]]*\"|'[^'[:cntrl:]]*')|password\\s*=\\s*[^[:space:]\"'']{6,}";
 #[cfg(test)]
 const HOOK_PEM_HEADER_ALTERNATIVE: &str = "-----BEGIN [A-Z]+ PRIVATE KEY";
 
