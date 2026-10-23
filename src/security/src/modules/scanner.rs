@@ -240,8 +240,9 @@ impl SecretScanner {
     /// PEM mapping), no hook shape without a Tier-1 entry.
     ///
     /// ERE transliteration rules (the hook runs `grep -E`, not the `regex`
-    /// crate): no `\b` (anchor by alternation position instead — a hook
-    /// false positive only blocks a push, it never encrypts source), no
+    /// crate): no `\b` (express necessary boundaries with POSIX classes;
+    /// the hook canonicalizes consumed OpenAI delimiters before comparing
+    /// matches, preserving inherited-binary and review-receipt identity), no
     /// `\s`/`\d`/`\w`, no `(?:...)`/`(?...)` (plain `(...)` groups are
     /// fine), `{m,n}` kept verbatim, and a literal `-` inside a class goes
     /// LAST (`[A-Za-z0-9_-]`, never `[\-...]` — POSIX leaves `\-` undefined
@@ -321,7 +322,9 @@ impl SecretScanner {
             ("NPM Access Token", "npm_[A-Za-z0-9]{36}"),
             (
                 "OpenAI API Key",
-                "sk-((proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})",
+                // Preserve the core scanner's leading word boundary. Without
+                // it, a public `mask-<asset-fingerprint>` filename matches.
+                "(^|[^[:alnum:]_])sk-((proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})",
             ),
             ("OpenRouter API Key", "sk-or-v1-[0-9a-f]{64}"),
             ("Groq API Key", "gsk_[A-Za-z0-9]{52}"),
