@@ -5597,7 +5597,12 @@ while read local_ref local_sha remote_ref remote_sha; do
     # x" — the class became ["x27], matching literal x/2/7 instead of
     # a single quote), so single-quoted secrets escaped the scan. Use
     # the shell `'`\\`''` idiom to embed a literal single quote.
-    if echo "$DIFF" | grep -qE "$SECRET_RE"; then
+    # Canonicalize this path too: the blob scan already ignores a complete
+    # warden ciphertext tag, so a CHANGED line carrying that ciphertext must
+    # not block a repository that encrypted a secret correctly. A genuine
+    # credential elsewhere in the same line survives canonicalization.
+    DIFF_MATCHES=$(printf '%s\n' "$DIFF" | grep -aoE "$SECRET_RE" | canonical_secret_matches)
+    if [ -n "$DIFF_MATCHES" ]; then
         echo "⚠️  Possible plaintext secrets detected in push." >&2
         echo "   The warden filter may have been bypassed." >&2
         echo "   Run: dracon-warden once $(git rev-parse --show-toplevel)" >&2

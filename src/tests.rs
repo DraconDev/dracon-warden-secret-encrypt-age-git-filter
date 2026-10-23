@@ -1133,6 +1133,43 @@ mod tests {
         }
     }
 
+    /// The CHANGED-line scan must apply the same ciphertext rule as the blob
+    /// scan, otherwise editing a line that carries an encrypted value blocks
+    /// publication even though the secret is protected.
+    #[test]
+    fn pre_push_hook_allows_changed_line_with_ciphertext() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_changed_ciphertext");
+        let repo = td.path();
+        let body = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2";
+        fs::write(
+            repo.join("collected.html"),
+            format!("var cfg = {{key:'[DRACON_SECRET:{body}]'}};\n"),
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "collected.html"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add collected source"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        // A later edit of that same line is a CHANGED line, not an added file.
+        fs::write(
+            repo.join("collected.html"),
+            format!("var cfg = {{key:'[DRACON_SECRET:{body}]',x:1}};\n"),
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "collected.html"]);
+        run_git_in(repo, &["commit", "-q", "-m", "edit collected source"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, stderr) = run_hook(repo, &hook_path, &head, &base);
+        assert_eq!(
+            status.code(),
+            Some(0),
+            "editing a line with ciphertext must publish: {stderr}"
+        );
+    }
+
     #[test]
     fn pre_push_hook_blocks_github_token_shape() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_github_token");
