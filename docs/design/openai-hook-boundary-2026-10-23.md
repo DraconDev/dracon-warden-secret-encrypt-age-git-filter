@@ -50,5 +50,12 @@ new credential. Existing reviewed-match receipts are not extended or changed.
 
 Raw receipts are retained in dracon-sync's
 `evidence/fleet-convergence-2026-10-23/checks/`.
-Workspace qualification, production hook/binary installation and observed
-strategy publication remain pending. Test success is not a convergence claim.
+At that investigation stage, workspace qualification and production installation
+were still pending. The later fleet qualification passed the workspace suite,
+Clippy, release build and dependency check. The qualified Warden executable is
+now installed with a backup; before that replacement all three global hook
+scripts already matched its renderer byte-for-byte, so the installation did not
+change hook files or settings. See dracon-sync's
+`evidence/fleet-convergence-2026-10-23/qualification-checkpoint.md` and its retained
+installation receipt. Strategy retry/publication remains unproven; test success
+and installation are not convergence claims.
