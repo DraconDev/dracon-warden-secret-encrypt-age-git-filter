@@ -284,7 +284,9 @@ mod tests {
         // The receipt binds the EXACT match text, so it must be computed from
         // what the hook reports (the assignment through its closing quote),
         // not from the whole fixture line.
-        let reported_match = &benign[benign.find("secret").expect("fixture has the keyword")..];
+        let reported_start = benign.find("secret").expect("fixture has the keyword");
+        let reported_end = benign.rfind('\'').expect("fixture closes its value") + 1;
+        let reported_match = &benign[reported_start..reported_end];
         let approved_digest = format!("{:x}", Sha256::digest(reported_match.as_bytes()));
         let reviewed_hook = PRE_PUSH_HOOK.replace(REVIEWED_BLOB, &approved_digest);
         fs::write(&hook, &reviewed_hook).unwrap();
