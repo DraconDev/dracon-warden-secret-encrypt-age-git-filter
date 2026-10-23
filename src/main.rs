@@ -5425,13 +5425,15 @@ remote_blob_is_published() {
 # review receipts continue to compare the token, not its surrounding syntax.
 # No path, extension, blob or credential is exempted by this normalization.
 canonical_secret_matches() {
-    # The core scanner treats a complete warden ciphertext tag as already
-    # encrypted (`is_inside_secret_tag`); the hook must agree or a repository
-    # that correctly encrypted a secret can never publish it. Strip only a
-    # COMPLETE tag and drop a match that was nothing but that tag; a real
-    # credential elsewhere in the same match still survives and blocks.
     sed -E 's/^[^[:alnum:]_](sk-)/\1/' |
-    awk '{ gsub(/\[DRACON_SECRET:[^]]*\]/, ""); t = $0; gsub(/[\042\047[:space:]]/, "", t); if (t ~ /^[A-Za-z_]+=$/) next; print }' |
+    while IFS= read -r line; do
+        # The core scanner skips a complete warden ciphertext tag; the hook
+        # must agree, or correctly encrypted content can never publish.
+        line=$(printf '%s\n' "$line" | sed -E 's/\[DRACON_SECRET:[^]]*\]//g')
+        rest=$(printf '%s' "$line" | tr -d '"\047' | tr -d '[:space:]')
+        case "$rest" in password=|secret=|api_key=) continue ;; esac
+        printf '%s\n' "$line"
+    done
 }
 
 # Operator-reviewed false positives (2026-10-17). Bind each individual
