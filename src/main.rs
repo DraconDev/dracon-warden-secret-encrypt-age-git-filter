@@ -5432,7 +5432,7 @@ canonical_secret_matches() {
     # match still survives and blocks; a match that was nothing but the
     # assignment of a tag is dropped, exactly like an encrypted value.
     sed -E 's/^[^[:alnum:]_](sk-)/\1/' |
-    sed -E 's/\[DRACON_SECRET:[^]]*\]/[DRACON_SECRET]/g' |
+    sed -E 's/\[DRACON_SECRET:[^]]*\]/[DRACON_SECRET]/g' | \
     grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?\[DRACON_SECRET\][\"']?$"
 }
 
