@@ -281,7 +281,11 @@ mod tests {
         // Build synthetic vocabulary without introducing scanner-shaped
         // assignments into this test's own source code.
         let benign = ["const sec", "ret = 'fixture-secret-never-echo';\n"].concat();
-        let approved_digest = format!("{:x}", Sha256::digest(benign.as_bytes()));
+        // The receipt binds the EXACT match text, so it must be computed from
+        // what the hook reports (the assignment through its closing quote),
+        // not from the whole fixture line.
+        let reported_match = &benign[benign.find("secret").expect("fixture has the keyword")..];
+        let approved_digest = format!("{:x}", Sha256::digest(reported_match.as_bytes()));
         let reviewed_hook = PRE_PUSH_HOOK.replace(REVIEWED_BLOB, &approved_digest);
         fs::write(&hook, &reviewed_hook).unwrap();
         fs::write(repo.join("fixture.js"), &benign).unwrap();
