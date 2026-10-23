@@ -950,6 +950,28 @@ mod tests {
         );
     }
 
+    /// The mirror of `assert_pre_push_blocks_content` for shapes the hook
+    /// must ALLOW. Kept next to it so an allow-assertion can never be
+    /// written against a helper that silently asserts the opposite.
+    fn assert_pre_push_allows_content(name: &str, filename: &str, content: &str) {
+        let (td, hook_path) = make_repo_with_pre_push_hook(name);
+        let repo = td.path();
+        fs::write(repo.join(filename), content).expect("write fixture");
+        run_git_in(repo, &["add", "--", filename]);
+        run_git_in(repo, &["commit", "-q", "-m", "add fixture"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+        assert_eq!(
+            status.code(),
+            Some(0),
+            "hook must allow the {} shape; stderr was: {}",
+            name,
+            stderr
+        );
+    }
+
     #[test]
     fn pre_push_hook_blocks_begin_private_key_branch() {
         assert_pre_push_blocks_content(
