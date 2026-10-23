@@ -4869,6 +4869,82 @@ protected_patterns = ["secrets.json"]
 
     // ---- pre-commit (H-10) ----
 
+    fn managed_hygiene_fixture(name: &str) -> (TestDir, std::path::PathBuf) {
+        let td = TestDir::new(name);
+        let repo = td.path();
+        run_git_in(repo, &["init", "-q"]);
+        remove_ambient_local_hooks(repo);
+        // No commit or identity override: these tests inspect the staged tree.
+        fs::write(repo.join(".gitattributes"), "*.env filter=dracon diff=dracon merge=dracon\n").unwrap();
+        for (key, value) in [
+            ("filter.dracon.clean", "cat"),
+            ("filter.dracon.required", "true"),
+            ("diff.dracon.textconv", "cat"),
+            ("merge.dracon.driver", "true"),
+        ] {
+            run_git_in(repo, &["config", "--local", key, value]);
+        }
+        let hook = repo.join(".git/hygiene-pre-commit");
+        fs::write(&hook, PRE_COMMIT_HOOK).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        (td, hook)
+    }
+
+    fn stage_hygiene_fixture(repo: &std::path::Path, path: &str) {
+        let file = repo.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, "fixture source bytes\n").unwrap();
+        run_git_in(repo, &["add", "-f", "--", path]);
+    }
+
+    #[test]
+    fn pre_commit_hygiene_honors_scoped_sources_without_skipping_security() {
+        let (td, hook) = managed_hygiene_fixture("hygiene_scoped_sources");
+        let repo = td.path();
+        fs::write(repo.join(".gitignore"), "audit-evidence/\n!audit-evidence/\naudit-evidence/*\n!audit-evidence/run-2026/\n!audit-evidence/run-2026/generated/\n!audit-evidence/run-2026/generated/*.png\n!audit-evidence/run-2026/before/\n!audit-evidence/run-2026/before/*.webp\n!audit-evidence/run-2026/report.json\n").unwrap();
+        for path in [
+            "audit-evidence/run-2026/generated/source.png",
+            "audit-evidence/run-2026/generated/space name.png",
+            "audit-evidence/run-2026/generated/-leading.png",
+            "audit-evidence/run-2026/generated/unicode-é\nname.png",
+            "audit-evidence/run-2026/before/baseline.webp",
+            "audit-evidence/run-2026/report.json",
+        ] {
+            stage_hygiene_fixture(repo, path);
+        }
+        let (status, text) = run_hook_args(repo, &hook, &[]);
+        assert!(status.success(), "deliberately included source/evidence must pass: {text}");
+        run_git_in(repo, &["config", "--local", "filter.dracon.required", "false"]);
+        let (status, text) = run_hook_args(repo, &hook, &[]);
+        assert!(!status.success());
+        assert!(text.contains("required is not true"), "hygiene permission must still reach security checks: {text}");
+    }
+
+    #[test]
+    fn pre_commit_hygiene_does_not_grant_blanket_or_nested_machine_local_exemptions() {
+        for (name, rules, path) in [
+            ("unclassified", "", "audit-evidence/unclassified.png"),
+            ("ignored", "audit-evidence/\n", "audit-evidence/run/generated/source.png"),
+            ("blanket", "!audit-evidence/**\n", "audit-evidence/run/source.png"),
+            ("other_run", "!audit-evidence/run-2026/generated/*.png\n", "audit-evidence/other/generated/source.png"),
+            ("other_type", "!audit-evidence/run-2026/generated/*.png\n", "audit-evidence/run-2026/generated/source.jpg"),
+            ("scratch", "!audit-evidence/run-2026/scratch/*.png\n", "audit-evidence/run-2026/scratch/source.png"),
+            ("captures", "!audit-evidence/run-2026/.pi/chrome-screenshots/*.png\n", "audit-evidence/run-2026/.pi/chrome-screenshots/frame.png"),
+            ("loop_state", "!audit-evidence/run-2026/.pi-glla/active.jsonl\n", "audit-evidence/run-2026/.pi-glla/active.jsonl"),
+        ] {
+            let (td, hook) = managed_hygiene_fixture(&format!("hygiene_{name}"));
+            fs::write(td.path().join(".gitignore"), rules).unwrap();
+            stage_hygiene_fixture(td.path(), path);
+            let (status, text) = run_hook_args(td.path(), &hook, &[]);
+            assert!(!status.success(), "{name} must remain blocked: {text}");
+            assert!(text.contains("machine-local"), "{name}: {text}");
+        }
+    }
+
     #[test]
     fn pre_commit_hook_allows_unmanaged_repo() {
         let (td, hook) = make_repo_with_hook("precommit_unmanaged", "pre-commit", PRE_COMMIT_HOOK);
