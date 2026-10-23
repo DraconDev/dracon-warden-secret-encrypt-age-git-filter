@@ -5431,8 +5431,7 @@ canonical_secret_matches() {
     # COMPLETE tag and drop a match that was nothing but that tag; a real
     # credential elsewhere in the same match still survives and blocks.
     sed -E 's/^[^[:alnum:]_](sk-)/\1/' |
-    sed -E 's/\[DRACON_SECRET:[^]]*\]//g' |
-    grep -v '^[[:space:]]*$'
+    awk '{ gsub(/\[DRACON_SECRET:[^]]*\]/, ""); t = $0; gsub(/[\042\047[:space:]]/, "", t); if (t ~ /^[A-Za-z_]+=$/) next; print }' |
 }
 
 # Operator-reviewed false positives (2026-10-17). Bind each individual
