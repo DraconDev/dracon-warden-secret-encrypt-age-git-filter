@@ -292,7 +292,9 @@ mod tests {
         // not from the whole fixture line.
         let reported_start = benign.find("secret").expect("fixture has the keyword");
         let reported_end = benign.rfind('\'').expect("fixture closes its value") + 1;
-        let reported_match = &benign[reported_start..reported_end];
+        // The hook hashes the grep MATCH as printed, which keeps the line's
+        // terminator; binding only the trimmed text would never match.
+        let reported_match = format!("{}\n", &benign[reported_start..reported_end]);
         let approved_digest = format!("{:x}", Sha256::digest(reported_match.as_bytes()));
         let reviewed_hook = PRE_PUSH_HOOK.replace(
             &format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"),
