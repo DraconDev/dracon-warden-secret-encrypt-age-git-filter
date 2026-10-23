@@ -1190,6 +1190,26 @@ mod tests {
         );
     }
 
+    /// A template interpolation is code, not a committed credential, so a
+    /// documented placeholder must not wedge publication. A literal value in
+    /// the same position must still block, and a literal beside a
+    /// placeholder must still block.
+    #[test]
+    fn pre_push_hook_distinguishes_interpolated_placeholder_from_literal() {
+        let placeholder = concat!(
+            "api_key=\"${", "keyPlaceholder}\"\n",
+            "password=\"${cfg.value}\",  # env: X\n"
+        );
+        assert_pre_push_allows_content("hook_interpolated_placeholder", "doc.md", placeholder);
+        assert_pre_push_blocks_content(
+            "hook_literal_beside_placeholder",
+            "doc2.md",
+            concat!(
+                "api_key=\"${", "keyPlaceholder}\"\npassword=\"literal-value-never-echo\"\n"
+            ),
+        );
+    }
+
     #[test]
     fn pre_push_hook_blocks_github_token_shape() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_github_token");

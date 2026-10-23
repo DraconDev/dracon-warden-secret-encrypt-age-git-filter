@@ -5433,7 +5433,11 @@ canonical_secret_matches() {
     # assignment of a tag is dropped, exactly like an encrypted value.
     sed -E 's/^[^[:alnum:]_](sk-)/\1/' |
     sed -E 's/\[DRACON_SECRET:[^]]*\]/[DRACON_SECRET]/g' | \
-    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?\[DRACON_SECRET\][\"']?$"
+    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?\[DRACON_SECRET\][\"']?$" |
+    # A value that is ENTIRELY a template interpolation is code, not a
+    # committed literal: `api_key="${keyPlaceholder}"` is a documented
+    # placeholder. A literal value in the same position still blocks.
+    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?\$\{[^}]*\}[\"']?$"
 }
 
 # Operator-reviewed false positives (2026-10-17). Bind each individual
