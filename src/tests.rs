@@ -5148,6 +5148,8 @@ protected_patterns = ["secrets.json"]
             ("unclassified", "", "audit-evidence/unclassified.png"),
             ("ignored", "audit-evidence/\n", "audit-evidence/run/generated/source.png"),
             ("blanket", "!audit-evidence/**\n", "audit-evidence/run/source.png"),
+            ("blanket_file_glob", "!audit-evidence/run-2026/generated/*?\n", "audit-evidence/run-2026/generated/source.png"),
+            ("blanket_extension_glob", "!audit-evidence/run-2026/generated/*.[a-z]*\n", "audit-evidence/run-2026/generated/source.png"),
             ("other_run", "!audit-evidence/run-2026/generated/*.png\n", "audit-evidence/other/generated/source.png"),
             ("other_type", "!audit-evidence/run-2026/generated/*.png\n", "audit-evidence/run-2026/generated/source.jpg"),
             ("scratch", "!audit-evidence/run-2026/scratch/*.png\n", "audit-evidence/run-2026/scratch/source.png"),
