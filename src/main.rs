@@ -5443,7 +5443,7 @@ canonical_secret_matches() {
     # the warden block its own hook template. Require an alternation list
     # (`|`) closed by `)` and nothing else, and require the segments to be
     # keyword-shaped so a real `password=|X)` cannot slip through as code.
-    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*=[A-Za-z_=]*[|][A-Za-z_=|]*[)]$"
+    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*=([A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*=)?([|]([A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*=)?)+[)]$"
 }
 
 # Operator-reviewed false positives (2026-10-17). Bind each individual
