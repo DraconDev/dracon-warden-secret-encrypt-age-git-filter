@@ -5082,6 +5082,14 @@ file=${pattern##*/}
 # inside an explicit run/subtree, not across the entire audit-evidence root.
 case "$parent" in *'*'*|*'?'*|*'['*) exit 1 ;; esac
 case "$file" in '*'|'*.*'|'') exit 1 ;; esac
+# A wildcard inclusion must be a fixed file-type suffix, not another way
+# to spell a blanket exemption (for example *? or *.[a-z]*).
+case "$file" in
+    '*.'*)
+        extension=${file#\*.}
+        case "$extension" in ''|*[!A-Za-z0-9._-]*) exit 1 ;; esac ;;
+    *) case "$file" in *'*'*|*'?'*|*'['*|*']'*) exit 1 ;; esac ;;
+esac
 case "$parent" in audit-evidence|*/audit-evidence)
     case "$file" in *'*'*|*'?'*|*'['*) exit 1 ;; esac ;;
 esac
