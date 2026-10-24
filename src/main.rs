@@ -4587,7 +4587,7 @@ fn shell_single_quote(value: &Path) -> String {
 /// survives POSIX single-quote parsing (2026-08-12), and `\\s`/`[^...]`
 /// are `grep -E` escapes, not Rust ones.
 #[cfg(test)]
-const HOOK_ASSIGNMENT_ALTERNATIVES: &str = "password\\s*=\\s*[\"'\\''][^\"'\\'']*[[:alnum:]][^\"'\\'']*[\"'\\'']|secret\\s*=\\s*[\"'\\''][^\"'\\'']*[[:alnum:]][^\"'\\'']*[\"'\\'']|api_key\\s*=\\s*[\"'\\''][^\"'\\'']*[[:alnum:]][^\"'\\'']*[\"'\\'']|password\\s*=\\s*[^[:space:]\"'']{6,}|password\"\\s*:\\s*\"[A-Za-z0-9_]{20,}\"|secret\"\\s*:\\s*\"[A-Za-z0-9_]{20,}\"|api_key\"\\s*:\\s*\"[A-Za-z0-9_]{20,}\"";
+const HOOK_ASSIGNMENT_ALTERNATIVES: &str = "password\\s*=\\s*[\"'\\''][^|\"'\\''][^\"'\\'']*[[:alnum:]][^\"'\\'']*[\"'\\'']|secret\\s*=\\s*[\"'\\''][^|\"'\\''][^\"'\\'']*[[:alnum:]][^\"'\\'']*[\"'\\'']|api_key\\s*=\\s*[\"'\\''][^|\"'\\''][^\"'\\'']*[[:alnum:]][^\"'\\'']*[\"'\\'']|password\\s*=\\s*[A-Za-z0-9_.$/@+~^!%&*-][^[:space:]\"'']{5,}|password\"\\s*:\\s*\"[A-Za-z0-9_]{20,}\"|secret\"\\s*:\\s*\"[A-Za-z0-9_]{20,}\"|api_key\"\\s*:\\s*\"[A-Za-z0-9_]{20,}\"";
 #[cfg(test)]
 const HOOK_PEM_HEADER_ALTERNATIVE: &str = "-----BEGIN [A-Z]+ PRIVATE KEY";
 
