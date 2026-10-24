@@ -17,8 +17,10 @@ them, so it would not repair the cause.
 The rendered pre-commit gate now consults Git's effective ignore result for
 each audit path, using NUL-delimited plumbing. Only an effective negation from
 the repository ROOT `.gitignore` qualifies. The file pattern must name an
-explicit audit subtree with no wildcard parent; exact files and file-type
-globs inside an explicit run/subtree qualify. Blanket `**`, directory-only,
+explicit audit subtree with no wildcard parent; exact files and fixed-suffix
+file-type globs (for example `*.png`) inside an explicit run/subtree qualify.
+Other wildcard spellings such as `*?` and `*.[a-z]*` are rejected: they can
+express a blanket exemption despite not being spelled `*` or `*.*`. Blanket `**`, directory-only,
 all-file patterns, other runs, other file types, global excludes and absent
 rules do not qualify. Stronger scratch, screenshot-cache and machine-state
 categories cannot be overridden this way. Secret scanning and the rest of the
@@ -31,6 +33,11 @@ loop state. A deliberately broken `filter.dracon.required` setting also
 proves that audit permission does not short-circuit the later security gate. The retained failing-before run is
 `dracon-sync/evidence/fleet-convergence-2026-10-23/checks/fleet-hygiene-scoped-red.log`;
 the passing targeted run and full Warden suite are adjacent retained artifacts.
+A later adversarial regression reproduced acceptance of blanket-equivalent
+file globs before the fixed-suffix restriction. Its failing-before and passing-
+after results are `checks/hygiene-blanket-{red,green}.log`. That tightening is
+awaiting final qualification/deployment; the prior installed hook must not be
+misrepresented as already containing it.
 The hook renderer is exercised, not just a string-presence assertion.
 
 ## Subsequent deathrun evidence
