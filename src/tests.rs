@@ -4017,11 +4017,22 @@ watch_roots = ["/tmp/test"]
         let _env_guard = EnvGuard::set("DRACON_WARDEN_POLICY", config_path.to_str().unwrap());
 
         let policy = WardenPolicy::load(&config_path).expect("load policy");
-        // Serialize with HomeGuard writers (R4-W-11): harden_repos reads
-        // $HOME (global-hook refresh); a concurrent flip would poison it.
-        let _home_lock = HOME_MUTEX.lock().expect("home mutex");
+        // A mutex alone serialized reads of the OPERATOR's HOME and let
+        // this test refresh real global hooks. Own a private HOME instead.
+        let home = td.path().join("home");
+        let hooks = home.join(".config/git/hooks");
+        fs::create_dir_all(&hooks).expect("private hooks");
+        let private_hook = hooks.join("pre-commit");
+        fs::write(&private_hook, "# dracon-warden-managed-hook-v1\nstale-test-hook\n")
+            .expect("private stale hook");
+        let _home_guard = HomeGuard::new(home.to_str().expect("utf8 home"));
         let result = harden_repos(&policy, vec![repo.clone()], true);
         assert!(result.is_ok(), "once should succeed: {:?}", result);
+        assert_eq!(
+            fs::read_to_string(private_hook).unwrap(),
+            render_hook(PRE_COMMIT_HOOK, None),
+            "refresh must target the owned fixture home, never the operator home"
+        );
         assert!(
             repo.join(".gitignore").exists(),
             ".gitignore should be created"
@@ -4114,8 +4125,10 @@ watch_roots = ["/tmp/test"]
             result
         );
 
-        // Serialize with HomeGuard writers (R4-W-11): see above.
-        let _home_lock = HOME_MUTEX.lock().expect("home mutex");
+        // Exercise global refresh only in this fixture's private HOME.
+        let home = td.path().join("home");
+        fs::create_dir_all(&home).expect("private home");
+        let _home_guard = HomeGuard::new(home.to_str().expect("utf8 home"));
         let result = harden_repos(&policy, vec![repo.clone()], true);
         assert!(
             result.is_ok(),
