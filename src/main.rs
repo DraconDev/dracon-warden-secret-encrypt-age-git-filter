@@ -5441,10 +5441,10 @@ canonical_secret_matches() {
     # A shell `case` alternation is CODE, not an assigned value:
     # `case "$rest" in password=|secret=|api_key=)`. The unquoted-value
     # branch of SECRET_RE matches it, which made warden block its own hook
-    # template. Require every `|` segment to be an empty keyword-shaped
-    # assignment and nothing after the closing paren, so `password=|x)`
-    # and every real value remain blocked.
-    grep -v -E "^[A-Za-z_]+=([A-Za-z_]+=)?([|]([A-Za-z_]+=)?)+[)]$"
+    # template. Require the line to OPEN a `case` and every `|` segment to be
+    # an empty or quote-only keyword assignment, so a real value such as
+    # `password=|Sup3rS3cret!` stays blocked.
+    grep -v -E "^[[:space:]]*case .* in .*[A-Za-z_]+=.*[|].*[)]"
 }
 
 # Operator-reviewed false positives (2026-10-17). Bind each individual
