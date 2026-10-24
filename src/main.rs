@@ -5437,7 +5437,14 @@ canonical_secret_matches() {
     # A value that is ENTIRELY a template interpolation is code, not a
     # committed literal: `api_key="${keyPlaceholder}"` is a documented
     # placeholder. A literal value in the same position still blocks.
-    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?[$][{][^}]*[}][\"']?[[:space:]]*,?[[:space:]]*(#.*)?$"
+    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?[$][{][^}]*[}][\"']?[[:space:]]*,?[[:space:]]*(#.*)?$" |
+    # A shell `case` alternation is CODE, not an assigned value:
+    # `case "$rest" in password=|secret=|api_key=)`. The unquoted-value
+    # branch of SECRET_RE matches it, which made warden block its own hook
+    # template. Require every `|` segment to be an empty keyword-shaped
+    # assignment and nothing after the closing paren, so `password=|x)`
+    # and every real value remain blocked.
+    grep -v -E "^[A-Za-z_]+=([A-Za-z_]+=)?([|]([A-Za-z_]+=)?)+[)]$"
 }
 
 # Operator-reviewed false positives (2026-10-17). Bind each individual
