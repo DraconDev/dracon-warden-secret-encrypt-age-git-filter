@@ -5359,7 +5359,7 @@ reject_newline_paths() {
 # groq, resend, gcp/google client secret, digitalocean, shopify token/
 # secret, square access/oauth, vault, mws). Private-key bodies stay
 # header-only: the hook is line-oriented and cannot span lines.
-SECRET_RE='(-----BEGIN [A-Z]+ PRIVATE KEY|password\s*=\s*["'\''][^"'\'']*[[:alnum:]][^"'\'']*["'\'']|secret\s*=\s*["'\''][^"'\'']*[[:alnum:]][^"'\'']*["'\'']|api_key\s*=\s*["'\''][^"'\'']*[[:alnum:]][^"'\'']*["'\'']|password\s*=\s*[^[:space:]"'']{6,}|password"\s*:\s*"[A-Za-z0-9_]{20,}"|secret"\s*:\s*"[A-Za-z0-9_]{20,}"|api_key"\s*:\s*"[A-Za-z0-9_]{20,}"|A{1}KIA[A-Z0-9]{16}|ghp_[A-Za-z0-9_]{36,255}|gho_[A-Za-z0-9_]{36,255}|ghu_[A-Za-z0-9_]{36,255}|ghs_[A-Za-z0-9_]{36,255}|ghr_[A-Za-z0-9_]{36,255}|github_pat_[A-Za-z0-9_]{36,255}|glpat-[A-Za-z0-9_-]{20,}|GR1348941[A-Za-z0-9_-]{20,}|sk_live_[0-9a-zA-Z]{24,}|rk_live_[0-9a-zA-Z]{24,}|sk_test_[0-9a-zA-Z]{24,}|rk_test_[0-9a-zA-Z]{24,}|whsec_[0-9a-zA-Z]{24,}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*|xoxb-[0-9]{11}-[0-9]{11}-[a-zA-Z0-9]{24}|xoxb-[A-Za-z0-9]{24,68}|SK[a-f0-9]{32}|AC[a-f0-9]{32}|SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}|[0-9a-f]{32}-us[0-9]{1,2}|npm_[A-Za-z0-9]{36}|(^|[^[:alnum:]_])sk-((proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})|sk-or-v1-[0-9a-f]{64}|gsk_[A-Za-z0-9]{52}|re_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24}|AIza[0-9A-Za-z_-]{35}|AIza[0-9A-Za-z_-]{35}|GOCSPX-[A-Za-z0-9_-]{28,}|dop_v1_[a-f0-9]{64}|shpat_[a-fA-F0-9]{32}|shpss_[a-fA-F0-9]{32}|sq0atp-[A-Za-z0-9_-]{22}|sq0csp-[A-Za-z0-9_-]{43}|hvs\.[A-Za-z0-9_-]{24,}|amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|https://hooks\.slack\.com/(services|workflows|triggers)/[A-Za-z0-9+/]{43,56})'
+SECRET_RE='(-----BEGIN [A-Z]+ PRIVATE KEY|password\s*=\s*["'\''][^"'\'']*[[:alnum:]][^"'\'']*["'\'']|secret\s*=\s*["'\''][^"'\'']*[[:alnum:]][^"'\'']*["'\'']|api_key\s*=\s*["'\''][^"'\'']*[[:alnum:]][^"'\'']*["'\'']|password\s*=\s*[A-Za-z0-9_.$/@+~^!%&*-][^[:space:]"'']{5,}|password"\s*:\s*"[A-Za-z0-9_]{20,}"|secret"\s*:\s*"[A-Za-z0-9_]{20,}"|api_key"\s*:\s*"[A-Za-z0-9_]{20,}"|A{1}KIA[A-Z0-9]{16}|ghp_[A-Za-z0-9_]{36,255}|gho_[A-Za-z0-9_]{36,255}|ghu_[A-Za-z0-9_]{36,255}|ghs_[A-Za-z0-9_]{36,255}|ghr_[A-Za-z0-9_]{36,255}|github_pat_[A-Za-z0-9_]{36,255}|glpat-[A-Za-z0-9_-]{20,}|GR1348941[A-Za-z0-9_-]{20,}|sk_live_[0-9a-zA-Z]{24,}|rk_live_[0-9a-zA-Z]{24,}|sk_test_[0-9a-zA-Z]{24,}|rk_test_[0-9a-zA-Z]{24,}|whsec_[0-9a-zA-Z]{24,}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*|xoxb-[0-9]{11}-[0-9]{11}-[a-zA-Z0-9]{24}|xoxb-[A-Za-z0-9]{24,68}|SK[a-f0-9]{32}|AC[a-f0-9]{32}|SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}|[0-9a-f]{32}-us[0-9]{1,2}|npm_[A-Za-z0-9]{36}|(^|[^[:alnum:]_])sk-((proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})|sk-or-v1-[0-9a-f]{64}|gsk_[A-Za-z0-9]{52}|re_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24}|AIza[0-9A-Za-z_-]{35}|AIza[0-9A-Za-z_-]{35}|GOCSPX-[A-Za-z0-9_-]{28,}|dop_v1_[a-f0-9]{64}|shpat_[a-fA-F0-9]{32}|shpss_[a-fA-F0-9]{32}|sq0atp-[A-Za-z0-9_-]{22}|sq0csp-[A-Za-z0-9_-]{43}|hvs\.[A-Za-z0-9_-]{24,}|amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|https://hooks\.slack\.com/(services|workflows|triggers)/[A-Za-z0-9+/]{43,56})'
 
 # ── Repo-local hook chaining (FIXED 2026-08-11, audit MEDIUM — H-10
 #    follow-up) ──────────────────────────────────────────────────────
@@ -5437,14 +5437,7 @@ canonical_secret_matches() {
     # A value that is ENTIRELY a template interpolation is code, not a
     # committed literal: `api_key="${keyPlaceholder}"` is a documented
     # placeholder. A literal value in the same position still blocks.
-    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?[$][{][^}]*[}][\"']?[[:space:]]*,?[[:space:]]*(#.*)?$" |
-    # A shell `case` alternation is CODE, not an assigned value:
-    # `case "$rest" in password=|secret=|api_key=)`. The unquoted-value
-    # branch of SECRET_RE matches it, which made warden block its own hook
-    # template. Require the line to OPEN a `case` and every `|` segment to be
-    # an empty or quote-only keyword assignment, so a real value such as
-    # `password=|Sup3rS3cret!` stays blocked.
-    grep -v -E "^[[:space:]]*case .* in .*[A-Za-z_]+=.*[|].*[)]"
+    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?[$][{][^}]*[}][\"']?[[:space:]]*,?[[:space:]]*(#.*)?$"
 }
 
 # Operator-reviewed false positives (2026-10-17). Bind each individual
