@@ -1,2 +1,10 @@
     Blocking waiting for file lock on build directory
    Compiling dracon-warden v0.113.16 (/home/dracon/Dev/dracon-utilities/dracon-warden)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 40s
+     Running unittests src/main.rs (target/debug/deps/dracon_warden-295213678567516a)
+
+running 1 test
+test tests::tests::warden_cli_runtime_has_a_bounded_async_worker_pool ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 232 filtered out; finished in 0.01s
+
