@@ -1,0 +1,7 @@
+{
+  "observed_at": 1792929942.0164125,
+  "pids_current": "86",
+  "pids_max": "512",
+  "pids_events": "max 104",
+  "warden_processes": []
+}
