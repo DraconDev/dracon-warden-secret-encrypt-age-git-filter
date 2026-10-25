@@ -5075,12 +5075,21 @@ case "$line" in ''|*[!0-9]*) exit 1 ;; esac
 case "$pattern" in !*) pattern=${pattern#?} ;; *) exit 1 ;; esac
 pattern=${pattern#/}
 case "$pattern" in *'**'*|*/) exit 1 ;; esac
-case "$pattern" in audit-evidence/*|*/audit-evidence/*) ;; *) exit 1 ;; esac
+case "$pattern" in
+    docs/screenshots/*) visual_source=1 ;;
+    audit-evidence/*|*/audit-evidence/*) visual_source=0 ;;
+    *) exit 1 ;;
+esac
 parent=${pattern%/*}
 file=${pattern##*/}
 # Parent directories must be explicit. A file-type glob is acceptable only
 # inside an explicit run/subtree, not across the entire audit-evidence root.
 case "$parent" in *'*'*|*'?'*|*'['*) exit 1 ;; esac
+# Visual-regression inputs require EXACT root-declared files, not even a
+# file-type glob. A broad !*.png must never turn frame caches into sources.
+if [ "$visual_source" -eq 1 ]; then
+    case "$file" in *'*'*|*'?'*|*'['*|*']'*) exit 1 ;; esac
+fi
 case "$file" in '*'|'*.*'|'') exit 1 ;; esac
 # A wildcard inclusion must be a fixed file-type suffix, not another way
 # to spell a blanket exemption (for example *? or *.[a-z]*).
@@ -5099,6 +5108,16 @@ cat > "$HYGIENE_TMP/paths" <<'DRACON_PATHS'
 repo=$1 tmp=$2
 shift 2
 violations=0
+scoped_source_allowed() {
+    printf '%s\000' "$staged_path" > "$tmp/query"
+    git -C "$repo" check-ignore --no-index --verbose -z --stdin < "$tmp/query" > "$tmp/ignore"
+    query_status=$?
+    case "$query_status" in
+        0|1) ;;
+        *) echo "pre-commit: cannot inspect scoped source inclusion; refusing commit." >&2; exit 1 ;;
+    esac
+    xargs -0 -n 4 sh "$tmp/inclusion" "$repo" "$staged_path" < "$tmp/ignore"
+}
 for staged_path do
     case "$staged_path" in
         # Preserve the existing durable-record surface.
@@ -5117,25 +5136,21 @@ for staged_path do
         .pi-glla/scratch/*|.pi-glla/scratch|*/.pi-glla/scratch/*|\
         .pi/chrome-screenshots/*|.pi/chrome-screenshots|*/.pi/chrome-screenshots/*|\
         audit-*/screenshots/*|*/audit-*/screenshots/*|\
+        docs/screenshots/screenshots/*|docs/screenshots/*/screenshots/*|\
         .pi-glla/audit-loop/findings.baseline.md|*/.pi-glla/audit-loop/findings.baseline.md|\
-        scratch/*|scratch|*/scratch/*|\
+        scratch/*|scratch|*/scratch/*) ;;
+        # Explicitly named root visual-test inputs are not frame caches.
+        # Stronger scratch/chrome/audit-cache categories above still win.
+        docs/screenshots/*)
+            if scoped_source_allowed; then continue; fi ;;
         screenshots/*|screenshots|*/screenshots/*) ;;
         audit-evidence/*|audit-evidence|*/audit-evidence/*)
-            printf '%s\000' "$staged_path" > "$tmp/query"
-            git -C "$repo" check-ignore --no-index --verbose -z --stdin < "$tmp/query" > "$tmp/ignore"
-            query_status=$?
-            case "$query_status" in
-                0|1) ;;
-                *) echo "pre-commit: cannot inspect audit inclusion; refusing commit." >&2; exit 1 ;;
-            esac
-            if xargs -0 -n 4 sh "$tmp/inclusion" "$repo" "$staged_path" < "$tmp/ignore"; then
-                continue
-            fi ;;
+            if scoped_source_allowed; then continue; fi ;;
         *) continue ;;
     esac
     printf 'machine-local file is staged: %s\n' "$staged_path" >&2
     echo "   Confirm the intended content/ignore policy; preserve local bytes." >&2
-    echo "   Only explicitly scoped audit deliverables may override the audit category." >&2
+    echo "   Source/evidence permission requires scoped root rules; frame caches remain blocked." >&2
     echo "   Index-only removal is not a durable fix for deliberately included content." >&2
     violations=$((violations + 1))
 done

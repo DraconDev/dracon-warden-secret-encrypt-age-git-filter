@@ -5156,6 +5156,47 @@ protected_patterns = ["secrets.json"]
     }
 
     #[test]
+    fn pre_commit_hygiene_distinguishes_exact_visual_inputs_from_frame_caches() {
+        let (td, hook) = managed_hygiene_fixture("hygiene_visual_inputs");
+        let repo = td.path();
+        // Visual regression compares these versioned inputs; a path component
+        // named screenshots alone is not proof that they are disposable frames.
+        fs::write(repo.join(".gitignore"),
+            "!docs/screenshots/baseline/reference.png\n!docs/screenshots/baseline/README.md\n").unwrap();
+        stage_hygiene_fixture(repo, "docs/screenshots/baseline/reference.png");
+        stage_hygiene_fixture(repo, "docs/screenshots/baseline/README.md");
+        let (status, text) = run_hook_args(repo, &hook, &[]);
+        assert!(status.success(), "exactly declared visual inputs must pass: {text}");
+        run_git_in(repo, &["config", "--local", "filter.dracon.required", "false"]);
+        let (status, text) = run_hook_args(repo, &hook, &[]);
+        assert!(!status.success());
+        assert!(text.contains("required is not true"), "source permission must retain the security gate: {text}");
+    }
+
+    #[test]
+    fn pre_commit_hygiene_visual_source_permission_is_exact_and_not_cache_permission() {
+        for (name, rules, path) in [
+            ("missing", "", "docs/screenshots/baseline/reference.png"),
+            ("all_png", "!*.png\n", "docs/screenshots/baseline/reference.png"),
+            ("glob", "!docs/screenshots/baseline/*.png\n", "docs/screenshots/baseline/reference.png"),
+            ("other", "!docs/screenshots/baseline/reference.png\n", "docs/screenshots/baseline/other.png"),
+            ("generic_cache", "!screenshots/reference.png\n", "screenshots/reference.png"),
+            ("nested_cache", "!docs/screenshots/nested/screenshots/reference.png\n", "docs/screenshots/nested/screenshots/reference.png"),
+            ("audit_generic_cache", "!audit-evidence/run/screenshots/reference.png\n", "audit-evidence/run/screenshots/reference.png"),
+            ("scratch", "!docs/screenshots/scratch/reference.png\n", "docs/screenshots/scratch/reference.png"),
+            ("chrome", "!docs/screenshots/.pi/chrome-screenshots/reference.png\n", "docs/screenshots/.pi/chrome-screenshots/reference.png"),
+            ("audit_cache", "!docs/screenshots/audit-run/screenshots/reference.png\n", "docs/screenshots/audit-run/screenshots/reference.png"),
+        ] {
+            let (td, hook) = managed_hygiene_fixture(&format!("hygiene_visual_{name}"));
+            fs::write(td.path().join(".gitignore"), rules).unwrap();
+            stage_hygiene_fixture(td.path(), path);
+            let (status, text) = run_hook_args(td.path(), &hook, &[]);
+            assert!(!status.success(), "{name} must remain blocked: {text}");
+            assert!(text.contains("machine-local"), "{name}: {text}");
+        }
+    }
+
+    #[test]
     fn pre_commit_hygiene_does_not_grant_blanket_or_nested_machine_local_exemptions() {
         for (name, rules, path) in [
             ("unclassified", "", "audit-evidence/unclassified.png"),

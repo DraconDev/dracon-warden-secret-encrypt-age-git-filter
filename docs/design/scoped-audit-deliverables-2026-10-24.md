@@ -54,6 +54,34 @@ visual feature. Raw matching-rule and real-hook results are being retained in
 the fleet evidence. Local source and image bytes remain on disk; publication
 remains the daemon's responsibility.
 
+## Visual-regression inputs versus frame caches (2026-10-25)
+
+Doomtap's original pre-commit refused `docs/screenshots/baseline/README.md`
+and reference images even though the README and visual-regression scripts
+identify them as versioned test inputs. The broad `*/screenshots/*` category
+cannot distinguish a golden from a regenerable capture. Unstaging these inputs
+would neither preserve their versioning intent nor resolve the repeat refusal.
+
+The source hook now recognizes only **exact file inclusions** from the root
+`.gitignore` under the root `docs/screenshots/` subtree. Unlike the separate
+audit-evidence rule, not even a file-type glob is sufficient here. `!*.png`,
+`!docs/screenshots/baseline/*.png`, absent rules and other filenames remain
+refused. Root screenshots dumps, nested screenshot caches, scratch, Chrome
+captures and `audit-*/screenshots` stay refused even with an exact inclusion.
+The original audit policy still refuses generic screenshot caches nested in
+an otherwise included audit tree. Security/filter verification still runs.
+This is a narrow non-security source-classification correction, not permission
+to exempt an entire screenshot tree or to change visual assertions/goldens.
+
+The two new rendered-hook regressions exercise accepted exact reference/README
+inputs, reject ten broader/cache cases, and deliberately break the required
+security filter after source acceptance to prove that security still refuses.
+Retained red/green runs: `dracon-sync/evidence/fleet-idle-convergence-2026-10-25/`
+`checks/visual-hygiene-{red,green}.log` (from the parent workspace). Four hygiene
+tests pass; this is development qualification only. No live hook has yet been
+installed for this change, and Doomtap's actual curated file list has not yet
+been declared or exercised against the installed original product gates.
+
 ## Limits
 
 This policy is about deliberate versioning of curated non-security evidence,
