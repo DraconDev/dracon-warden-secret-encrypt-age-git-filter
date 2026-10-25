@@ -2341,8 +2341,25 @@ fn find_git_repo(path: &Path) -> Option<PathBuf> {
     None
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+// Git may run several independent filters while other repositories publish.
+// A hardware-sized async pool per networkless filter consumes the service's
+// TasksMax without increasing its single streaming transform's throughput.
+const WARDEN_RUNTIME_WORKERS: usize = 2;
+
+fn warden_runtime() -> std::io::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(WARDEN_RUNTIME_WORKERS)
+        .enable_all()
+        .build()
+}
+
+fn main() -> Result<()> {
+    warden_runtime()
+        .context("cannot create bounded Warden runtime")?
+        .block_on(run_cli())
+}
+
+async fn run_cli() -> Result<()> {
     let cli = Cli::parse();
     VERBOSITY.store(cli.verbose, Ordering::SeqCst);
 
