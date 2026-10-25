@@ -78,9 +78,20 @@ inputs, reject ten broader/cache cases, and deliberately break the required
 security filter after source acceptance to prove that security still refuses.
 Retained red/green runs: `dracon-sync/evidence/fleet-idle-convergence-2026-10-25/`
 `checks/visual-hygiene-{red,green}.log` (from the parent workspace). Four hygiene
-tests pass; this is development qualification only. No live hook has yet been
-installed for this change, and Doomtap's actual curated file list has not yet
-been declared or exercised against the installed original product gates.
+tests pass. Doomtap now explicitly declares 74 names from its unchanged visual
+comparison contract (live/reference/diff sets, capture manifest and baseline
+README), guarded by two Node regressions. No image or visual tolerance changed.
+No live hook has yet been installed for this change; installed original product
+gates remain unverified.
+
+The original serial Warden harness subsequently passed 232 unit, 18 integration
+and 2 stream tests (`docs/design/fleet-idle-warden-development-tests-serial.log`).
+An earlier exploratory parent invocation overrode RUST_TEST_THREADS to2 and
+failed the existing shared-PATH counting test (231pass/1fail); its raw log is
+retained as `fleet-idle-warden-development-tests.log`. The workspace explicitly
+requires serial process-global mock tests in `.cargo/config.toml`; no assertion
+was weakened and that override is not the original gate. Component results are
+development evidence, not final coherent whole-workspace/release qualification.
 
 ## Limits
 
