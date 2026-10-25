@@ -124,4 +124,12 @@ test tests::tests::merge_driver_decrypt_failure_is_err_with_current_untouched ..
 test tests::tests::merge_driver_encrypted_roundtrip_clean_merge ... ok
 test tests::tests::merge_driver_merge_file_error_is_not_a_conflict ... ok
 test tests::tests::merge_driver_text_merge_clean_and_conflict ... ok
-test tests::tests::merge_driver_untagged_files_clean_and_conflict ... 
+test tests::tests::merge_driver_untagged_files_clean_and_conflict ... ok
+test tests::tests::newest_file_picks_newest_existing ... ok
+test tests::tests::normalize_filter_path_relativizes_inside_root_and_refuses_outside ... ok
+test tests::tests::omitted_hygiene_patterns_use_product_defaults ... ok
+test tests::tests::owner_pubkeys_in_filters_only_owner_pub ... ok
+test tests::tests::pkt_encode_panics_on_oversize_payload - should panic ... ok
+test tests::tests::plaintext_cannot_overlap_protected_or_disable_env_encryption ... ok
+test tests::tests::policy_roots_expand_tilde_before_existence_filtering ... ok
+test tests::tests::pre_commit_hook_allows_unmanaged_repo ... 
