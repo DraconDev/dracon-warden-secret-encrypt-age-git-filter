@@ -5156,6 +5156,16 @@ protected_patterns = ["secrets.json"]
     }
 
     #[test]
+    fn warden_cli_runtime_has_a_bounded_async_worker_pool() {
+        // Exercise the actual constructor used by main, not an equivalent test
+        // builder or a source-string assertion. Blocking streaming transforms
+        // retain their separate spawn_blocking worker as before.
+        let runtime = warden_runtime().expect("bounded CLI runtime");
+        assert_eq!(runtime.metrics().num_workers(), 2);
+        assert_eq!(runtime.block_on(async { 20 + 22 }), 42);
+    }
+
+    #[test]
     fn pre_commit_hygiene_distinguishes_exact_visual_inputs_from_frame_caches() {
         let (td, hook) = managed_hygiene_fixture("hygiene_visual_inputs");
         let repo = td.path();
