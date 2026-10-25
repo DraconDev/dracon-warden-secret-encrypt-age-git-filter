@@ -201,4 +201,5 @@ test tests::tests::pre_push_review_receipt_binds_blob_and_individual_match ... o
 test tests::tests::pre_rebase_hook_allows_unpublished_commits ... ok
 test tests::tests::pre_rebase_hook_blocks_published_boundary_commit ... ok
 test tests::tests::pre_rebase_hook_blocks_published_commit_deeper_than_100 ... ok
-test tests::tests::pre_rebase_hook_chains_and_propagates_local_hook_failure ... 
+test tests::tests::pre_rebase_hook_chains_and_propagates_local_hook_failure ... ok
+test tests::tests::pre_rebase_hook_chains_to_repo_local_hook ... 
