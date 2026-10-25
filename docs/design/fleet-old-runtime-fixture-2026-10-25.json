@@ -1,0 +1,10 @@
+{
+  "executable": "/home/dracon/.local/bin/dracon-warden",
+  "isolated_home": "/tmp/warden-runtime-fixture-d5sne862",
+  "peak_observed_threads": 18,
+  "duration_secs": 0.7186768013052642,
+  "exit_code": 1,
+  "stderr_bytes": 58,
+  "no_filter_request_sent": true,
+  "limits": "Installed old executable observation, not revised runtime execution; fixtures retained."
+}
