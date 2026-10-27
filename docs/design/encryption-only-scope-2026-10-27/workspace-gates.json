@@ -15,9 +15,25 @@
       "elapsedSecs": 13.24,
       "rawLog": "/home/dracon/Dev/dracon-utilities/dracon-warden/docs/design/encryption-only-scope-2026-10-27/workspace-release.log",
       "sha256": "2e4c07bf71226d6f104dd4117ee8b7440c7ada61055855a1408ffb11db385682"
+    },
+    {
+      "gate": "clippy",
+      "command": "cargo clippy --workspace --locked --all-targets -- -D warnings",
+      "exitCode": 0,
+      "elapsedSecs": 2.62,
+      "rawLog": "/home/dracon/Dev/dracon-utilities/dracon-warden/docs/design/encryption-only-scope-2026-10-27/workspace-clippy.log",
+      "sha256": "134842e6df0990152cb44adf62b6d056a646283fcfb8b58611c33c9d8f95430b"
+    },
+    {
+      "gate": "deny",
+      "command": "cargo deny check",
+      "exitCode": 0,
+      "elapsedSecs": 0.85,
+      "rawLog": "/home/dracon/Dev/dracon-utilities/dracon-warden/docs/design/encryption-only-scope-2026-10-27/workspace-deny.log",
+      "sha256": "f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845"
     }
   ],
-  "allPassed": false,
+  "allPassed": true,
   "sourceInputsUnchanged": true,
   "targetDir": "/home/dracon/.local/state/dracon-sync/qualification/ssh-key-ciphertext-churn-2026-10-27/target"
 }
