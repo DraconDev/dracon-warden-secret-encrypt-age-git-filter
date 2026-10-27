@@ -106,12 +106,9 @@ fn test_warden_keygen() {
 fn test_warden_once_single_repo() {
     let tmp = create_test_repo();
     let repo = tmp.path().join("test-repo");
+    let home = private_home(&tmp);
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
-        .arg("once")
-        .arg(&repo)
-        .output()
-        .unwrap();
+    let output = warden_in_home(&home, &["once", repo.to_str().unwrap()]);
 
     // Might fail if no policy exists, but shouldn't crash
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -127,15 +124,14 @@ fn test_warden_filter_clean() {
     let tmp = create_test_repo();
     let repo = tmp.path().join("test-repo");
 
-    // First, set up warden
-    let _ = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
-        .arg("once")
-        .arg(&repo)
-        .output();
+    // First, set up warden (private HOME: `once` refreshes global hooks)
+    let home = private_home(&tmp);
+    let _ = warden_in_home(&home, &["once", repo.to_str().unwrap()]);
 
     // Now test filter clean
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
         .arg("filter-clean")
+        .env("HOME", &home)
         .current_dir(&repo)
         .output()
         .unwrap();
@@ -152,15 +148,14 @@ fn test_warden_filter_smudge() {
     let tmp = create_test_repo();
     let repo = tmp.path().join("test-repo");
 
-    // First, set up warden
-    let _ = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
-        .arg("once")
-        .arg(&repo)
-        .output();
+    // First, set up warden (private HOME: `once` refreshes global hooks)
+    let home = private_home(&tmp);
+    let _ = warden_in_home(&home, &["once", repo.to_str().unwrap()]);
 
     // Test filter smudge with empty content (should pass through)
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
         .arg("filter-smudge")
+        .env("HOME", &home)
         .current_dir(&repo)
         .output()
         .unwrap();
@@ -181,9 +176,11 @@ fn test_warden_scrub_markers() {
     // Create a file with a marker
     std::fs::write(repo.join("test.json"), r#"{"key": "DRACON_SECRET_marker"}"#).unwrap();
 
+    let home = private_home(&tmp);
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
         .arg("scrub-markers")
         .arg(&repo)
+        .env("HOME", &home)
         .output()
         .unwrap();
 
@@ -201,9 +198,11 @@ fn test_warden_repair_dry_run() {
     let tmp = create_test_repo();
     let repo = tmp.path().join("test-repo");
 
+    let home = private_home(&tmp);
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
         .arg("repair")
         .arg("--dry-run")
+        .env("HOME", &home)
         .arg(&repo)
         .output()
         .unwrap();
@@ -261,9 +260,11 @@ repo_roots = []
 
     // `repair` applies changes by default; there is no `repair --apply` CLI
     // flag. Exercise that real apply pipeline rather than calling helpers.
+    let home = private_home(&tmp);
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
         .arg("repair")
         .arg(&repo)
+        .env("HOME", &home)
         .env("DRACON_WARDEN_POLICY", &policy)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", &empty_global_gitconfig)
@@ -362,10 +363,12 @@ fn test_warden_resmudge_dry_run() {
     git_cmd(&repo, &["config", "user.email", "test@test.com"]);
     git_cmd(&repo, &["config", "user.name", "Test"]);
 
+    let home = private_home(&tmp);
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
         .arg("resmudge")
         .arg("--apply")
         .arg(&repo)
+        .env("HOME", &home)
         .output()
         .unwrap();
 
