@@ -1,0 +1,23 @@
+{
+  "synthetic_only": true,
+  "network_push_performed": false,
+  "normal_scan": {
+    "exit": 1,
+    "refused": true,
+    "plaintext_warning": true,
+    "io_error_observed": false
+  },
+  "harmless_scan": {
+    "exit": 0,
+    "refused": false,
+    "plaintext_warning": false,
+    "io_error_observed": false
+  },
+  "failed_scan": {
+    "exit": 1,
+    "refused": true,
+    "plaintext_warning": false,
+    "io_error_observed": false
+  },
+  "fail_open_reproduced": false
+}

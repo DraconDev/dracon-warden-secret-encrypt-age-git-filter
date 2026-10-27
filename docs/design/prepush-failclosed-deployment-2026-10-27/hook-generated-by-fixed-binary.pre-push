@@ -1,0 +1,588 @@
+#!/bin/sh
+# dracon-warden-managed-hook-v2
+# Dracon Warden — pre-push hook
+# Defense-in-depth: scans push for plaintext secrets.
+# Catches --no-verify bypass of the pre-commit hook — but is itself
+# bypassable (git push --no-verify, core.hooksPath, clones without
+# setup-hooks), so this is accident-catching defense-in-depth, not
+# enforcement. There is no server-side scan (audit R4-W-02).
+# Installed by: dracon-warden setup-hooks
+#
+# Plaintext-sibling escape hatch: a file with a `<path>.plaintext` sibling
+# is treated as intentionally plaintext. Such files are excluded from the
+# scan AND the push output prints one `hatched: <path>` line per skipped
+# candidate (audit D12, 2026-10-09) so a stray sibling cannot grant a
+# silent allow. See docs/design/warden-plaintext-sibling.md.
+# Accepted scan residuals (Tier-2 gap, binary parent-match):
+# docs/design/warden-hook-tier2-residuals-2026-10-03.md. The
+# newline-in-filename residual that doc also records was CLOSED
+# 2026-10-09 (audit D15) — it now refuses the push, see
+# reject_newline_paths below.
+#
+# CHANGED 2026-07-21 (v0.112.32, audit M32/F4.6): filenames are
+# handled NUL-delimited. The previous
+# `for f in $(git diff --name-only "$RANGE")` word-split on
+# whitespace: a file named `prod secrets.env` split into `prod` and
+# `secrets.env`, neither fragment was scanned, and a plaintext
+# secret in a space-containing filename pushed clean. We now iterate
+# `git diff --name-only -z` and pass the accepted files to the second
+# diff as arguments via `xargs -0` (no word-splitting, no glob expansion
+# of metacharacters; `-r` = --no-run-if-empty on GNU xargs).
+# `--pathspec-from-file` was tried first but `git diff` does NOT
+# support it (usage error, exit 129 — verified against git 2.51.2).
+#
+# FIXED 2026-10-09 (audit D15, formerly finding F129): the newline-
+# in-filename residual this paragraph used to declare accepted is
+# CLOSED. Each -z list is validated by `reject_newline_paths` before it
+# is flattened, and a path containing a newline now REFUSES the push
+# (loud, with instructions) instead of being split into two
+# non-existent fragments that no scan ever sees. See the function's
+# comment for why real NUL iteration was rejected for this hook.
+# The remaining Tier-2 residual documented for this hook is the
+# binary parent-match one only.
+
+# Accumulator for the per-ref accepted file list (NUL-delimited).
+SCAN_FILES_NUL=$(mktemp) || exit 1
+# Private scratch for one blob; never put potential key bytes in shell variables.
+BLOB_SCAN=$(mktemp) || exit 1
+# Accumulator for added-file paths (newline-delimited) — used by the
+# added-blob scan below.
+ADDED_FILES=$(mktemp) || exit 1
+# NUL-delimited capture of a `git diff-tree -z` path list, kept so it can
+# be VALIDATED before being flattened (see reject_newline_paths).
+CHANGED_NUL=$(mktemp) || exit 1
+# Lazily-populated remote object list for the blob-novelty check
+# (R3-L21; assigned inside `remote_blob_is_published`). The EXIT
+# trap expands at exit time, so the late assignment is covered.
+REMOTE_OBJECTS=""
+trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$CHANGED_NUL" "$REFS_FILE" "$REMOTE_OBJECTS" "$BLOB_SCAN"' EXIT
+
+# FIXED 2026-10-09 (audit D15, formerly finding F129): fail closed on a
+# path that contains a NEWLINE.
+#
+# Every scan below reads a `git diff-tree -z` list, whose format is
+# exactly "one path, one NUL" — git emits NO other newlines in -z mode
+# (that is the entire point of the format). The old code flattened each
+# list with `tr '\0' '\n'` and iterated it with `IFS= read -r`, so a
+# filename containing a newline was split into two fragments that do not
+# exist on disk: the real file was never a pathspec for the diff-line
+# scan, never entered the added-blob scan, never reached the hatch check
+# and never reached the binary-modified check — it pushed with ZERO
+# output. That bypass is documented (see the residual doc named in the
+# header), and the residual was accepted because /bin/sh has no
+# `read -d ''`, so NUL-aware iteration was judged to need a loop
+# restructuring.
+#
+# Because newline is the ONLY byte the separator conversion can lose
+# (a filename may legally contain any byte but NUL and `/`), the
+# detection is exact: ANY newline byte in a -z stream is inside a path,
+# and once `tr` has destroyed the boundary there is no way to
+# reconstruct the real name. The honest options are "refuse" or
+# "restructure into real NUL iteration".
+#
+# Real NUL iteration was evaluated and rejected for this hook: the only
+# portable construct is `xargs -0`, which spawns a child shell in which
+# `exit 1` cannot abort the push (a fail-OPEN trap) and in which the
+# blob-novelty helper's lazily-cached remote object list could not be
+# shared without duplicating that helper or making it eager for every
+# push. `while IFS= read -r -d ''` is bash-only, and this hook is
+# shipped with `#!/bin/sh` behind crates.io.
+#
+# So: refuse the push, loudly and with instructions. This is fail-closed
+# — the pathological file cannot be verified, so it does not go up
+# unnoticed. The only cost is that a repo whose paths legitimately
+# contain newlines must rename them (or bypass the hook with
+# `git push --no-verify`, which is already documented as this hook's
+# general bypass).
+reject_newline_paths() {
+    nul_list="$1"
+    stage="$2"
+    # Check each I/O stage: a failed scan is not an empty/safe path list.
+    tr -dc '\n' < "$nul_list" > "$ADDED_FILES" || return 1
+    nl_count=$(wc -c < "$ADDED_FILES") || return 1
+    [ "$nl_count" -gt 0 ] || return 0
+    echo "❌ dracon-warden: refusing to push — $stage contains a path with an" >&2
+    echo "   embedded NEWLINE character." >&2
+    echo "   The warden's -z path list cannot be flattened safely, so that file" >&2
+    echo "   cannot be checked for plaintext secrets and the scan would skip it" >&2
+    echo "   silently. Rename the file (replace the newline with a space) and" >&2
+    echo "   amend, then push again." >&2
+    return 1
+}
+
+# Secret shapes scanned against added diff lines AND added file blobs
+# (see the added-blob scan below). Kept case-sensitive deliberately:
+# the warden's own test fixtures contain uppercase `PASSWORD=` forms,
+# and the case-insensitive primary gate (SecretScanner) covers
+# protected paths. Unquoted `secret=`/`api_key=` values are NOT in the
+# hook regex: the warden's own fixture corpus uses exactly those
+# shapes (`secret=hunter2` in plaintext_sibling_test,
+# `ibm_cloud_api_key = ...` in comprehensive_test), which would
+# self-block every future warden push.
+#
+# FIXED 2026-08-11 (audit MEDIUM): added the unquoted-password
+# alternative `password\s*=\s*[^[:space:]"]{6,}`. The pre-fix regex
+# required a quote after `=`, so a bare `password = abc` in an added
+# line pushed clean.
+# FIXED 2026-08-12 (audit LOW follow-up, auditor-verified): the quoted
+# branches were written `["''][^"'']` inside a shell single-quoted
+# string — POSIX shell collapses each `''` pair to the empty string,
+# so the EFFECTIVE regex was `["][^"]+`: single-quoted values
+# pushed clean. Use the `'\''` idiom so a real `'` survives shell
+# parsing (effective: `["'][^"']+`, verified with sh -x).
+# NOTE (extended 2026-08-12, second audit round): this comment must
+# contain NO shape the regex can match — not a quoted or unquoted
+# password/secret/api-key assignment (quoted value, or a bare
+# 6+-character value), not an access-key shape, not a BEGIN PRIVATE
+# KEY line, not any provider-token shape below — the hook would
+# self-match its own text if the script is ever committed (the
+# 2026-08-12 test-harness vacuity). Provider names are spelled out
+# (no prefix literals, no bodies) for exactly this reason.
+#
+# FIXED 2026-10-02 (audit M10): the token-shape alternatives render
+# from the single source (`SecretScanner::hook_token_shapes_ere`), the
+# POSIX-ERE transliteration of every Tier-1 provider-token shape. The
+# hand-written regex tripped only on the access-key shape plus PEM and
+# assignments, so all other Tier-1 shapes pushed clean when the filter
+# was bypassed. The checked-in line below is that render; the
+# freshness test prints the exact line to paste when the source
+# changes. Coverage: access-key ID, PEM header, the four assignment
+# branches, plus one alternative per Tier-1 provider token (github
+# classic/ PAT shapes, gitlab personal/runner, stripe live/test/
+# restricted/webhook, slack token/bot/webhook, twilio key/SID,
+# sendgrid, mailchimp, npm, openai incl. proj/svcacct plus openrouter,
+# groq, resend, gcp/google client secret, digitalocean, shopify token/
+# secret, square access/oauth, vault, mws). Private-key bodies stay
+# header-only: the hook is line-oriented and cannot span lines.
+SECRET_RE='(-----BEGIN [A-Z]+ PRIVATE KEY|password\s*=\s*["'\''][^|"'\''][^"'\'']*[[:alnum:]][^"'\'']*["'\'']|secret\s*=\s*["'\''][^|"'\''][^"'\'']*[[:alnum:]][^"'\'']*["'\'']|api_key\s*=\s*["'\''][^|"'\''][^"'\'']*[[:alnum:]][^"'\'']*["'\'']|password\s*=\s*[A-Za-z0-9_.$/@+~^!%&*-][^[:space:]"'']{5,}|password"\s*:\s*"[A-Za-z0-9_]{20,}"|secret"\s*:\s*"[A-Za-z0-9_]{20,}"|api_key"\s*:\s*"[A-Za-z0-9_]{20,}"|A{1}KIA[A-Z0-9]{16}|ghp_[A-Za-z0-9_]{36,255}|gho_[A-Za-z0-9_]{36,255}|ghu_[A-Za-z0-9_]{36,255}|ghs_[A-Za-z0-9_]{36,255}|ghr_[A-Za-z0-9_]{36,255}|github_pat_[A-Za-z0-9_]{36,255}|glpat-[A-Za-z0-9_-]{20,}|GR1348941[A-Za-z0-9_-]{20,}|sk_live_[0-9a-zA-Z]{24,}|rk_live_[0-9a-zA-Z]{24,}|sk_test_[0-9a-zA-Z]{24,}|rk_test_[0-9a-zA-Z]{24,}|whsec_[0-9a-zA-Z]{24,}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*|xoxb-[0-9]{11}-[0-9]{11}-[a-zA-Z0-9]{24}|xoxb-[A-Za-z0-9]{24,68}|SK[a-f0-9]{32}|AC[a-f0-9]{32}|SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}|[0-9a-f]{32}-us[0-9]{1,2}|npm_[A-Za-z0-9]{36}|(^|[^[:alnum:]_])sk-((proj|svcacct)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})|sk-or-v1-[0-9a-f]{64}|gsk_[A-Za-z0-9]{52}|re_[1-9A-HJ-NP-Za-km-z]{8}_[1-9A-HJ-NP-Za-km-z]{24}|AIza[0-9A-Za-z_-]{35}|AIza[0-9A-Za-z_-]{35}|GOCSPX-[A-Za-z0-9_-]{28,}|dop_v1_[a-f0-9]{64}|shpat_[a-fA-F0-9]{32}|shpss_[a-fA-F0-9]{32}|sq0atp-[A-Za-z0-9_-]{22}|sq0csp-[A-Za-z0-9_-]{43}|hvs\.[A-Za-z0-9_-]{24,}|amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|https://hooks\.slack\.com/(services|workflows|triggers)/[A-Za-z0-9+/]{43,56})'
+
+# ── Repo-local hook chaining (FIXED 2026-08-11, audit MEDIUM — H-10
+#    follow-up) ──────────────────────────────────────────────────────
+# Global core.hooksPath shadows .git/hooks for every repo; the H-10
+# fix chained repository-local hooks for pre-commit only, leaving THIS hook
+# silently shadowing any repository-local pre-push. Git feeds the push refs
+# on stdin exactly once, so buffer them for the scan and chained hooks.
+# Run upload-capable foreign/local hooks ONLY AFTER all refs pass Warden's
+# checks: refusing the Git push after an LFS upload is too late to prevent
+# that upload. This ordering alone does not authorize LFS payload contents. The scan keeps its main-shell form
+# (`done < "$REFS_FILE"`, not a pipe): inside a piped subshell `exit
+# 1` would exit only the subshell and the hook would return 0,
+# silently defeating the guard. The "Dracon Warden" grep skips our
+# own seeded copies (no recursion). DRACON_ALLOW_REWRITE does NOT
+# gate this: that bypass is scoped to the history guard inside the
+# loop; a repo-local hook failure must abort the push regardless.
+REFS_FILE=$(mktemp) || exit 1
+cat > "$REFS_FILE" || exit 1
+
+# Resolve preserved hooks now; defer invocation until every ref is checked.
+DRACON_FOREIGN_HOOK=''
+
+# FIXED 2026-10-03 (audit R4-W-11): refuse to run without repo
+# context — see the pre-commit hook for the rationale. Bare repos
+# (mirror pushes) resolve via --absolute-git-dir and evaluate as
+# unmanaged; only the truly-undeterminable case blocks, loud.
+REPO=$(git rev-parse --show-toplevel 2>/dev/null || git rev-parse --absolute-git-dir 2>/dev/null) || { echo "dracon-warden hook: cannot determine repo context" >&2; exit 1; }
+GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) || exit 1
+case "$GIT_COMMON_DIR" in
+    /*) ;;
+    *) GIT_COMMON_DIR="$REPO/$GIT_COMMON_DIR" ;;
+esac
+LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-push"
+# ADDED 2026-09-19 (v0.113.13): same legacy-warden skip as the
+# pre-commit wrapper — a pre-marker local hook lacks the tag-push
+# corroboration fix and re-scans history from the empty tree,
+# flagging grandfathered fixtures on every tag push (observed:
+# blocked the v0.113.13 tag push). Harden replaces it on its next
+# pass; this wrapper's own scan below already carries the fix.
+LOCAL_IS_WARDEN=0
+grep -qE '^# dracon-warden-managed-hook-v[0-9]+$' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+grep -q 'Installed by: dracon-warden setup-hooks' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+
+# Blob-novelty helper (R3-L21): is $1 already on a remote? The remote
+# object list is enumerated ONCE per push into $REMOTE_OBJECTS, lazily
+# on first use (most pushes never match, so eager enumeration would
+# tax every push). Fail closed: enumeration failure (or an empty
+# list) answers "not published" and the caller blocks.
+remote_blob_is_published() {
+    if [ -z "$REMOTE_OBJECTS" ]; then
+        REMOTE_OBJECTS=$(mktemp) || return 1
+        if ! git rev-list --objects --remotes 2>/dev/null > "$REMOTE_OBJECTS"; then
+            rm -f "$REMOTE_OBJECTS"
+            REMOTE_OBJECTS=""
+            return 1
+        fi
+    fi
+    grep -q "^$1" "$REMOTE_OBJECTS"
+}
+
+# Mask complete warden ciphertext tags BEFORE provider-shape extraction.
+# A provider-shaped substring can occur by chance inside base64 ciphertext
+# (observed 2026-10-27: a Google-key-shaped run inside an age envelope in
+# secrets/ssh/micro3.key blocked .dracon publication). Extracting the token
+# first destroys the bracket context, so the post-extraction canonicalizer
+# can never recover it. Masking replaces only syntactically complete tags
+# whose body is plausible base64 (alphabet, minimum length, length % 4 == 0
+# and strict base64 decode); foreign markers, unterminated tags and invalid
+# bodies stay visible and still block. Exposed shapes beside a tag on the
+# same line survive because only the tag itself is replaced. No path,
+# extension, blob or credential is exempted by this normalization.
+# Falls back to unmasked input when python3 is unavailable: that preserves
+# the old false-positive block, never a bypass.
+mask_warden_tags() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import sys,re,base64
+data=sys.stdin.buffer.read()
+def repl(m):
+ body=m.group(1)
+ if len(body)<20 or len(body)%4!=0:
+  return m.group(0)
+ try:
+  base64.b64decode(body,validate=True)
+ except Exception:
+  return m.group(0)
+ return b"[DRACON_SECRET]"
+sys.stdout.buffer.write(re.sub(rb"\[DRACON_SECRET:([A-Za-z0-9+/=]+)\]",repl,data))'
+    else
+        cat
+    fi
+}
+
+# The portable OpenAI word-boundary expression consumes one delimiter.
+# Remove only that delimiter so parent comparisons and existing exact-match
+# review receipts continue to compare the token, not its surrounding syntax.
+# No path, extension, blob or credential is exempted by this normalization.
+canonical_secret_matches() {
+    # The core scanner skips a complete warden ciphertext tag
+    # (`is_inside_secret_tag`); the hook must agree, or a repository that
+    # correctly encrypted a secret can never publish that ciphertext.
+    # Strip only a COMPLETE tag. A real credential beside it in the same
+    # match still survives and blocks; a match that was nothing but the
+    # assignment of a tag is dropped, exactly like an encrypted value.
+    sed -E 's/^[^[:alnum:]_](sk-)/\1/' |
+    sed -E 's/\[DRACON_SECRET:[^]]*\]/[DRACON_SECRET]/g' | \
+    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?\[DRACON_SECRET\][\"']?$" |
+    # A value that is ENTIRELY a template interpolation is code, not a
+    # committed literal: `api_key="${keyPlaceholder}"` is a documented
+    # placeholder. A literal value in the same position still blocks.
+    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?[$][{][^}]*[}][\"']?[[:space:]]*,?[[:space:]]*(#.*)?$"
+}
+
+# Operator-reviewed false positives (2026-10-17). Bind each individual
+# match to the COMPLETE blob SHA-256, not a path, extension or mutable
+# worktree marker. Any byte change invalidates the receipt. Unknown matches
+# remain blocked. Review record: docs/design/reviewed-hook-matches-2026-10-17.md.
+reviewed_text_matches() {
+    reviewed_blob=$(sha256sum "$BLOB_SCAN") || return 2
+    reviewed_blob=${reviewed_blob%% *}
+    while IFS= read -r reviewed_candidate; do
+        [ -n "$reviewed_candidate" ] || continue
+        reviewed_match=$(printf '%s' "$reviewed_candidate" | sha256sum) || return 2
+        reviewed_match=${reviewed_match%% *}
+        case "$reviewed_blob:$reviewed_match" in
+            fa6dd2617c93db078813c1114b1943cdabc1b3dfbb9dc4e93e6bace6ab46be0e:3213230dcff83ccd0e528cca269e406be83ab56c539411c3ba1a9d8df278a53f|\
+            f8687f3a17de5d4b236770e5860aed778480e3885f63c4b8942eb1cecc77ca4a:9e0bc72796a817546301febd8583d0a7929c3114bde9e9dcdf8ea562aa61fee7|\
+            04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:8bca1bb2c590d8da610b1f5991a27cf8f598a17ba3e913c52b06f1b968d8ce73|\
+            04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:ec8b975e7d58592b7739c81b1549fd472c8174fc03e2a6f88f5ded441eb7cf98|\
+            04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:5a1e908a7dee00419725c2ed891fa753ec55b6b73a4d45d492ce9fad3c403ff0|\
+            f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:8bca1bb2c590d8da610b1f5991a27cf8f598a17ba3e913c52b06f1b968d8ce73|\
+            f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:ec8b975e7d58592b7739c81b1549fd472c8174fc03e2a6f88f5ded441eb7cf98|\
+            f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:5a1e908a7dee00419725c2ed891fa753ec55b6b73a4d45d492ce9fad3c403ff0)
+                echo "warden: reviewed non-secret match blob=$reviewed_blob match=$reviewed_match" >&2 ;;
+            *) printf '%s\n' "$reviewed_candidate" ;;
+        esac
+    done
+}
+
+# Return secret shapes without treating the PEM vocabulary compiled into
+# crypto libraries as private keys. Text keeps the conservative header rule;
+# binary PEM labels need adjacent armored material, not a filename exemption.
+# Provider-token and assignment detection is unchanged, including in binaries.
+blob_secret_matches() {
+    git cat-file blob "$1" > "$BLOB_SCAN" 2>/dev/null || return 2
+    if LC_ALL=C grep -Iq . "$BLOB_SCAN"; then
+        text_matches=$(mask_warden_tags < "$BLOB_SCAN" | grep -aoE "$SECRET_RE") || {
+            text_status=$?
+            [ "$text_status" = 1 ] && return 0
+            return 2
+        }
+        printf '%s\n' "$text_matches" | canonical_secret_matches | reviewed_text_matches
+        return $?
+    fi
+    mask_warden_tags < "$BLOB_SCAN" | grep -aoE "$SECRET_RE" | canonical_secret_matches | grep -v '^-----''BEGIN ' || true
+    # NUL separates compiled string literals. Do NOT join material across it.
+    # A valid (or truncated) PEM body starts with base64, with optional legacy
+    # encryption metadata. One-line armor is checked too. No payload is emitted.
+    tr '\000' '\001' < "$BLOB_SCAN" | LC_ALL=C awk '
+        BEGIN { header = "-----" "BEGIN [A-Z ]*PRIVATE KEY-----"; pending = 0 }
+        {
+            count = split($0, segments, "\001")
+            for (i = 1; i <= count; i++) {
+                if (i > 1) { pending = 0 }
+                line = segments[i]
+                if (match(line, header)) {
+                    line = substr(line, RSTART + RLENGTH)
+                    pending = 1
+                } else if (!pending) { continue }
+                sub(/\r$/, "", line)
+                if (line ~ /^[A-Za-z0-9+\/=]{16,}/) {
+                    print "PEM-PRIVATE-KEY-MATERIAL"; pending = 0
+                } else if (line == "" || line ~ /^(Proc-Type|DEK-Info):/) {
+                    # Permit standard newlines and legacy encryption metadata.
+                } else { pending = 0 }
+            }
+        }
+    '
+}
+
+# Read push info from stdin (remote URL and branch refs)
+while read local_ref local_sha remote_ref remote_sha; do
+    # ── History-rewrite guard (ADDED 2026-07-25, v0.113.0) ──────
+    # A non-fast-forward push means rewritten history (amend/rebase
+    # of an already-pushed commit). The 2026-07-25 incident showed
+    # agent loops doing exactly this and racing dracon-sync's
+    # auto-push, producing permanent divergent-branch churn. GitLab
+    # branch protection covers gitlab; this hook is the
+    # forge-INVARIANT enforcement (GitHub free-tier private repos
+    # cannot be protected server-side). Amending UNPUSHED commits
+    # still pushes fine (fast-forward), so normal WIP flow is
+    # unaffected. Escape hatch: DRACON_ALLOW_REWRITE=1.
+    if [ -z "$DRACON_ALLOW_REWRITE" ]; then
+        if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+            echo "❌ dracon-warden: refusing to delete $remote_ref (history guard)." >&2
+            echo "   Bypass: DRACON_ALLOW_REWRITE=1" >&2
+            exit 1
+        fi
+        if [ "$remote_sha" != "0000000000000000000000000000000000000000" ]; then
+            if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+                echo "❌ dracon-warden: refusing non-fast-forward push to $remote_ref (history rewrite)." >&2
+                echo "   Merge instead: git pull --no-rebase" >&2
+                echo "   Bypass: DRACON_ALLOW_REWRITE=1" >&2
+                exit 1
+            fi
+        fi
+    fi
+
+    # Skip branch deletions (only reachable via the escape hatch)
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue
+    fi
+
+    # Check each newly published commit, not only the endpoint trees: an
+    # introduced-then-deleted secret remains reachable in the pushed history.
+    # A new tag accompanying a branch to the same target reuses that branch's
+    # scan, rather than rechecking grandfathered content from older commits.
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ] && \
+        [ "${local_ref#refs/tags/}" != "$local_ref" ] && \
+        awk -v sha="$local_sha" \
+            '$1 ~ /^refs\/heads\// && $2 == sha { found=1 } END { exit(found ? 0 : 1) }' \
+            "$REFS_FILE"; then
+        continue
+    fi
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        NEW_COMMITS=$(git rev-list --reverse "$local_sha" --not --remotes 2>/dev/null) || exit 1
+    else
+        NEW_COMMITS=$(git rev-list --reverse "$local_sha" --not "$remote_sha" 2>/dev/null) || exit 1
+    fi
+    for scan_commit in $NEW_COMMITS; do
+    # Collect non-hatched files (skip files with a `.plaintext` sibling)
+    : > "$SCAN_FILES_NUL" || exit 1
+    # FIXED 2026-10-09 (audit D15 / former F129): capture the -z list and
+    # validate it BEFORE flattening — see reject_newline_paths.
+    git diff-tree --root -m -r --no-commit-id --name-only -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL" || {
+        echo 'warden: changed-path scan failed; refusing push' >&2; exit 1;
+    }
+    reject_newline_paths "$CHANGED_NUL" "commit $scan_commit" || exit 1
+    tr '\0' '\n' < "$CHANGED_NUL" > "$ADDED_FILES" || exit 1
+    while IFS= read -r f; do
+        # FIXED 2026-10-03 (audit R4-W-08): anchor to $REPO — the old
+        # CWD-relative check assumed the hook runs at the repo root
+        # (never verified against git source).
+        if [ -f "$REPO/$f.plaintext" ]; then
+            # CHANGED 2026-10-09 (audit D12): the hatch used to be
+            # silent. A stray `.plaintext` sibling could push a
+            # secret-bearing file plain with zero output and zero
+            # record. Emit one notice line per skipped candidate so
+            # the push output names every file the hatch exempted —
+            # the operator can see the exemption and a future
+            # regression that lets a stray sibling slip through
+            # shows up in the push log instead of vanishing.
+            echo "hatched: $f" >&2
+            continue
+        fi
+        printf '%s\0' "$f" >> "$SCAN_FILES_NUL" || exit 1
+    done < "$ADDED_FILES"
+
+    # Nothing left to scan — push is safe
+    if [ ! -s "$SCAN_FILES_NUL" ]; then
+        continue
+    fi
+
+    # Scan only newly added diff lines. Deletions of old secret-shaped fixtures
+    # are safe, while additions still trip the defense-in-depth guard.
+    # FIXED 2026-10-03 (audit L10): two precision gaps closed —
+    #  * `-M100%`: exact renames surface as R (no content lines) instead
+    #    of a D+A pair whose A side re-tripped on grandfathered content.
+    #  * `--diff-filter=a`: ADDED files are excluded here — the full-blob
+    #    loop below (with its blob-novelty check) judges them once, with
+    #    binary safety the diff-line scan lacks.
+    if ! xargs -0 -r git diff-tree --root -m -r --no-commit-id -M100% --diff-filter=a -p --unified=0 "$scan_commit" -- < "$SCAN_FILES_NUL" > "$BLOB_SCAN" 2>/dev/null; then
+        echo 'warden: changed-content scan failed; refusing push' >&2
+        exit 1
+    fi
+    DIFF=$(grep -E '^\+[^+]' "$BLOB_SCAN")
+    DIFF_STATUS=$?
+    case "$DIFF_STATUS" in 0|1) ;; *) echo 'warden: diff read failed; refusing push' >&2; exit 1 ;; esac
+    # CHANGED 2026-07-26 (v0.113.1, audit WARDEN-M2): `\x27` is NOT a
+    # hex escape in GNU grep ERE (verified grep 3.12: "stray \ before
+    # x" — the class became ["x27], matching literal x/2/7 instead of
+    # a single quote), so single-quoted secrets escaped the scan. Use
+    # the shell `'`\\`''` idiom to embed a literal single quote.
+    # Canonicalize this path too: the blob scan already ignores a complete
+    # warden ciphertext tag, so a CHANGED line carrying that ciphertext must
+    # not block a repository that encrypted a secret correctly. A genuine
+    # credential elsewhere in the same line survives canonicalization.
+    DIFF_MATCHES=$(printf '%s\n' "$DIFF" | mask_warden_tags | grep -aoE "$SECRET_RE" | canonical_secret_matches)
+    if [ -n "$DIFF_MATCHES" ]; then
+        echo "⚠️  Possible plaintext secrets detected in push." >&2
+        echo "   The warden filter may have been bypassed." >&2
+        echo "   Run: dracon-warden once $(git rev-parse --show-toplevel)" >&2
+        exit 1
+    fi
+
+    # ADDED 2026-08-11 (audit MEDIUM): `git diff --unified=0` emits NO
+    # `+` lines for binary files (only "Binary files ... differ"), so
+    # binary additions were never scanned. Scan the FULL blob of every
+    # ADDED file with `grep -a` (treats binary data as text). For a new
+    # file the added content IS the whole file, so this is equivalent
+    # to the diff-line scan for text additions and covers binaries for
+    # the first time. Modified text files keep the added-lines scan;
+    # modified binaries compare secret matches with parent blobs below
+    # so unrelated edits do not re-trip on grandfathered matches.
+    git diff-tree --root -m -r --no-commit-id -M100% --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL" || {
+        echo 'warden: added-path scan failed; refusing push' >&2; exit 1;
+    }
+    reject_newline_paths "$CHANGED_NUL" "the added files of $scan_commit" || exit 1
+    tr '\0' '\n' < "$CHANGED_NUL" > "$ADDED_FILES" || exit 1
+    while IFS= read -r af; do
+        # Skip files hatched via a `.plaintext` sibling, matching the
+        # text scan above. Anchored to $REPO (R4-W-08), not CWD.
+        [ -f "$REPO/$af.plaintext" ] && { echo "hatched: $af" >&2; continue; }
+        MATCHES=$(blob_secret_matches "$scan_commit:$af") || { echo 'warden: blob scan failed' >&2; exit 1; }
+        if [ -n "$MATCHES" ]; then
+            # FIXED 2026-10-03 (audit L10): blob-novelty check — a blob
+            # already present on a remote is grandfathered, not a new
+            # leak (republished content). Pure renames never reach here
+            # (`-M100%` above lists them as R, not A). Fail closed: any
+            # lookup failure falls through to the block below.
+            # CHANGED 2026-10-03 (audit R3-L21): enumerate remote
+            # objects ONCE per push (lazily, inside the helper) instead
+            # of one O(history) `rev-list` per added file.
+            BLOB_SHA=$(git rev-parse "$scan_commit:$af" 2>/dev/null || true)
+            if [ -n "$BLOB_SHA" ] && remote_blob_is_published "$BLOB_SHA"; then
+                continue
+            fi
+            echo "⚠️  Possible plaintext secrets detected in added file $af (binary-safe scan)." >&2
+            echo "   The warden filter may have been bypassed." >&2
+            echo "   Run: dracon-warden once $(git rev-parse --show-toplevel)" >&2
+            exit 1
+        fi
+    done < "$ADDED_FILES"
+
+    # Binary modifications have no added lines. Reject newly introduced
+    # secret shapes, while allowing exact matches inherited from parent blobs.
+    # FIXED 2026-10-09 (audit F138): `-m` emits one row per parent, so a
+    # merge commit listed the same modified file N times and each iteration
+    # re-scanned all N parents — O(parents x blob size) per merge push.
+    # `awk '!seen[$0]++'` de-duplicates while preserving first-seen order.
+    git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=M -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL" || {
+        echo 'warden: modified-path scan failed; refusing push' >&2; exit 1;
+    }
+    reject_newline_paths "$CHANGED_NUL" "the modified files of $scan_commit" || exit 1
+    # FIXED 2026-10-09 (audit F138): `-m` emits one row per parent, so a
+    # merge commit listed the same modified file N times and each iteration
+    # re-scanned all N parents — O(parents x blob size) per merge push.
+    # `awk '!seen[$0]++'` de-duplicates while preserving first-seen order.
+    tr '\0' '\n' < "$CHANGED_NUL" > "$SCAN_FILES_NUL" || exit 1
+    awk '!seen[$0]++' "$SCAN_FILES_NUL" > "$ADDED_FILES" || exit 1
+    PARENTS=$(git show -s --format=%P "$scan_commit") || exit 1
+    while IFS= read -r bf; do
+        # Anchored to $REPO (R4-W-08), not CWD — see above.
+        [ -f "$REPO/$bf.plaintext" ] && { echo "hatched: $bf" >&2; continue; }
+        if ! git diff-tree --root -m -r --no-commit-id --numstat "$scan_commit" -- "$bf" > "$BLOB_SCAN"; then
+            echo 'warden: binary classification failed; refusing push' >&2
+            exit 1
+        fi
+        awk '$1 == "-" && $2 == "-" { binary=1 } END { exit(binary ? 0 : 1) }' "$BLOB_SCAN"
+        BINARY_STATUS=$?
+        case "$BINARY_STATUS" in 0|1) ;; *) echo 'warden: binary scan read failed; refusing push' >&2; exit 1 ;; esac
+        if [ "$BINARY_STATUS" -eq 1 ]; then
+            continue
+        fi
+        OLD_MATCHES=$(for parent in $PARENTS; do
+            blob_secret_matches "$parent:$bf" || exit 2
+        done) || { echo 'warden: parent blob scan failed' >&2; exit 1; }
+        NEW_MATCHES=$(blob_secret_matches "$scan_commit:$bf") || { echo 'warden: blob scan failed' >&2; exit 1; }
+        printf '%s\n' "$NEW_MATCHES" | while IFS= read -r candidate; do
+            [ -z "$candidate" ] && continue
+            if ! printf '%s\n' "$OLD_MATCHES" | grep -qFx -- "$candidate"; then
+                echo "⚠️  Possible plaintext secrets detected in changed binary file." >&2
+                exit 1
+            fi
+        done || exit 1
+    done < "$ADDED_FILES"
+
+    done
+
+    # ADDED 2026-07-21 (v0.112.33, audit H2/F0.1 follow-up): reject
+    # pushes containing commits authored by known TEST identities.
+    # The F0.1 incident showed a test writing `user.email = test@test`
+    # into a LIVE repo's config (via a positional `git config` arg),
+    # after which the daemon committed with the poisoned identity and
+    # the poisoned commit landed on all mirrors. Only the PUSHED
+    # range is scanned, so historical commits are unaffected.
+    #
+    # CHANGED 2026-07-27 (v0.113.2): for TAG pushes (`remote_sha = 0`,
+    # i.e. the ref is brand new) the old `git log empty..tag-sha` range
+    # covered the ENTIRE repo history reachable from the tag object,
+    # not just the NEW commits — a test-identity commit reachable only
+    # via a non-first-parent merge of a feature branch then blocked the
+    # tag push even though the first-parent history is clean. Now the
+    # scan distinguishes:
+    #
+    #   * existing-ref update (branch push, remote_sha != 0):
+    #     `git rev-list "$LOCAL_SHA" --not "$REMOTE_SHA"` — only the
+    #     new commits being added to the branch tip.
+    #
+    #   * new-ref push (tag or new branch, remote_sha == 0):
+    #     `git rev-list "$LOCAL_SHA" --not --remotes` — only commits
+    #     reachable from the tag object that are NOT already on ANY
+    #     remote-tracking branch. Anything already published (and
+    #     therefore already accepted by a prior scan) is excluded.
+    #
+    # This is the correct F0.1 defense surface: only NEWLY-PUBLISHED
+    # commits need scrutiny. A test-identity commit on a side branch
+    # merge that was already pushed to all mirrors in a prior commit
+    # cannot be retroactively un-published, so re-scanning it on a
+    # later tag push is wasted and prone to false positives. Defense
+    # in depth is preserved for the new push itself.
+    if [ -n "$NEW_COMMITS" ]; then
+        BAD_AUTHORS=$(printf '%s\n' "$NEW_COMMITS" | xargs -I{} git log -1 --format='%ae%n%ce' {} 2>/dev/null | sort -u | grep -Eix '^test@test$|^test@test\.com$|^test@example\.com$' || true)
+        if [ -n "$BAD_AUTHORS" ]; then
+            echo "⚠️  Push contains commits authored by a test identity:" >&2
+            echo "$BAD_AUTHORS" | sed 's/^/   /' >&2
+            echo "   Amend the author identity before pushing (git commit --amend --reset-author)." >&2
+            exit 1
+        fi
+    fi
+done < "$REFS_FILE"
+
+# All refs passed Warden's checks. Preserve foreign-before-local ordering and
+# replay the exact buffered ref stream and original arguments to both hooks.
+# A failure still aborts the Git push; no transfer/raw fallback is attempted.
+if [ -n "$DRACON_FOREIGN_HOOK" ] && [ -x "$DRACON_FOREIGN_HOOK" ]; then
+    "$DRACON_FOREIGN_HOOK" "$@" < "$REFS_FILE" || exit $?
+fi
+if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
+    "$LOCAL_HOOK" "$@" < "$REFS_FILE" || exit $?
+fi
