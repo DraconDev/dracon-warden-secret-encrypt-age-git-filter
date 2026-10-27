@@ -5085,7 +5085,7 @@ LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-commit"
 # wrapper's own checks below enforce the same policy meanwhile.
 # (User hooks — anything without warden's signature — still chain.)
 LOCAL_IS_WARDEN=0
-grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+grep -qE '^# dracon-warden-managed-hook-v[0-9]+$' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
 grep -q 'Installed by: dracon-warden setup-hooks' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
 if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
     "$LOCAL_HOOK" "$@" || exit $?
@@ -5555,7 +5555,7 @@ LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-push"
 # blocked the v0.113.13 tag push). Harden replaces it on its next
 # pass; this wrapper's own scan below already carries the fix.
 LOCAL_IS_WARDEN=0
-grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+grep -qE '^# dracon-warden-managed-hook-v[0-9]+$' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
 grep -q 'Installed by: dracon-warden setup-hooks' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
 
 # Blob-novelty helper (R3-L21): is $1 already on a remote? The remote
@@ -5989,7 +5989,7 @@ LOCAL_HOOK="$GIT_COMMON_DIR/hooks/pre-rebase"
 # pre-commit wrapper — the pre-marker generation must never run
 # via the global chain (see comment there).
 LOCAL_IS_WARDEN=0
-grep -qFx '# dracon-warden-managed-hook-v1' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+grep -qE '^# dracon-warden-managed-hook-v[0-9]+$' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
 grep -q 'Installed by: dracon-warden setup-hooks' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
 if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
     "$LOCAL_HOOK" "$@" || exit $?
