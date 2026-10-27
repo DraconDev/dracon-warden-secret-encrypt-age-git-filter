@@ -1,0 +1,71 @@
+{
+  "assembly": {
+    "head": {
+      "dracon-warden": "02882885dfcad4e63fc6c660e73eabb3d5a9181a",
+      "dracon-sync": "5c5c7f55927091702309d25bd124873932fe5779",
+      "dracon-system": "32d0ab135dd717feb7e3e51cbde24f1ff9cb1a9f",
+      "parent": "26f7e331e1223dcfd0b670b5f1a3045aaade39f6"
+    },
+    "note": "Gates ran on one committed tree; dracon-warden head recorded below."
+  },
+  "gates": {
+    "cargo test --workspace --locked": {
+      "command": "cargo test --workspace --locked",
+      "suites": 44,
+      "passed": 2888,
+      "failed": 0,
+      "log": "/tmp/gate-full-20261027.log",
+      "exitCode": 0,
+      "tail": "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n"
+    },
+    "cargo build --release --locked": {
+      "command": "cargo build --release --locked",
+      "exitCode": 0,
+      "tail": "    Finished `release` profile [optimized] target(s) in 1.71s",
+      "binary": {
+        "path": "target/release/dracon-warden",
+        "sha256": "b31f59ad4f19f99b042a506ab722f163220647896d88bdf6cbb2a3873e3f9124"
+      }
+    },
+    "cargo clippy --workspace --locked --all-targets -- -D warnings": {
+      "command": "cargo clippy --workspace --locked --all-targets -- -D warnings",
+      "exitCode": 0,
+      "tail": "    Checking dracon-sync v0.113.96 (/home/dracon/Dev/dracon-utilities/dracon-sync)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 02s"
+    },
+    "cargo deny check": {
+      "command": "cargo deny check",
+      "exitCode": 0,
+      "tail": "advisories ok, bans ok, licenses ok, sources ok"
+    }
+  },
+  "deployed": {
+    "installedBinary": {
+      "path": "/home/dracon/.local/bin/dracon-warden",
+      "sha256": "b31f59ad4f19f99b042a506ab722f163220647896d88bdf6cbb2a3873e3f9124",
+      "matchesQualifiedRelease": true
+    },
+    "globalHook": {
+      "path": "/home/dracon/.config/git/hooks/pre-push",
+      "sha256": "cc7caa7b71fb314e44dc2b512397aebe4883957b028d6e61b0638e3d8a3cb5fc",
+      "marker": "managed-hook-v2",
+      "failClosedChecks": 7
+    },
+    "downgradeStopped": {
+      "method": "Ran the daemon auto-harden path (dracon-warden once REPO) then observed live daemon cycles.",
+      "hookBefore": "cc7caa7b71fb314e44dc2b512397aebe4883957b028d6e61b0638e3d8a3cb5fc",
+      "hookAfter": "cc7caa7b71fb314e44dc2b512397aebe4883957b028d6e61b0638e3d8a3cb5fc",
+      "unchanged": true
+    },
+    "generatedHookEquivalence": "installed and qualified release binaries generate byte-identical pre-push hooks (cc7caa7b\u2026); src/main.rs unchanged between the two builds.",
+    "rollback": {
+      "dir": "/home/dracon/.local/state/dracon/rollback-binaries/warden-20261027T200325Z",
+      "previousInstalledSha256": "39db331b735b4c71a25e27e2d7c90cf171301406c3b1ca786f5ea207f0fed370"
+    }
+  },
+  "retainedFailures": {
+    "ordinary-long-abort-negative.log": "earlier empty-file abort assertion kept as FAILED",
+    "pi-umask-negative.log": "earlier cold-umask 0644-vs-0600 assertion kept as FAILED",
+    "test-isolation-negative-control.md": "pre-fix suite rewrote live hook (18 passed, hook changed)",
+    "control-installed-binary-generated.json": "stale binary hook reproduces fail_open_reproduced: true"
+  }
+}
