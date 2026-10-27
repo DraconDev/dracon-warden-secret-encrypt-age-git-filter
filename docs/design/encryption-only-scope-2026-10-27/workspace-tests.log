@@ -1844,4 +1844,14 @@ test storage::tests::malformed_repo_storage_policy_is_a_hard_error_for_planning 
 test storage::tests::ordinary_repo_has_no_storage_commit_or_guard_requirement ... ok
 test storage::tests::parent_inventory_does_not_follow_nested_standalone_repository ... ok
 test storage::tests::portable_detection_refuses_missing_blobs_oversize_and_symlink_indexes ... ok
-test storage::tests::real_attribute_query_drains_full_pipes_and_enforces_input_budget ... 
+test storage::tests::real_attribute_query_drains_full_pipes_and_enforces_input_budget ... ok
+test storage::tests::real_git_inventory_is_read_only_ignores_payload_filters_and_reports_migration ... ok
+test storage::tests::reject_invalid_rules_and_secret_bearing_endpoints ... ok
+test storage::tests::reject_unapproved_backend_and_repo_backend_injection ... ok
+test storage::tests::repo_policy_symlinks_cannot_read_outside_repository ... ok
+test storage::tests::repository_cannot_downgrade_operator_backend_encryption ... ok
+test storage::tests::rule_order_threshold_and_no_universal_media_policy ... ok
+test storage::tests::sealed_commit_honors_a_refusing_reference_transaction_hook ... ok
+test storage::tests::sealed_commit_rejects_a_message_emptied_by_commit_msg ... ok
+test storage::tests::staged_nested_macro_and_quoted_storage_declarations_require_binding ... ok
+test storage::tests::storage_bootstrap_cannot_bypass_guard_with_no_verify ... 
