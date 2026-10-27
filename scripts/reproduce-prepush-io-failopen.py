@@ -38,20 +38,26 @@ with tempfile.TemporaryDirectory(prefix='warden-hook-failclosed-') as temp:
     run_git('add', '--', '.env.dev')
     run_git('commit', '-q', '-m', 'disposable fixture base')
     base = run_git('rev-parse', 'HEAD')
+    f.write_text('FIXTURE_MODE=changed\n')
+    run_git('add', '--', '.env.dev')
+    run_git('commit', '-q', '-m', 'disposable harmless change')
+    harmless_tip = run_git('rev-parse', 'HEAD')
     # Synthetic-only high-confidence provider shape, never a real credential.
     import hashlib
     f.write_text('FIXTURE_TOKEN=' + 'sk-' + 'proj-' + hashlib.sha256(b'public-test-fixture-not-a-credential').hexdigest() + '\n')
     run_git('add', '--', '.env.dev')
     run_git('commit', '-q', '-m', 'disposable fixture secret shape')
     tip = run_git('rev-parse', 'HEAD')
-    refs = f'refs/heads/main {tip} refs/heads/main {base}\n'
-    def probe(env):
+    secret_refs = f'refs/heads/main {tip} refs/heads/main {harmless_tip}\n'
+    harmless_refs = f'refs/heads/main {harmless_tip} refs/heads/main {base}\n'
+    def probe(env, refs):
         r = subprocess.run(['sh', str(Path(args.hook).resolve()), 'origin', 'file:///nonexistent-fixture-remote'],
                            cwd=repo, input=refs, text=True, capture_output=True, env=env, timeout=30)
         return {'exit': r.returncode, 'refused': r.returncode != 0,
                 'plaintext_warning': 'Possible plaintext' in r.stderr,
                 'io_error_observed': 'simulated scan I/O failure' in r.stderr}
-    ordinary = probe(base_env)
+    ordinary = probe(base_env, secret_refs)
+    harmless = probe(base_env, harmless_refs)
     bin_dir = root / 'bin'
     bin_dir.mkdir()
     shim = bin_dir / 'git'
@@ -61,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix='warden-hook-failclosed-') as temp:
                     '  exit 128\n'
                     ' fi\ndone\nexec ' + __import__('shlex').quote(git) + ' "$@"\n')
     shim.chmod(0o700)
-    failed_io = probe({**base_env, 'PATH': str(bin_dir) + os.pathsep + base_env.get('PATH', '')})
+    failed_io = probe({**base_env, 'PATH': str(bin_dir) + os.pathsep + base_env.get('PATH', '')}, harmless_refs)
     print(json.dumps({'synthetic_only': True, 'network_push_performed': False,
-                      'normal_scan': ordinary, 'failed_scan': failed_io,
+                      'normal_scan': ordinary, 'harmless_scan': harmless, 'failed_scan': failed_io,
                       'fail_open_reproduced': ordinary['refused'] and not failed_io['refused']}, indent=2))
