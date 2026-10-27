@@ -82,16 +82,11 @@ fn test_warden_status() {
 #[test]
 fn test_warden_keygen() {
     let tmp = tempfile::tempdir().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
+    let home = private_home(&tmp);
 
-    // Set HOME to temp dir
-    unsafe { std::env::set_var("HOME", &home) };
-
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
-        .arg("keygen")
-        .output()
-        .unwrap();
+    // Per-command HOME, not `set_var`: mutating the process environment leaks
+    // into parallel tests in this binary (and is unsafe in newer editions).
+    let output = warden_in_home(&home, &["keygen"]);
 
     // Should succeed or fail gracefully (key might already exist)
     assert!(

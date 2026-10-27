@@ -4932,8 +4932,7 @@ protected_patterns = ["secrets.json"]
     }
 
     #[test]
-    fn pre_commit_wrapper_skips_legacy_warden_local_hook() {
-        let (td, hook_path) =
+    fn pre_commit_wrapper_skips_legacy_warden_local_hook() {        let (td, hook_path) =
             make_repo_with_hook("chain_commit_legacy", "pre-commit", PRE_COMMIT_HOOK);
         let repo = td.path();
         run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
