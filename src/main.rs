@@ -4628,6 +4628,12 @@ enum HookMode {
 /// mention "Dracon Warden" are not mistaken for managed wrappers.
 const WARDEN_HOOK_MARKER: &str = "# dracon-warden-managed-hook-v1";
 
+/// Marker prefix shared by every warden hook generation. The generation is the
+/// decimal suffix; parsing by PREFIX (not by a closed list) means a hook written
+/// by a future warden is still recognized as warden-owned and still compared, so
+/// it can never be misclassified as a foreign hook or silently downgraded.
+const WARDEN_HOOK_MARKER_PREFIX: &str = "# dracon-warden-managed-hook-v";
+
 /// Marker for the CURRENT hook capability generation.
 ///
 /// INCIDENT 2026-10-27: the fail-closed pre-push scan checks were added to
@@ -4639,15 +4645,31 @@ const WARDEN_HOOK_MARKER: &str = "# dracon-warden-managed-hook-v1";
 /// both variants are legitimately "warden-managed".
 ///
 /// A refresh must never be able to lower a hook's safety generation: hooks
-/// carrying a NEWER marker than the running binary are left untouched, and the
-/// pass reports the mismatch instead of silently rewriting. Raise this marker
-/// whenever a security-relevant hook template change lands.
-const WARDEN_HOOK_MARKER_V2: &str = "# dracon-warden-managed-hook-v2";
+/// newer than the running binary are left untouched and the pass reports the
+/// mismatch instead of silently rewriting. Raise the generation below whenever a
+/// security-relevant hook template change lands.
+const WARDEN_HOOK_GENERATION: u32 = 2;
 
-/// Every recognized warden hook marker, oldest first. Used for ownership
-/// detection so a newer hook is still recognized as warden's own (and thus
-/// never treated as a foreign hook to chain).
-const WARDEN_HOOK_MARKERS: [&str; 2] = [WARDEN_HOOK_MARKER, WARDEN_HOOK_MARKER_V2];
+/// The marker line this binary stamps into every template it renders.
+fn current_hook_marker() -> String {
+    format!("{WARDEN_HOOK_MARKER_PREFIX}{WARDEN_HOOK_GENERATION}")
+}
+
+/// Parse the generation from a warden marker line, if the line is one.
+fn hook_marker_generation(line: &str) -> Option<u32> {
+    let suffix = line.trim_end().strip_prefix(WARDEN_HOOK_MARKER_PREFIX)?;
+    // Reject `-v1-whatever` and non-numeric suffixes: only a clean decimal is a
+    // real marker, so a comment merely MENTIONING the marker is not.
+    if suffix.is_empty() || !suffix.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    suffix.parse().ok()
+}
+
+/// Generation of the warden marker present in `content`, if any.
+fn warden_hook_generation(content: &str) -> Option<u32> {
+    content.lines().find_map(hook_marker_generation)
+}
 
 /// Marker replaced with the absolute path of a preserved foreign hook.
 ///
@@ -4700,36 +4722,15 @@ fn render_hook(content: &str, foreign_hook: Option<&Path>) -> String {
         .unwrap_or_else(|| "''".to_string());
     // Templates are authored with the v1 marker line; stamp the CURRENT
     // capability generation so a refresh can tell hook generations apart.
-    let stamped = content.replacen(WARDEN_HOOK_MARKER, current_hook_marker(), 1);
+    let stamped = content.replacen(WARDEN_HOOK_MARKER, &current_hook_marker(), 1);
     stamped.replace(FOREIGN_HOOK_PLACEHOLDER, &replacement)
 }
 
-/// Return true when `path` is a hook written by Warden at ANY known generation.
+/// Return true when `path` is a hook written by Warden at ANY generation.
 fn is_warden_hook(path: &Path) -> bool {
     fs::read_to_string(path)
-        .map(|content| {
-            content
-                .lines()
-                .any(|line| WARDEN_HOOK_MARKERS.contains(&line))
-        })
+        .map(|content| warden_hook_generation(&content).is_some())
         .unwrap_or(false)
-}
-
-/// Capability generation of the warden marker in `content`, or None when the
-/// hook carries no recognized marker. Index into `WARDEN_HOOK_MARKERS`.
-fn warden_hook_generation(content: &str) -> Option<usize> {
-    content.lines().find_map(|line| {
-        WARDEN_HOOK_MARKERS
-            .iter()
-            .position(|marker| *marker == line)
-    })
-}
-
-/// Marker the CURRENT binary stamps into newly rendered templates: the newest
-/// one it knows. Kept as a function so raising the generation is a one-line
-/// change in the constants above.
-fn current_hook_marker() -> &'static str {
-    WARDEN_HOOK_MARKERS[WARDEN_HOOK_MARKERS.len() - 1]
 }
 
 /// True when the hook at `path` was written by a NEWER warden than this binary.
@@ -4739,10 +4740,7 @@ fn hook_is_newer_than_binary(path: &Path) -> bool {
     let Ok(content) = fs::read_to_string(path) else {
         return false;
     };
-    match warden_hook_generation(&content) {
-        Some(generation) => generation + 1 > WARDEN_HOOK_MARKERS.len(),
-        None => false,
-    }
+    warden_hook_generation(&content).is_some_and(|generation| generation > WARDEN_HOOK_GENERATION)
 }
 
 /// Pre-marker warden hooks (v0.113.13 migration): the ancient
@@ -4756,9 +4754,7 @@ fn hook_is_newer_than_binary(path: &Path) -> bool {
 fn is_legacy_warden_hook(path: &Path) -> bool {
     fs::read_to_string(path)
         .map(|content| {
-            !content
-                .lines()
-                .any(|line| WARDEN_HOOK_MARKERS.contains(&line))
+            warden_hook_generation(&content).is_none()
                 && content.contains("Installed by: dracon-warden setup-hooks")
         })
         .unwrap_or(false)

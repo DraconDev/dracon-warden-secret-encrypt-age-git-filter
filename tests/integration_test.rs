@@ -4,6 +4,32 @@
 
 use std::path::PathBuf;
 
+/// A private HOME for one test process, returned together with the tempdir that
+/// owns it.
+///
+/// INCIDENT 2026-10-27: these tests previously ran `dracon-warden once` and
+/// `repair` against the OPERATOR's real HOME. Both commands call
+/// `refresh_global_hooks_if_stale()`, so running `cargo test` rewrote the live
+/// `~/.config/git/hooks/pre-push` from whichever binary was under test. While a
+/// stale installed binary ran the daemon, that meant test runs and the daemon's
+/// auto-harden flipped the live hook between the fail-closed and fail-open
+/// variants. Any test that can touch global state MUST own a private HOME.
+fn private_home(tmp: &tempfile::TempDir) -> PathBuf {
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    home
+}
+
+/// Run the built warden binary with a private HOME, so hook refreshes land in
+/// the fixture instead of the operator's live hooks directory.
+fn warden_in_home(home: &std::path::Path, args: &[&str]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
+        .args(args)
+        .env("HOME", home)
+        .output()
+        .unwrap()
+}
+
 /// Helper to run a git command.
 fn git_cmd(repo: &PathBuf, args: &[&str]) -> std::process::Output {
     let git_bin = std::env::var("DRACON_SYNC_GIT_BIN").unwrap_or_else(|_| "git".to_string());
@@ -26,6 +52,18 @@ fn create_test_repo() -> tempfile::TempDir {
     tmp
 }
 
+/// Assert the operator's real global pre-push hook was not modified.
+///
+/// Every CLI test below is a candidate leak: a command that refreshes global
+/// hooks and is run without a private HOME silently edits the live fleet hook.
+#[track_caller]
+fn assert_live_hooks_untouched(before: &[u8; 32], after: &[u8; 32]) {
+    assert_eq!(
+        before, after,
+        "test modified the operator's live ~/.config/git/hooks; every test that \
+         can trigger a global hook refresh must run with a private HOME"
+    );
+}
 #[test]
 fn test_warden_status() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
