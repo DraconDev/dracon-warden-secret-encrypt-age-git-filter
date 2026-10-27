@@ -5475,11 +5475,17 @@ remote_blob_is_published() {
 # the old false-positive block, never a bypass.
 mask_warden_tags() {
     if command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import sys,re,base64;data=sys.stdin.buffer.read();def repl(m):
+        python3 -c '
+import sys,re,base64
+data=sys.stdin.buffer.read()
+def repl(m):
  body=m.group(1)
- if len(body)<20 or len(body)%4!=0: return m.group(0)
- try: base64.b64decode(body,validate=True)
- except Exception: return m.group(0)
+ if len(body)<20 or len(body)%4!=0:
+  return m.group(0)
+ try:
+  base64.b64decode(body,validate=True)
+ except Exception:
+  return m.group(0)
  return b"[DRACON_SECRET]"
 sys.stdout.buffer.write(re.sub(rb"\[DRACON_SECRET:([A-Za-z0-9+/=]+)\]",repl,data))'
     else
