@@ -512,6 +512,10 @@ pub(crate) struct WardenPolicy {
     /// the shipped conversation defaults ride along (see below).
     #[serde(default)]
     protected_patterns: Vec<String>,
+    /// Encryption scope without staging inclusion. Same filter protection as
+    /// protected_patterns, but NEVER emits ignore negations.
+    #[serde(default)]
+    encryption_only_patterns: Vec<String>,
     /// ADDED (media option): glob patterns for binary media selected
     /// for whole-file encryption (screenshots of internal systems,
     /// customer data on screen, ...). Default `[]` disables the
@@ -622,6 +626,18 @@ impl WardenPolicy {
         merged.into_iter().collect()
     }
 
+    pub(crate) fn effective_encryption_patterns(&self) -> Vec<String> {
+        let mut patterns = self.effective_protected_patterns();
+        // Preserve legacy scan-everything when the protected list is empty.
+        if patterns.is_empty() {
+            return patterns;
+        }
+        patterns.extend(self.encryption_only_patterns.iter().cloned());
+        patterns.sort();
+        patterns.dedup();
+        patterns
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
         self.filter_limit()?;
         fn is_allowed_plaintext_pattern(p: &str) -> bool {
@@ -672,6 +688,7 @@ impl WardenPolicy {
         let protected = self
             .protected_patterns
             .iter()
+            .chain(self.encryption_only_patterns.iter())
             .cloned()
             .collect::<BTreeSet<_>>();
 
@@ -804,7 +821,7 @@ pub(crate) fn wire_managed_patterns_from_policy() -> bool {
         );
         return false;
     };
-    set_managed_patterns(policy.effective_protected_patterns());
+    set_managed_patterns(policy.effective_encryption_patterns());
     set_managed_media_patterns(policy.media_protected_patterns.clone());
     true
 }
@@ -1030,7 +1047,8 @@ pub(crate) fn build_gitattributes_block(policy: &WardenPolicy) -> Result<String>
         plaintext_patterns.insert(p.clone());
     }
     let mut protected_patterns = BTreeSet::new();
-    for p in policy.effective_protected_patterns() {
+    for p in policy.effective_protected_patterns().into_iter()
+        .chain(policy.encryption_only_patterns.iter().cloned()) {
         if !plaintext_patterns.contains(&p) {
             protected_patterns.insert(p);
         }
@@ -2739,7 +2757,7 @@ fn scrub_json_value(v: &mut serde_json::Value) {
 pub(crate) fn scrub_markers(policy: &WardenPolicy, repos: &[PathBuf], apply: bool) -> Result<()> {
     use comfy_table::{presets::UTF8_FULL_CONDENSED, Cell, Color, ContentArrangement, Table};
 
-    let protected = build_globset(&policy.effective_protected_patterns())?;
+    let protected = build_globset(&policy.effective_encryption_patterns())?;
 
     let mut found = 0usize;
     let mut changed = 0usize;
@@ -3082,7 +3100,7 @@ fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
 
 fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usize, usize)> {
     require_git_marker(repo)?;
-    let protected = build_globset(&policy.effective_protected_patterns())?;
+    let protected = build_globset(&policy.effective_encryption_patterns())?;
     let files = git_ls_files(repo)?;
 
     let mut found = 0usize;
@@ -3387,7 +3405,7 @@ fn configured_clean_guard() -> Result<CleanGuard> {
     Ok(CleanGuard {
         limit: policy.filter_limit()?,
         binary_exempt: policy.binary_exempt_patterns(),
-        protected: policy.effective_protected_patterns(),
+        protected: policy.effective_encryption_patterns(),
         media: policy.media_protected_patterns.clone(),
     })
 }
