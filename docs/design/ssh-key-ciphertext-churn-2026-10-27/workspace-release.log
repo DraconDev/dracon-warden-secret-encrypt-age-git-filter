@@ -279,3 +279,19 @@
    Compiling iana-time-zone v0.1.65
    Compiling chacha20poly1305 v0.10.1
    Compiling i18n-embed v0.14.1
+   Compiling globset v0.4.20
+   Compiling clap v4.6.7
+   Compiling dashmap v5.5.3
+   Compiling tempfile v3.27.0
+   Compiling chrono v0.4.45
+   Compiling comfy-table v7.2.2
+   Compiling zbus v5.19.0
+   Compiling rand v0.8.8
+   Compiling regex v1.13.1
+   Compiling cookie-factory v0.3.3
+   Compiling secrecy v0.8.0
+   Compiling salsa20 v0.10.2
+   Compiling pin-project-internal v1.1.13
+   Compiling polyval v0.6.2
+   Compiling pbkdf2 v0.12.2
+   Compiling hyper-tls v0.6.0
