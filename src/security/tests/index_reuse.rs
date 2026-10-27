@@ -84,3 +84,24 @@ fn newly_detected_secrets_in_index_force_reencryption() {
     assert_ne!(fresh, partial);
     assert!(!String::from_utf8(fresh).unwrap().contains(&second));
 }
+
+#[test]
+fn inline_key_tag_with_exterior_newline_reuses_only_exact_plaintext_and_layout() {
+    let s = security();
+    let plain = format!(
+        "[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBMTEdOekVmRENsRXFsa0JJU2RGT29IYzVFTWwvK0FxbVdUQmF0UUppUmlZCjZSdVJidmpPN3lrQ3ZycFRwSytnYUtLcjg5b1pWRVN5eHI0bzdhUHFyQ3cKLT4gWDI1NTE5IHdyV2JvbVJBeWh1cW85eFNNQ081ZXZ4Q1lMQ1JqclJ4S3pqVjZvSkI4Vm8KbG5IU1lRUDl5SXVhYWhKdU1QRm5FYUZ3SkhSbERyc3RPWG5LcUdEd0lzMAotPiBYMjU1MTkgNm51a2FjaFlHMmdtZEI4Q0tEVG5NOVIwU25EeDdQU002aGtNK1RhSGJsTQpqRlUzQkllK1Q4QWV0UXlLSzVJa2xZQXkzV2Jta0U1VzQ3NjB6QTdTRFVNCi0+IFgyNTUxOSBSajRiUmhzMnFjaEphaWY5YnpScy8vTjZuNEZmRFZiSlo1VUU5c3NtazJZCkU1dXRZN3NHZmNGc1dwRDZ2ZVExR3g1ZE1LdnFaOWNUSkRkYnNWYjV2TmsKLT4gWDI1NTE5IHZMUDNiNTFKTUZCVjZiUXJVWld2RlRSLzVzVkNtU1ZYTnRGWDY3cHk1SFUKUHJuUkowZkdBMWNtRzdvTENVWTNTb0RnNEZBMFA0WGJCUFg5WjNRYVdXcwotPiBeLWdyZWFzZSBpIHFcY0Z5QytsCjV3QVlJdVIwL3ZPZEJjTQotLS0gVWh3UWxpSzIvd0kwMjYwUGRIeGM5dFVtSDdDbW56RkM3a0tHd0l4QnIrOAr/gAOyN9c41/+9deGWJvgKKi9H2kkjEwxyyP0GX+gs7tnrC+GrCzHDN9bswdNnVDF2yj0a4GMTndEbmROmX9XveJHl1QKVP+4VGBCebRCaHxH70sHnC54eTGXX6Dn3zUIhoab4IMjgpRvb]\n",
+        "QUJD".repeat(60)
+    );
+    let old = s.smart_clean_with_path(plain.as_bytes(), "secrets/key").unwrap();
+    assert!(old.starts_with(b"[DRACON_SECRET:"));
+    assert!(old.ends_with(b"]\n"), "scanner keeps the PEM's exterior newline");
+    assert_eq!(s.smart_smudge(std::str::from_utf8(&old).unwrap()).unwrap(), plain);
+    assert_eq!(s.clean_reusing_index(plain.as_bytes(), "secrets/key", Some(&old)).unwrap(), old);
+    for edited in [plain.trim_end().to_string(), format!("{plain}\n"), plain.replace("QUJD", "REVG")] {
+        assert_ne!(s.clean_reusing_index(edited.as_bytes(), "secrets/key", Some(&old)).unwrap(), old,
+            "real content or exterior whitespace edits must remain visible");
+    }
+    let upgraded = s.with_managed_patterns(vec!["credentials".into()]);
+    assert_ne!(upgraded.clean_reusing_index(plain.as_bytes(), "credentials", Some(&old)).unwrap(), old,
+        "whole-file upgrade must move the exterior newline inside the encrypted payload");
+}
