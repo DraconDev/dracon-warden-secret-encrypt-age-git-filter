@@ -63,3 +63,23 @@
    Compiling signal-hook-registry v1.4.8
    Compiling atomic-waker v1.1.2
    Compiling utf8_iter v1.0.4
+   Compiling rand_core v0.6.4
+   Compiling toml_parser v1.1.3+spec-1.1.0
+   Compiling crypto-common v0.1.7
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling tracing-core v0.1.36
+   Compiling http v1.5.0
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling inout v0.1.4
+   Compiling concurrent-queue v2.5.0
+   Compiling toml_edit v0.25.15+spec-1.1.0
+   Compiling event-listener v5.4.2
+   Compiling const-oid v0.10.2
+   Compiling unicase v2.9.0
+   Compiling event-listener-strategy v0.5.4
+   Compiling digest v0.11.3
+   Compiling futures-lite v2.6.1
+   Compiling getrandom v0.4.3
+   Compiling cpufeatures v0.3.1
