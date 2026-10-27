@@ -128,3 +128,34 @@
     Checking percent-encoding v2.3.2
     Checking atomic-waker v1.1.2
     Checking utf8_iter v1.0.4
+   Compiling libz-sys v1.1.29
+    Checking http v1.5.0
+    Checking tracing-core v0.1.36
+    Checking icu_properties_data v2.3.0
+    Checking icu_normalizer_data v2.3.0
+   Compiling synstructure v0.14.0
+    Checking regex v1.13.1
+    Checking ppv-lite86 v0.2.21
+    Checking globset v0.4.20
+    Checking event-listener v5.4.2
+    Checking indexmap v2.14.2
+   Compiling ring v0.17.14
+    Checking concurrent-queue v2.5.0
+    Checking rand_chacha v0.3.1
+    Checking rand_chacha v0.9.0
+    Checking event-listener-strategy v0.5.4
+    Checking futures-lite v2.6.1
+   Compiling libssh2-sys v0.3.3
+    Checking arrayvec v0.7.8
+    Checking utf8parse v0.2.2
+    Checking vte v0.14.1
+    Checking anstyle-parse v1.0.0
+    Checking http-body v1.1.0
+    Checking form_urlencoded v1.2.2
+    Checking try-lock v0.2.5
+    Checking is_terminal_polyfill v1.70.2
+    Checking colorchoice v1.0.5
+    Checking foreign-types-shared v0.1.1
+    Checking rand v0.8.8
+    Checking tower-service v0.3.3
+    Checking anstyle-query v1.1.5
