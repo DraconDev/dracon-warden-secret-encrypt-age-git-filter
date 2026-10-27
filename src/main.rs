@@ -321,6 +321,23 @@ enum Command {
         /// Optional repo path to scan. If omitted, scans repos in warden discovery scope.
         repo: Option<PathBuf>,
     },
+    /// Run a cooperative metadata writer under a per-repository pre-open fence.
+    /// Retain the inherited fence descriptor through the writer's final close;
+    /// detached writers that discard it are not supported participants.
+    WriteFence {
+        /// Owning worktree (including pointer-file worktrees/submodules).
+        #[arg(long)]
+        repo: PathBuf,
+        /// Maximum acquisition wait in seconds (1..300).
+        #[arg(long, default_value_t = 30)]
+        wait_secs: u64,
+        /// Owned writer deadline in seconds (1..3600, then TERM/KILL).
+        #[arg(long, default_value_t = 60)]
+        run_secs: u64,
+        /// Exact command and arguments, following -- (no shell interpolation).
+        #[arg(last = true, required = true)]
+        command: Vec<std::ffi::OsString>,
+    },
     /// Git filter clean operation (stdin -> stdout). Called by git, not for direct use.
     FilterClean {
         /// Optional path from git filter (%f)
@@ -2391,6 +2408,9 @@ async fn run_cli() -> Result<()> {
 
     let storage_encrypt = matches!(&cli.cmd, Command::StorageEncrypt { .. });
     match cli.cmd {
+        Command::WriteFence { repo, wait_secs, run_secs, command } => {
+            write_fence::exec_writer(&repo, wait_secs, run_secs, &command)?;
+        }
         Command::StorageEncrypt { repo, max_bytes }
         | Command::StorageDecrypt { repo, max_bytes } => {
             // These commands stream local bytes only. They never install hooks,
