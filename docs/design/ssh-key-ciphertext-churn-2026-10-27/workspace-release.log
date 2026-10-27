@@ -323,3 +323,10 @@
    Compiling urlencoding v2.1.3
    Compiling fs2 v0.4.3
    Compiling hostname v0.4.2
+   Compiling dracon-security v0.4.0 (/home/dracon/Dev/dracon-utilities/dracon-warden/src/security)
+   Compiling ssh2 v0.9.6
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling dracon-warden v0.113.16 (/home/dracon/Dev/dracon-utilities/dracon-warden)
+   Compiling notify-rust v4.18.0
