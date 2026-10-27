@@ -5460,6 +5460,33 @@ remote_blob_is_published() {
     grep -q "^$1" "$REMOTE_OBJECTS"
 }
 
+# Mask complete warden ciphertext tags BEFORE provider-shape extraction.
+# A provider-shaped substring can occur by chance inside base64 ciphertext
+# (observed 2026-10-27: a Google-key-shaped run inside an age envelope in
+# secrets/ssh/micro3.key blocked .dracon publication). Extracting the token
+# first destroys the bracket context, so the post-extraction canonicalizer
+# can never recover it. Masking replaces only syntactically complete tags
+# whose body is plausible base64 (alphabet, minimum length, length % 4 == 0
+# and strict base64 decode); foreign markers, unterminated tags and invalid
+# bodies stay visible and still block. Exposed shapes beside a tag on the
+# same line survive because only the tag itself is replaced. No path,
+# extension, blob or credential is exempted by this normalization.
+# Falls back to unmasked input when python3 is unavailable: that preserves
+# the old false-positive block, never a bypass.
+mask_warden_tags() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import sys,re,base64;data=sys.stdin.buffer.read();def repl(m):
+ body=m.group(1)
+ if len(body)<20 or len(body)%4!=0: return m.group(0)
+ try: base64.b64decode(body,validate=True)
+ except Exception: return m.group(0)
+ return b"[DRACON_SECRET]"
+sys.stdout.buffer.write(re.sub(rb"\[DRACON_SECRET:([A-Za-z0-9+/=]+)\]",repl,data))'
+    else
+        cat
+    fi
+}
+
 # The portable OpenAI word-boundary expression consumes one delimiter.
 # Remove only that delimiter so parent comparisons and existing exact-match
 # review receipts continue to compare the token, not its surrounding syntax.
@@ -5513,7 +5540,7 @@ reviewed_text_matches() {
 blob_secret_matches() {
     git cat-file blob "$1" > "$BLOB_SCAN" 2>/dev/null || return 2
     if LC_ALL=C grep -Iq . "$BLOB_SCAN"; then
-        text_matches=$(grep -aoE "$SECRET_RE" "$BLOB_SCAN") || {
+        text_matches=$(mask_warden_tags < "$BLOB_SCAN" | grep -aoE "$SECRET_RE") || {
             text_status=$?
             [ "$text_status" = 1 ] && return 0
             return 2
@@ -5521,7 +5548,7 @@ blob_secret_matches() {
         printf '%s\n' "$text_matches" | canonical_secret_matches | reviewed_text_matches
         return $?
     fi
-    grep -aoE "$SECRET_RE" "$BLOB_SCAN" | canonical_secret_matches | grep -v '^-----''BEGIN ' || true
+    mask_warden_tags < "$BLOB_SCAN" | grep -aoE "$SECRET_RE" | canonical_secret_matches | grep -v '^-----''BEGIN ' || true
     # NUL separates compiled string literals. Do NOT join material across it.
     # A valid (or truncated) PEM body starts with base64, with optional legacy
     # encryption metadata. One-line armor is checked too. No payload is emitted.
@@ -5645,7 +5672,7 @@ while read local_ref local_sha remote_ref remote_sha; do
     # warden ciphertext tag, so a CHANGED line carrying that ciphertext must
     # not block a repository that encrypted a secret correctly. A genuine
     # credential elsewhere in the same line survives canonicalization.
-    DIFF_MATCHES=$(printf '%s\n' "$DIFF" | grep -aoE "$SECRET_RE" | canonical_secret_matches)
+    DIFF_MATCHES=$(printf '%s\n' "$DIFF" | mask_warden_tags | grep -aoE "$SECRET_RE" | canonical_secret_matches)
     if [ -n "$DIFF_MATCHES" ]; then
         echo "⚠️  Possible plaintext secrets detected in push." >&2
         echo "   The warden filter may have been bypassed." >&2
