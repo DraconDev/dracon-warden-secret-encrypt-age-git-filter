@@ -1,0 +1,15 @@
+{
+  "rows": [
+    {
+      "gate": "tests",
+      "command": "cargo test --workspace --locked",
+      "exitCode": 0,
+      "elapsedSecs": 511.72,
+      "rawLog": "/home/dracon/Dev/dracon-utilities/dracon-warden/docs/design/encryption-only-scope-2026-10-27/v2-workspace-tests.log",
+      "sha256": "6c7a709768710df119bb14f4ea0c4b46da36113ce3f01a3be11a94e64ae93479"
+    }
+  ],
+  "allPassed": false,
+  "sourceInputsUnchanged": true,
+  "targetDir": "/home/dracon/.local/state/dracon-sync/qualification/ssh-key-ciphertext-churn-2026-10-27/target"
+}
