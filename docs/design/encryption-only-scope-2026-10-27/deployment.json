@@ -1,0 +1,7 @@
+{
+  "installedAt": "2026-10-27T09:58:24Z",
+  "qualifiedSha256": "39db331b735b4c71a25e27e2d7c90cf171301406c3b1ca786f5ea207f0fed370",
+  "installedSha256": "39db331b735b4c71a25e27e2d7c90cf171301406c3b1ca786f5ea207f0fed370",
+  "backup": "/home/dracon/.local/state/dracon-sync/qualification/encryption-only-scope-2026-10-27/warden-before-encryption-scope",
+  "policyBackup": "/home/dracon/.local/state/dracon-sync/qualification/encryption-only-scope-2026-10-27/policy-before-encryption-scope.toml"
+}
