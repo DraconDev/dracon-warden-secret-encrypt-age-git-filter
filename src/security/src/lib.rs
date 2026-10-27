@@ -1399,9 +1399,27 @@ impl WardenSecurity {
             // Match encryption granularity as well as plaintext: a newly
             // whole-file-protected path must not retain an old inline blob.
             let whole = self.decrypt_whole_file_tag(&fresh).is_some();
+            // An inline PEM tag followed by a newline also looks like a
+            // whole-file tag. The binary-safe whole-file smudge deliberately
+            // ignores exterior newline artifacts, so it alone cannot compare
+            // that inline representation to the original PEM bytes. Authenticate
+            // the old payload first, then permit the text reconstruction only
+            // when fresh cleaning has the EXACT same exterior bytes. This must
+            // not hide whitespace edits or reuse inline data after a policy
+            // upgrade moves that whitespace inside whole-file encryption.
+            let old_plaintext = smudge_with_security(self, old)?;
+            let exterior_matches = whole
+                && old.splitn(2, |b| *b == b']').nth(1)
+                    == fresh.splitn(2, |b| *b == b']').nth(1);
+            let inline_matches = exterior_matches
+                && std::str::from_utf8(old)
+                    .ok()
+                    .map(|text| self.smart_smudge(text))
+                    .transpose()?
+                    .is_some_and(|text| text.as_bytes() == bytes);
             if whole == self.decrypt_whole_file_tag(old).is_some()
                 && old != bytes
-                && smudge_with_security(self, old)? == bytes
+                && (old_plaintext == bytes || inline_matches)
                 && self.smart_clean_with_path(old, path)? == old
             {
                 return Ok(old.to_vec());
