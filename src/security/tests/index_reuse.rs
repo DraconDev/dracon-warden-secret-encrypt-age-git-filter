@@ -89,7 +89,7 @@ fn newly_detected_secrets_in_index_force_reencryption() {
 fn inline_key_tag_with_exterior_newline_reuses_only_exact_plaintext_and_layout() {
     let s = security();
     let plain = format!(
-        "[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBMTEdOekVmRENsRXFsa0JJU2RGT29IYzVFTWwvK0FxbVdUQmF0UUppUmlZCjZSdVJidmpPN3lrQ3ZycFRwSytnYUtLcjg5b1pWRVN5eHI0bzdhUHFyQ3cKLT4gWDI1NTE5IHdyV2JvbVJBeWh1cW85eFNNQ081ZXZ4Q1lMQ1JqclJ4S3pqVjZvSkI4Vm8KbG5IU1lRUDl5SXVhYWhKdU1QRm5FYUZ3SkhSbERyc3RPWG5LcUdEd0lzMAotPiBYMjU1MTkgNm51a2FjaFlHMmdtZEI4Q0tEVG5NOVIwU25EeDdQU002aGtNK1RhSGJsTQpqRlUzQkllK1Q4QWV0UXlLSzVJa2xZQXkzV2Jta0U1VzQ3NjB6QTdTRFVNCi0+IFgyNTUxOSBSajRiUmhzMnFjaEphaWY5YnpScy8vTjZuNEZmRFZiSlo1VUU5c3NtazJZCkU1dXRZN3NHZmNGc1dwRDZ2ZVExR3g1ZE1LdnFaOWNUSkRkYnNWYjV2TmsKLT4gWDI1NTE5IHZMUDNiNTFKTUZCVjZiUXJVWld2RlRSLzVzVkNtU1ZYTnRGWDY3cHk1SFUKUHJuUkowZkdBMWNtRzdvTENVWTNTb0RnNEZBMFA0WGJCUFg5WjNRYVdXcwotPiBeLWdyZWFzZSBpIHFcY0Z5QytsCjV3QVlJdVIwL3ZPZEJjTQotLS0gVWh3UWxpSzIvd0kwMjYwUGRIeGM5dFVtSDdDbW56RkM3a0tHd0l4QnIrOAr/gAOyN9c41/+9deGWJvgKKi9H2kkjEwxyyP0GX+gs7tnrC+GrCzHDN9bswdNnVDF2yj0a4GMTndEbmROmX9XveJHl1QKVP+4VGBCebRCaHxH70sHnC54eTGXX6Dn3zUIhoab4IMjgpRvb]\n",
+        "[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBESVQ4UjBOR0hPYkM1bE8wL2FKVjMzUDVuUnljdFIzbXd3Q3JnY2ZrckN3CnZOSE1nQW9iMVYvRmtzVHNMa3YwL3ROdnRZSm01ZzZqMGhRbW4zRGhlK2cKLT4gWDI1NTE5IGsyTzI0R1ZEYWJVZkpVdWRPVmZ0M0JUeTZqelBaaDlsRlBMSzR5dmZ2RzQKelRUMnI4c3FXbmU0MlBMaGNRM0RWR1NENzY4WHp3dDcrb2FSdytrYnBFWQotPiBYMjU1MTkgVlpuVGp6UkFoZkRNcCtKLzV6ZzRkblVueVczU1ZsTE4zem1tRU0yMjhHYwpaTHhwei9LL0ZtR1dDNmtOSjZoM2VCY1doZkFsWGE1bE94VjJlUi9ZVDVzCi0+IFgyNTUxOSArVlRCSWQ2aUc3cDNyV1ZZODdlVmZxcHJ1Wk5lTWtUNkRtTUp1dW1ab3pNCjUyUzIvZ3A3clVNNXpUZk5LRjZFRDdZeVZOTTlxSGp0UFNDelFpbCtKUVkKLT4gWDI1NTE5IHE1MHpKc1pPUmMrNnJrQ3ZDV1AvU0RtL2FhRWtUSHk4SnJla2lvNzlPRGcKWG1aUURpbGwzcTh6TENVVE9zdktiQ05PRS94eThaUDZ4RlY1Z00rajFuVQotPiByXEstZ3JlYXNlIDFyJXd5RiBKdWtVWXEgYD0KV3ZqYWdqcm5EQXN0S1l1SWVtYURybmF3bElvR3lSYTZGMldTQlZsOUxBT3h4VVRKb3NRTi9NZ0FqSkw3S0hTOQpPSmU0bUEKLS0tIEJUTWdSRnJWeTd5Skg0TUVEa0s2QnU1Z08wN2E4bk1ZaURsM1lpczc2TkUK7aCqCFu7uI/7GQbb44ZS4gSNGjzvWPVVb0saol1dOcng41QJLmHE6TRuCtjJ3wen4L64UiiKXUbNkZiCWVA8NgjMIVbVOgUI77M6qHm4aQTGGMHxmpMpDVDl0Y2GeWkoVrGG5vc0bnbhPw==]\n",
         "QUJD".repeat(60)
     );
     let old = s.smart_clean_with_path(plain.as_bytes(), "secrets/key").unwrap();
@@ -104,4 +104,14 @@ fn inline_key_tag_with_exterior_newline_reuses_only_exact_plaintext_and_layout()
     let upgraded = s.with_managed_patterns(vec!["credentials".into()]);
     assert_ne!(upgraded.clean_reusing_index(plain.as_bytes(), "credentials", Some(&old)).unwrap(), old,
         "whole-file upgrade must move the exterior newline inside the encrypted payload");
+}
+
+#[test]
+fn generated_env_header_does_not_reencrypt_an_unchanged_headerless_worktree() {
+    let s = security().with_managed_patterns(vec![".env.dev".into()]);
+    let raw = b"PASSWORD=synthetic-example\n";
+    let old = s.smart_clean_with_path(raw, "service/.env.dev").unwrap();
+    assert!(old.starts_with(b"[DRACON_SECRET:"));
+    assert_eq!(s.clean_reusing_index(raw, "service/.env.dev", Some(&old)).unwrap(), old);
+    assert_ne!(s.clean_reusing_index(b"PASSWORD=changed-example\n", "service/.env.dev", Some(&old)).unwrap(), old);
 }
