@@ -1,0 +1,36 @@
+Live pre-push enforcement through the ACTUAL global hook
+========================================================
+Executed 2026-10-27 ~20:55 UTC with the deployed hook
+(`~/.config/git/hooks/pre-push`, sha256 cc7caa7b71fb314e44dc2b512397aebe4883957b028d6e61b0638e3d8a3cb5fc,
+marker `dracon-warden-managed-hook-v2`).
+
+All fixtures are disposable, under /tmp, with a LOCAL bare remote. No real
+remote was contacted, no watched repository was touched, and the token is a
+sha256 of the literal string "public-test-fixture".
+
+1. Provider-shaped secret in a NEW .env.dev
+   $ git -c core.hooksPath=/home/dracon/.config/git/hooks push origin HEAD:refs/heads/main
+   ⚠️  Possible plaintext secrets detected in added file .env.dev (binary-safe scan).
+      The warden filter may have been bypassed.
+      Run: dracon-warden once /tmp/plainblock2/work
+   error: failed to push some refs
+   push_rc=1 ; origin ref main: ABSENT (NOT PUBLISHED)
+
+2. Harmless change, separate repo
+   $ git -c core.hooksPath=/home/dracon/.config/git/hooks push origin HEAD:refs/heads/main
+   To /tmp/harmlessctl/origin.git
+    * [new branch]      HEAD -> main
+   harmless_rc=0
+
+3. Non-matching fixture (checked, then discarded as an invalid control)
+   A first attempt used `API_KEY="abcdef1234567890abcdef"`, which is not one of
+   the hook's provider shapes, so the push was allowed. That is correct
+   behaviour, NOT a fail-open: the hook scans for provider-shaped secrets, not
+   for the mere presence of a `.env` file. The observation is kept so the
+   distinction is not lost.
+
+Conclusion: the deployed fail-closed hook refuses a real secret-shaped addition
+and still passes unrelated work through the same code path. The synthetic
+control (`reproduce-prepush-io-failopen.py --hook` against the LIVE file) agrees:
+synthetic secret refused, harmless change passes, simulated Git-scan failure
+refused, fail_open_reproduced: false.
