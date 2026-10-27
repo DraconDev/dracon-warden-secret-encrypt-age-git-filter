@@ -1419,6 +1419,7 @@ impl WardenSecurity {
                     .is_some_and(|text| text.as_bytes() == bytes);
             if whole == self.decrypt_whole_file_tag(old).is_some()
                 && old != bytes
+                && (!whole || exterior_matches)
                 && (old_plaintext == bytes || inline_matches)
                 && self.smart_clean_with_path(old, path)? == old
             {
