@@ -1,0 +1,181 @@
+{
+  "observedAt": "2026-10-27T14:58:43Z",
+  "repository": "/home/dracon/Dev/dracon-platform",
+  "classification_only_no_values_recorded": true,
+  "blobs": [
+    {
+      "commit": "de4dfc6ad0",
+      "path": "apis/services/auth-api/.env.dev",
+      "bytes": 1689,
+      "env_assignments": 13,
+      "jwt_shapes": 1,
+      "encryption_tags": 0,
+      "whole_file_tag": false,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "de4dfc6ad0",
+      "path": "apis/services/billing-api/.env.dev",
+      "bytes": 3759,
+      "env_assignments": 17,
+      "jwt_shapes": 1,
+      "encryption_tags": 0,
+      "whole_file_tag": false,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "de4dfc6ad0",
+      "path": "apis/services/email-api/.env.dev",
+      "bytes": 2665,
+      "env_assignments": 10,
+      "jwt_shapes": 1,
+      "encryption_tags": 1,
+      "whole_file_tag": false,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "2087841171",
+      "path": "apis/services/auth-api/.env.dev",
+      "bytes": 1688,
+      "env_assignments": 13,
+      "jwt_shapes": 1,
+      "encryption_tags": 0,
+      "whole_file_tag": false,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "2087841171",
+      "path": "apis/services/billing-api/.env.dev",
+      "bytes": 3759,
+      "env_assignments": 17,
+      "jwt_shapes": 1,
+      "encryption_tags": 0,
+      "whole_file_tag": false,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "2087841171",
+      "path": "apis/services/email-api/.env.dev",
+      "bytes": 2677,
+      "env_assignments": 10,
+      "jwt_shapes": 1,
+      "encryption_tags": 1,
+      "whole_file_tag": false,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "3e3309a510",
+      "path": "apis/services/auth-api/.env.dev",
+      "bytes": 3180,
+      "env_assignments": 0,
+      "jwt_shapes": 0,
+      "encryption_tags": 1,
+      "whole_file_tag": true,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "3e3309a510",
+      "path": "apis/services/billing-api/.env.dev",
+      "bytes": 5896,
+      "env_assignments": 0,
+      "jwt_shapes": 0,
+      "encryption_tags": 1,
+      "whole_file_tag": true,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "3e3309a510",
+      "path": "apis/services/email-api/.env.dev",
+      "bytes": 3196,
+      "env_assignments": 0,
+      "jwt_shapes": 0,
+      "encryption_tags": 1,
+      "whole_file_tag": true,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "315c4992e1",
+      "path": "apis/services/auth-api/.env.dev",
+      "bytes": 3180,
+      "env_assignments": 0,
+      "jwt_shapes": 0,
+      "encryption_tags": 1,
+      "whole_file_tag": true,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "315c4992e1",
+      "path": "apis/services/billing-api/.env.dev",
+      "bytes": 5896,
+      "env_assignments": 0,
+      "jwt_shapes": 0,
+      "encryption_tags": 1,
+      "whole_file_tag": true,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "315c4992e1",
+      "path": "apis/services/email-api/.env.dev",
+      "bytes": 3196,
+      "env_assignments": 0,
+      "jwt_shapes": 0,
+      "encryption_tags": 1,
+      "whole_file_tag": true,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "HEAD",
+      "path": "apis/services/auth-api/.env.dev",
+      "bytes": 3180,
+      "env_assignments": 0,
+      "jwt_shapes": 0,
+      "encryption_tags": 1,
+      "whole_file_tag": true,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "HEAD",
+      "path": "apis/services/billing-api/.env.dev",
+      "bytes": 5896,
+      "env_assignments": 0,
+      "jwt_shapes": 0,
+      "encryption_tags": 1,
+      "whole_file_tag": true,
+      "plaintext_sibling_exists_now": false
+    },
+    {
+      "commit": "HEAD",
+      "path": "apis/services/email-api/.env.dev",
+      "bytes": 3196,
+      "env_assignments": 0,
+      "jwt_shapes": 0,
+      "encryption_tags": 1,
+      "whole_file_tag": true,
+      "plaintext_sibling_exists_now": false
+    }
+  ],
+  "advertised_refs": [
+    {
+      "remote": "origin",
+      "advertised_main": "798498bbe7f8aec0aee862e214dc2312d00ee2c2",
+      "ancestor_checks": {
+        "de4dfc6ad0": true,
+        "2087841171": true,
+        "3e3309a510": true,
+        "315c4992e1": true
+      },
+      "query_ok": true
+    },
+    {
+      "remote": "gitlab",
+      "advertised_main": "798498bbe7f8aec0aee862e214dc2312d00ee2c2",
+      "ancestor_checks": {
+        "de4dfc6ad0": true,
+        "2087841171": true,
+        "3e3309a510": true,
+        "315c4992e1": true
+      },
+      "query_ok": true
+    }
+  ]
+}

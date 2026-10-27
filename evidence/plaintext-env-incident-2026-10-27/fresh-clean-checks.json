@@ -1,0 +1,23 @@
+[
+  {
+    "path": "apis/services/auth-api/.env.dev",
+    "exit": 0,
+    "whole_file_ciphertext": true,
+    "stderr_bytes": 0,
+    "values_not_recorded": true
+  },
+  {
+    "path": "apis/services/billing-api/.env.dev",
+    "exit": 0,
+    "whole_file_ciphertext": true,
+    "stderr_bytes": 0,
+    "values_not_recorded": true
+  },
+  {
+    "path": "apis/services/email-api/.env.dev",
+    "exit": 0,
+    "whole_file_ciphertext": true,
+    "stderr_bytes": 0,
+    "values_not_recorded": true
+  }
+]
