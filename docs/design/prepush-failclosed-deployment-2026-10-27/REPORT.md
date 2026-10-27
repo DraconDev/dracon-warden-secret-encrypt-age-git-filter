@@ -1,6 +1,6 @@
 # Pre-push fail-closed repair was being silently reverted — root cause and fix
 
-Status: source repaired and verified; deployment pending (see "Remaining").
+Status: repaired, gated and DEPLOYED. Live hook verified fail-closed and stable.
 
 ## Demonstrated failure
 
@@ -93,6 +93,40 @@ future hook-sensitive tests.
   harmless change, refuses the simulated scan failure, and reports
   `fail_open_reproduced: false`.
 
+## Deployment and gate evidence
+
+All four workspace gates pass on one committed assembly
+(`final-gates.json`, raw logs adjacent):
+
+| gate | result |
+| --- | --- |
+| `cargo test --workspace --locked` | 44 suites, **2888 passed, 0 failed** |
+| `cargo build --release --locked` | exit 0 |
+| `cargo clippy --workspace --locked --all-targets -- -D warnings` | exit 0 |
+| `cargo deny check` | advisories/bans/licenses/sources all ok |
+
+Deployed through `dracon-sync maintenance` (pause → install → resume), so the
+daemon never ran against a half-installed binary. Installed
+`~/.local/bin/dracon-warden` = `b31f59ad…f9124`, byte-identical to the gated
+release build, replacing the stale `39db331b…0fed370`. Rollback dir with the
+previous binary, policy and hook: `/home/dracon/.local/state/dracon/rollback-binaries/warden-20261027T200325Z`.
+
+The live global pre-push hook is now `cc7caa7b…cb5fc`, marker
+`dracon-warden-managed-hook-v2`, with all 7 fail-closed scan checks.
+`control-live-hook-final.json` runs the discretionary control against that live
+file: synthetic secret refused, harmless change passes, simulated scan failure
+refused, `fail_open_reproduced: false`.
+
+## Downgrade is actually stopped
+
+Running the daemon's exact auto-harden path (`dracon-warden once REPO`, policy
+supplied) against the deployed binary leaves the live hook byte-identical, and
+it stayed `cc7caa7b…` across subsequent live daemon cycles. Both the installed
+and the qualified-release binaries generate the same `cc7caa7b…` hook from
+`setup-hooks`, so there is no second, older template left in the fleet.
+Before the binary was replaced, the same path stamped `1eaadcf3…` (fail-open)
+every pass — that was the flip-flop, and it is gone.
+
 ## Remaining (not waived)
 
 The guard protects future hooks; it cannot retroactively harden a binary that
@@ -105,3 +139,9 @@ also why this report claims no deployment or convergence result.
 Related, still open from the same incident: whether the plaintext `.env.dev`
 commits were pushed with hooks bypassed has not been established, and the
 encryption-scope rollout remains limited to the three demonstrated paths.
+
+Nothing in this report is a fleet-convergence claim. Publication is still
+contained by the intentional global `auto_push = false`, task 2's staging /
+inspection repairs are not finished, and no clean-idle observation has been
+made. This repair removes a demonstrated cause of silent security regression,
+not the goal's remaining work.
