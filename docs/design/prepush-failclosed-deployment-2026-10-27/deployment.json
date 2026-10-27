@@ -1,0 +1,52 @@
+{
+  "deployedAt": "2026-10-27T20:03:25Z",
+  "installedBinary": {
+    "path": "/home/dracon/.local/bin/dracon-warden",
+    "sha256": "7b6b5a8b554aaf8f40a8d020054ecd2f9e8a5f0a779237c2735fbc763e54f391",
+    "version": "dracon-warden 0.113.16"
+  },
+  "builtBinary": {
+    "path": "/home/dracon/Dev/dracon-utilities/target/release/dracon-warden",
+    "sha256": "7b6b5a8b554aaf8f40a8d020054ecd2f9e8a5f0a779237c2735fbc763e54f391"
+  },
+  "globalHook": {
+    "path": "/home/dracon/.config/git/hooks/pre-push",
+    "sha256": "cc7caa7b71fb314e44dc2b512397aebe4883957b028d6e61b0638e3d8a3cb5fc",
+    "marker": "managed-hook-v2",
+    "failClosedChecks": 7
+  },
+  "rollback": {
+    "dir": "/home/dracon/.local/state/dracon/rollback-binaries/warden-20261027T200325Z"
+  },
+  "previousInstalledSha256": "39db331b735b4c71a25e27e2d7c90cf171301406c3b1ca786f5ea207f0fed370",
+  "downgradeStopped": {
+    "method": "Ran the daemon's exact auto-harden path (dracon-warden once REPO, private HOME) against the deployed binary and compared the live global hook before/after, then observed live daemon cycles.",
+    "hookBefore": "cc7caa7b71fb314e44dc2b512397aebe4883957b028d6e61b0638e3d8a3cb5fc",
+    "hookAfter": "cc7caa7b71fb314e44dc2b512397aebe4883957b028d6e61b0638e3d8a3cb5fc",
+    "unchanged": true
+  },
+  "hookControl": {
+    "synthetic_only": true,
+    "network_push_performed": false,
+    "normal_scan": {
+      "exit": 1,
+      "refused": true,
+      "plaintext_warning": true,
+      "io_error_observed": false
+    },
+    "harmless_scan": {
+      "exit": 0,
+      "refused": false,
+      "plaintext_warning": false,
+      "io_error_observed": false
+    },
+    "failed_scan": {
+      "exit": 1,
+      "refused": true,
+      "plaintext_warning": false,
+      "io_error_observed": false
+    },
+    "fail_open_reproduced": false
+  },
+  "note": "The deployed binary contains the no-downgrade guard and stamps generation v2. The stale 09:58 binary could not be guarded retroactively; deploying this binary is what closes the loop."
+}
