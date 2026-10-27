@@ -4698,7 +4698,10 @@ fn render_hook(content: &str, foreign_hook: Option<&Path>) -> String {
     let replacement = foreign_hook
         .map(shell_single_quote)
         .unwrap_or_else(|| "''".to_string());
-    content.replace(FOREIGN_HOOK_PLACEHOLDER, &replacement)
+    // Templates are authored with the v1 marker line; stamp the CURRENT
+    // capability generation so a refresh can tell hook generations apart.
+    let stamped = content.replacen(WARDEN_HOOK_MARKER, current_hook_marker(), 1);
+    stamped.replace(FOREIGN_HOOK_PLACEHOLDER, &replacement)
 }
 
 /// Return true when `path` is a hook written by Warden at ANY known generation.
@@ -4771,6 +4774,16 @@ fn is_legacy_warden_hook(path: &Path) -> bool {
 fn refresh_warden_hook_if_stale(path: &Path, template: &str) -> Result<bool> {
     if !path.exists() || (!is_warden_hook(path) && !is_legacy_warden_hook(path)) {
         return Ok(false);
+    }
+    // INCIDENT 2026-10-27: never DOWNGRADE. A newer warden wrote this hook; this
+    // binary's older template may predate whatever safety checks it added, so a
+    // rewrite would silently delete protection while still reporting success.
+    if hook_is_newer_than_binary(path) {
+        return Err(anyhow::anyhow!(
+            "refusing to downgrade newer warden hook {} (installed binary predates it); \
+             install the newer dracon-warden before refreshing hooks",
+            path.display()
+        ));
     }
     let rendered = render_hook(template, rendered_foreign_hook(path).as_deref());
     let current = fs::read_to_string(path)
