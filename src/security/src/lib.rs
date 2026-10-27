@@ -1417,10 +1417,20 @@ impl WardenSecurity {
                     .map(|text| self.smart_smudge(text))
                     .transpose()?
                     .is_some_and(|text| text.as_bytes() == bytes);
+            // Headerless .env worktrees deliberately acquire a Warden v1
+            // header inside encryption. Compare that authenticated generated
+            // representation too, or an unchanged file re-encrypts forever.
+            // Do not normalize user-supplied version headers or arbitrary text.
+            let generated_env_header_matches = whole
+                && std::path::Path::new(path).file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(".env"))
+                && std::str::from_utf8(bytes).is_ok_and(|text| !is_env_version_managed(text))
+                && old_plaintext == smudge_with_security(self, &fresh)?;
             if whole == self.decrypt_whole_file_tag(old).is_some()
                 && old != bytes
                 && (!whole || exterior_matches)
-                && (old_plaintext == bytes || inline_matches)
+                && (old_plaintext == bytes || inline_matches || generated_env_header_matches)
                 && self.smart_clean_with_path(old, path)? == old
             {
                 return Ok(old.to_vec());
