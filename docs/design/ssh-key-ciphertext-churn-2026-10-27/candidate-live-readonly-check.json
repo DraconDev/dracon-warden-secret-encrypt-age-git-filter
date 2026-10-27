@@ -1,0 +1,82 @@
+[
+  {
+    "path": "data/keys/micro2_fleet_key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "data/keys/micro2_git_key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "data/keys/micro2_libs_key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/codeberg_dracon_sync",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/id_ed25519",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/legacy_archive/admin.key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/legacy_archive/arcane_director",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/legacy_archive/main1.key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/legacy_archive/main1.key.bak",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/legacy_archive/micro1.key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/legacy_archive/ssh-key-2026-01-03 (5).key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/main1.key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/micro1.key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/micro2.key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/micro3.key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  },
+  {
+    "path": "secrets/ssh/micro3_v2_key",
+    "exitCode": 0,
+    "reusesAuthenticatedIndexedCiphertext": true
+  }
+]
