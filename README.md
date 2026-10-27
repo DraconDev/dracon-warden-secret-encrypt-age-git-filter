@@ -216,6 +216,11 @@ repo_roots = ["~/.dracon", "~/Dev"]
 # default-deny (only listed patterns are encrypted).
 protected_patterns = []
 
+# Extra encryption scope WITHOUT un-ignoring matching files. This permits
+# tracked credentials to stay encrypted while new credentials remain ignored.
+# Default [] adds nothing. Same path-pattern semantics as protected_patterns.
+encryption_only_patterns = []
+
 # Glob patterns for files that must remain plaintext (excluded from encryption).
 # Tight validator allowlist only (build artifacts, binaries, *.pub keys,
 # Cargo.lock, events jsonl) — e.g. ["Cargo.lock", "*.pub"].
