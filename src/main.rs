@@ -2010,6 +2010,12 @@ pub(crate) fn harden_repo(
 ) -> Result<(bool, bool, bool)> {
     policy.validate()?;
     require_git_marker(repo)?;
+    // Unlike index.lock, this fence is also shared with editor/agent writers.
+    // It must cover the complete read/render/write operation, including the
+    // explicit once/repair paths that bypass checkout coordination.
+    let write_fence = write_fence::WriteFence::acquire_until(
+        repo, std::time::Instant::now() + Duration::from_secs(30),
+    )?;
 
     // Acquire git's index.lock before writing ANY working-tree files.
     // This is the same coordination protocol git uses internally — checkout,
@@ -2048,6 +2054,7 @@ pub(crate) fn harden_repo(
     // Read existing dotfiles to preserve patterns added by other tools (e.g.,
     // dracon-sync). The helper rejects symlinks before following them, so a
     // tracked link cannot copy external content into the generated file.
+    write_fence.verify()?;
     let existing_gitignore = read_existing_hardening_file(&gitignore_path)?;
 
     // CHANGED 2026-07-21 (v0.112.32, audit H8/F4.1): surgical merge
@@ -2068,6 +2075,7 @@ pub(crate) fn harden_repo(
         replace_managed_block(&existing_gitattributes, &build_gitattributes_block(policy)?);
 
     // Build gitignore block while preserving existing non-policy patterns
+    write_fence.verify()?;
     let gitignore_changed = apply_overwrite_file(&gitignore_path, &merged_gitignore)?;
     let gitattributes_changed = apply_overwrite_file(&gitattributes_path, &merged_gitattributes)?;
     let filter_cfg_changed = if has_git_marker(repo) {
@@ -3692,6 +3700,7 @@ fn indexed_filter_blob(path: &str, limit: usize) -> Option<Vec<u8>> {
 }
 
 mod index_batch;
+mod write_fence;
 use index_batch::IndexBatch;
 
 #[derive(Debug)]
