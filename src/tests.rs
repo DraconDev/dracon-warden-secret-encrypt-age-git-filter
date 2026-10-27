@@ -1137,6 +1137,56 @@ mod tests {
         );
     }
 
+    /// A provider-shaped substring can occur by chance inside base64 ciphertext.
+    /// The synthetic opaque envelopes use the same complete-tag syntax contract
+    /// as the existing ciphertext fixtures; they are not authentication evidence.
+    #[test]
+    fn pre_push_hook_masks_ciphertext_context_before_provider_extraction() {
+        let body = format!("{}{}", "AIza", "A".repeat(36));
+        for (name, changed, binary) in [
+            ("added_text", false, false), ("changed_text", true, false),
+            ("added_binary", false, true), ("changed_binary", true, true),
+        ] {
+            let (td, hook_path) = make_repo_with_pre_push_hook(&format!("cipher_context_{name}"));
+            let repo = td.path();
+            let mut base = ZERO_SHA.to_string();
+            if changed {
+                fs::write(repo.join("opaque.dat"), if binary { b"baseline\0".as_slice() } else { b"baseline\n".as_slice() }).unwrap();
+                run_git_in(repo, &["add", "opaque.dat"]);
+                run_git_in(repo, &["commit", "-q", "-m", "baseline"]);
+                base = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_owned();
+            }
+            let mut bytes = format!("[DRACON_SECRET:{body}]\n").into_bytes();
+            if binary { bytes.insert(0, 0); }
+            fs::write(repo.join("opaque.dat"), bytes).unwrap();
+            run_git_in(repo, &["add", "opaque.dat"]);
+            run_git_in(repo, &["commit", "-q", "-m", "opaque encrypted representation"]);
+            let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_owned();
+            let (status, stderr) = run_hook(repo, &hook_path, &head, &base);
+            assert_eq!(status.code(), Some(0), "{name}: ciphertext context was lost: {stderr}");
+        }
+    }
+
+    #[test]
+    fn pre_push_hook_ciphertext_context_keeps_exposed_and_malformed_shapes_blocked() {
+        let body = format!("{}{}", "AIza", "A".repeat(36));
+        for (name, bytes) in [
+            ("same_line_exposed", format!("[DRACON_SECRET:QUJD] {body}\n")),
+            ("foreign_marker", format!("[MY_SECRET:{body}]\n")),
+            ("unterminated", format!("[DRACON_SECRET:{body}\n")),
+            ("invalid_base64_length", format!("[DRACON_SECRET:{}]\n", &body[..39])),
+        ] {
+            let (td, hook_path) = make_repo_with_pre_push_hook(&format!("cipher_negative_{name}"));
+            let repo = td.path();
+            fs::write(repo.join("exposed.txt"), bytes).unwrap();
+            run_git_in(repo, &["add", "exposed.txt"]);
+            run_git_in(repo, &["commit", "-q", "-m", "meaningful refusal control"]);
+            let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_owned();
+            let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+            assert_eq!(status.code(), Some(1), "{name}: unprotected shape must block: {stderr}");
+        }
+    }
+
     /// The encrypted-tag safeguard must not become a general bypass: a real
     /// credential wrapped in a hand-written foreign tag still blocks, and a
     /// plaintext assignment beside a tag still blocks.
