@@ -90,6 +90,16 @@ fn hook_refreshing_commands_never_touch_the_operator_home() {
     let home = private_home(&tmp);
     let hooks = home.join(".config/git/hooks");
     std::fs::create_dir_all(&hooks).unwrap();
+    // Refresh is deliberately a DRIFT REPAIR, never a fresh install, so the
+    // fixture needs an existing warden-owned hook with stale content. Seeding it
+    // makes "the refresh happened" observable; without this the command would
+    // legitimately no-op and the unchanged-live-hook assertion would be vacuous.
+    let fixture_hook = hooks.join("pre-push");
+    std::fs::write(
+        &fixture_hook,
+        "#!/bin/sh\n# dracon-warden-managed-hook-v1\nstale-fixture-body\n",
+    )
+    .unwrap();
 
     let policy = tmp.path().join("warden.toml");
     std::fs::write(
@@ -115,10 +125,14 @@ fn hook_refreshing_commands_never_touch_the_operator_home() {
     }
 
     // The refresh really ran — otherwise "live hook unchanged" proves nothing.
+    let refreshed = std::fs::read_to_string(&fixture_hook).expect("fixture hook");
     assert!(
-        hooks.join("pre-push").exists(),
-        "the fixture HOME must receive the refreshed hook; an unchanged live hook \
-         is only meaningful if the refresh happened somewhere"
+        !refreshed.contains("stale-fixture-body"),
+        "the private fixture HOME must be where the refresh landed, not the operator's"
+    );
+    assert!(
+        refreshed.contains("dracon-warden-managed-hook-v"),
+        "the fixture hook must still be a warden hook after refresh"
     );
 
     let after = live_pre_push_hook().expect("live hook must still exist");
