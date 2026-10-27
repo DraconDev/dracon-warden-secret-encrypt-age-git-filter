@@ -314,3 +314,11 @@
     Checking tower-http v0.6.11
     Checking h2 v0.4.19
    Compiling i18n-embed-fl v0.7.0
+    Checking tokio-rustls v0.26.5
+    Checking age v0.10.1
+    Checking zbus_names v4.3.4
+    Checking hyper v1.11.1
+    Checking dracon-security v0.4.0 (/home/dracon/Dev/dracon-utilities/dracon-warden/src/security)
+   Compiling zbus_macros v5.19.0
+    Checking hyper-util v0.1.20
+    Checking hyper-tls v0.6.0
