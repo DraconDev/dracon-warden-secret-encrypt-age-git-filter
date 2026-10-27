@@ -1,0 +1,12 @@
+   Compiling dracon-security v0.4.0 (/home/dracon/Dev/dracon-utilities/dracon-warden/src/security)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.02s
+     Running tests/index_reuse.rs (target/debug/deps/index_reuse-898cbb154e6b6fbb)
+
+running 4 tests
+test inline_key_tag_with_exterior_newline_reuses_only_exact_plaintext_and_layout ... ok
+test newly_detected_secrets_in_index_force_reencryption ... ok
+test policy_upgrade_does_not_reuse_partially_protected_index ... ok
+test unchanged_ciphertext_is_reused_but_edits_and_plaintext_are_not ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
