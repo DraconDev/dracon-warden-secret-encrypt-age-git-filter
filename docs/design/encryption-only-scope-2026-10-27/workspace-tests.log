@@ -2208,3 +2208,33 @@ ok
 test sync::tests::test_sync_repo_exact_50_del ... [master (root-commit) f952f27] init
 ok
 test sync::tests::test_sync_repo_mirror_push_failure_returns_false ... [master (root-commit) f952f27] init
+ok
+test sync::tests::test_sync_repo_mirror_push_failure_second ... [master (root-commit) 998f1b4] init
+⚠️  Push contains commits authored by a test identity:
+   test@test
+   Amend the author identity before pushing (git commit --amend --reset-author).
+error: failed to push some refs to '/tmp/.tmpxiP4JE/origin.git'
+ok
+test sync::tests::test_sync_repo_mirror_push_success_returns_true ... [master (root-commit) 7502794] init
+To /tmp/.tmpgWgIO7/origin.git
+ * [new branch]      master -> master
+branch 'master' set up to track 'origin/master'.
+branch 'master' set up to track 'origin/master'.
+branch 'master' set up to track 'origin/master'.
+ok
+test sync::tests::test_sync_repo_mixed_tracked_and_untracked ... [master (root-commit) e58726b] init
+ok
+test sync::tests::test_sync_repo_new_branch_auto_push_attempted ... [main (root-commit) 4e5b232] init
+ok
+test sync::tests::test_sync_repo_not_git_repo_returns_false ... ok
+test sync::tests::test_sync_repo_partial_deletion_allowed ... [master (root-commit) 4e5b232] init
+ok
+test sync::tests::test_sync_repo_pull_skip_when_no_origin ... [master (root-commit) d7cc437] init
+ok
+test sync::tests::test_sync_repo_pushes_detached_head_ahead_commit ... [main (root-commit) d7cc437] init
+[main f4b96a3] ahead
+HEAD is now at f4b96a3 ahead
+ok
+test sync::tests::test_sync_repo_single_deleted_file_committed ... [master (root-commit) d7cc437] init
+ok
+test sync::tests::test_sync_repo_skip_pull_when_dirty ... [master (root-commit) d7cc437] init
