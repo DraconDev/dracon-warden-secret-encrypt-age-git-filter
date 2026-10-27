@@ -3499,4 +3499,7 @@ test index_batch::tests::index_batch_descendant_has_no_live_process_after_cleanu
 test index_batch::tests::index_batch_descendant_retained_stdout_is_cancelled ... ok
 test index_batch::tests::index_batch_direct_helper_sigkill_cleans_descendants_without_drop ... ok
 test index_batch::tests::index_batch_drop_reaps_direct_child_and_kills_group ... ok
-test index_batch::tests::index_batch_invalid_framing_and_exit_recover ... 
+test index_batch::tests::index_batch_invalid_framing_and_exit_recover ... ok
+test index_batch::tests::index_batch_nonreading_stdin_recovers ... ok
+test index_batch::tests::index_batch_outer_owner_sigkill_cleans_isolated_helper_group ... ok
+test index_batch::tests::index_batch_resolver_deadline_recovers ... 
