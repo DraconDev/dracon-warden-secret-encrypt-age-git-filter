@@ -1,0 +1,32 @@
+{
+  "samples": [
+    {
+      "elapsedSecs": 0.01,
+      "head": "0b6d37304af6b3ef22ecc0d605a7ccc080cb7c59",
+      "keyDiffExitCode": 0,
+      "changedKeyPaths": []
+    },
+    {
+      "elapsedSecs": 35.01,
+      "head": "7c5ab4e321f2a5ab4400d7212656d80324c60a16",
+      "keyDiffExitCode": 0,
+      "changedKeyPaths": []
+    },
+    {
+      "elapsedSecs": 70.02,
+      "head": "f3bef938de8ea77ac4d17a15f3be89bf147bc6b0",
+      "keyDiffExitCode": 0,
+      "changedKeyPaths": []
+    },
+    {
+      "elapsedSecs": 105.02,
+      "head": "11b409fdfb29e7b50f37a15684344958ef4147f4",
+      "keyDiffExitCode": 0,
+      "changedKeyPaths": []
+    }
+  ],
+  "keyChangingCommitsDuringWindow": [],
+  "durationSecs": 105.03,
+  "qualifiedInstalledSha256": "bcb1987811d5e930faeb60f3b95a13940a470dd5918ef7293110b3a9c797e2bb",
+  "limits": "Bounded live window; historical alert backlog may continue arriving."
+}
