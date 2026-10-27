@@ -89,7 +89,7 @@ fn newly_detected_secrets_in_index_force_reencryption() {
 fn inline_key_tag_with_exterior_newline_reuses_only_exact_plaintext_and_layout() {
     let s = security();
     let plain = format!(
-        "[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBESVQ4UjBOR0hPYkM1bE8wL2FKVjMzUDVuUnljdFIzbXd3Q3JnY2ZrckN3CnZOSE1nQW9iMVYvRmtzVHNMa3YwL3ROdnRZSm01ZzZqMGhRbW4zRGhlK2cKLT4gWDI1NTE5IGsyTzI0R1ZEYWJVZkpVdWRPVmZ0M0JUeTZqelBaaDlsRlBMSzR5dmZ2RzQKelRUMnI4c3FXbmU0MlBMaGNRM0RWR1NENzY4WHp3dDcrb2FSdytrYnBFWQotPiBYMjU1MTkgVlpuVGp6UkFoZkRNcCtKLzV6ZzRkblVueVczU1ZsTE4zem1tRU0yMjhHYwpaTHhwei9LL0ZtR1dDNmtOSjZoM2VCY1doZkFsWGE1bE94VjJlUi9ZVDVzCi0+IFgyNTUxOSArVlRCSWQ2aUc3cDNyV1ZZODdlVmZxcHJ1Wk5lTWtUNkRtTUp1dW1ab3pNCjUyUzIvZ3A3clVNNXpUZk5LRjZFRDdZeVZOTTlxSGp0UFNDelFpbCtKUVkKLT4gWDI1NTE5IHE1MHpKc1pPUmMrNnJrQ3ZDV1AvU0RtL2FhRWtUSHk4SnJla2lvNzlPRGcKWG1aUURpbGwzcTh6TENVVE9zdktiQ05PRS94eThaUDZ4RlY1Z00rajFuVQotPiByXEstZ3JlYXNlIDFyJXd5RiBKdWtVWXEgYD0KV3ZqYWdqcm5EQXN0S1l1SWVtYURybmF3bElvR3lSYTZGMldTQlZsOUxBT3h4VVRKb3NRTi9NZ0FqSkw3S0hTOQpPSmU0bUEKLS0tIEJUTWdSRnJWeTd5Skg0TUVEa0s2QnU1Z08wN2E4bk1ZaURsM1lpczc2TkUK7aCqCFu7uI/7GQbb44ZS4gSNGjzvWPVVb0saol1dOcng41QJLmHE6TRuCtjJ3wen4L64UiiKXUbNkZiCWVA8NgjMIVbVOgUI77M6qHm4aQTGGMHxmpMpDVDl0Y2GeWkoVrGG5vc0bnbhPw==]\n",
+        "[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBRTnJEeVpNcTkvVUc1WUFUdEVObFZ5U1FXZ3k3SC9reUdaUlEvUzVKSVdVCkVKTHd2cXFvNTJSazRqKzRCZW1yVDZwR0U4cjZadGdXaHNxYUkza1JmTmcKLT4gWDI1NTE5IHJCQUFrS2ludGRDY0NYQVpmYTN0VDduNDRsNmRhekRneW1WTG9HaVVnQ00KaXlvZDR5Vk0vRE14cnlHc3dyTUlKR0lxbm9Td2paTEtPdmRoUVdMdFJsTQotPiBYMjU1MTkgVTRwbHdLZ01FdnhQY3lNTHdwV1Y5NzZlVE1oWkpmYmVwZWlhV0RvLzhEZwptUmJyTzRYb1hmekR5cWdyWUVNSWd5TUpYTzdlN2pwMGlscysyTGVJdWc4Ci0+IFgyNTUxOSAxakpSTUZ1Q0VNRld2RVRXZHR0MmYvNFV2OXpVcUw2eTJtVndVRnBKU2hvCithTjhIMjN4SkhzVlJMYVJzRlAzMGhyVWYwVmxTbDlxcDRRMTRuWmdmTDAKLT4gWDI1NTE5IE1UYUU1YVRpNXJEeUhJM3pTLzFBMnZ1OUIwaXZ3UzVTR0sreXpBRklhd0kKQUJIUXRaV011ZVpqdjZiM3RTQXBVcWVkblV5RzNXa0ZIeUdxZ3hTbXFwMAotPiBtRS1ncmVhc2UKZFVqMkFPU3JFUUx3c3FiRmNTZzU1WDhZd0hvM29WYytaMWg3ZnZsVlBFbnphVFFMMjBOMnFKYmdReS9xQ3gvSApVNTB1SEEKLS0tIFNCSWNvVXZyM0tmbkhGZGFodDNBWDJ3MXpmcmRTV0pmcUQyT3NSZXdmL2cKDbH9APRnzCY3qnCqAdUpQ82lvMewg7epMiScF59LM4F//b+PSjQ/h9vZuUrRYF8/nULLSCU9+KlDAw5OhDF3M1+t2hbNIrePMiI8ZDutuQK8qNfAZvbZdzrvC/m0Bn4nKzO3qLEecrBvUQ==]\n",
         "QUJD".repeat(60)
     );
     let old = s.smart_clean_with_path(plain.as_bytes(), "secrets/key").unwrap();
@@ -114,4 +114,10 @@ fn generated_env_header_does_not_reencrypt_an_unchanged_headerless_worktree() {
     assert!(old.starts_with(b"[DRACON_SECRET:"));
     assert_eq!(s.clean_reusing_index(raw, "service/.env.dev", Some(&old)).unwrap(), old);
     assert_ne!(s.clean_reusing_index(b"PASSWORD=changed-example\n", "service/.env.dev", Some(&old)).unwrap(), old);
+    let managed = s.smart_smudge(std::str::from_utf8(&old).unwrap()).unwrap();
+    let bumped = s.smart_clean_with_path(managed.as_bytes(), "service/.env.dev").unwrap();
+    assert_eq!(s.clean_reusing_index(managed.as_bytes(), "service/.env.dev", Some(&bumped)).unwrap(), bumped);
+    for changed in [managed.replace("synthetic-example", "changed-example"), format!("{managed}\n")] {
+        assert_ne!(s.clean_reusing_index(changed.as_bytes(), "service/.env.dev", Some(&bumped)).unwrap(), bumped);
+    }
 }
