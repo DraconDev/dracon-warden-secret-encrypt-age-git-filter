@@ -2208,3 +2208,9 @@ ok
 test sync::tests::test_sync_repo_exact_50_del ... [master (root-commit) 920364c] init
 ok
 test sync::tests::test_sync_repo_mirror_push_failure_returns_false ... [master (root-commit) 85adc2f] init
+ok
+test sync::tests::test_sync_repo_mirror_push_failure_second ... [master (root-commit) c275355] init
+⚠️  Push contains commits authored by a test identity:
+   test@test
+   Amend the author identity before pushing (git commit --amend --reset-author).
+error: failed to push some refs to '/tmp/.tmp21qqk8/origin.git'
