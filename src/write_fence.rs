@@ -75,6 +75,33 @@ impl WriteFence {
     }
 }
 
+/// Run a synchronous owned writer with the fence FD inherited into the actual
+/// writing process. Parent death must not release the lock while that process
+/// can still write. Participants must retain this FD through their final close
+/// and must not launch detached writers that discard it.
+pub(crate) fn exec_writer(
+    repo: &Path, wait_secs: u64, run_secs: u64, command: &[std::ffi::OsString],
+) -> Result<()> {
+    ensure!((1..=300).contains(&wait_secs), "writer fence wait must be 1..300 seconds");
+    ensure!((1..=3600).contains(&run_secs), "writer deadline must be 1..3600 seconds");
+    ensure!(!command.is_empty(), "writer command is required");
+    let nested = std::env::var_os(INHERITED_FD).is_some();
+    let fence = WriteFence::acquire_until(repo, Instant::now() + Duration::from_secs(wait_secs))?;
+    fence.verify()?;
+    let fd = fence.file.as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    ensure!(flags >= 0 && unsafe { libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) } == 0,
+        "cannot inherit canonical writer fence");
+    // exec keeps the owned root PID. GNU timeout normally owns that root's
+    // process group, so the caller's group cancellation and its own deadline
+    // address the same family. Nested writers retain the outer owned group.
+    let mut child = std::process::Command::new("timeout");
+    child.arg("--kill-after=5");
+    if nested { child.arg("--foreground"); }
+    child.arg(run_secs.to_string()).args(command).env(INHERITED_FD, fd.to_string());
+    Err(child.exec()).context("execute bounded canonical writer")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
