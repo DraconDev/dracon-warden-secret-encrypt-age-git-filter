@@ -1,0 +1,9 @@
+{
+  "installedAt": "2026-10-27T09:23:38Z",
+  "qualified": "/home/dracon/.local/state/dracon-sync/qualification/ssh-key-ciphertext-churn-2026-10-27/target/release/dracon-warden",
+  "installed": "/home/dracon/.local/bin/dracon-warden",
+  "backup": "/home/dracon/.local/state/dracon-sync/qualification/ssh-key-ciphertext-churn-2026-10-27/warden-before-key-newline-fix",
+  "qualifiedSha256": "bcb1987811d5e930faeb60f3b95a13940a470dd5918ef7293110b3a9c797e2bb",
+  "installedSha256": "bcb1987811d5e930faeb60f3b95a13940a470dd5918ef7293110b3a9c797e2bb",
+  "note": "No hook bypass, no secret-file edits, no manual commit/push; Git next launches this filter binary."
+}
