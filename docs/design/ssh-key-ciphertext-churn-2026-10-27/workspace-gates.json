@@ -7,6 +7,14 @@
       "elapsedSecs": 782.95,
       "rawLog": "/home/dracon/Dev/dracon-utilities/dracon-warden/docs/design/ssh-key-ciphertext-churn-2026-10-27/workspace-tests.log",
       "sha256": "803cc477dcfdbaf2d30932b5522863b469aed945fb3569e7bdfcf4d8ce730eed"
+    },
+    {
+      "gate": "release",
+      "command": "cargo build --release --locked",
+      "exitCode": 0,
+      "elapsedSecs": 202.18,
+      "rawLog": "/home/dracon/Dev/dracon-utilities/dracon-warden/docs/design/ssh-key-ciphertext-churn-2026-10-27/workspace-release.log",
+      "sha256": "6f15f6150a568ecc86915f1263ae75980eb4b72df89499e3c9a08e20ea0f7226"
     }
   ],
   "allPassed": false,
