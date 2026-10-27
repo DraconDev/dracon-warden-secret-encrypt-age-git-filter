@@ -50,6 +50,12 @@ repo_roots = ["~/.dracon", "~/Dev"]
 # ones — raise the limit (64 MiB ceiling) rather than disabling the filter.
 protected_patterns = []
 
+# Extra encryption scope WITHOUT .gitignore negations. Use this when tracked
+# credentials must stay encrypted but new matching files must remain ignored.
+# Like protected_patterns, these select filter treatment; unlike that list,
+# they never make a file eligible for automatic staging. Default is empty.
+encryption_only_patterns = []
+
 # Glob patterns for files that must remain plaintext (excluded from encryption)
 # Use for files that need to be readable without decryption keys.
 # Must use the validator allowlist (build artifacts, binaries, *.pub keys,
