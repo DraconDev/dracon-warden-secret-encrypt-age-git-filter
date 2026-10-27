@@ -1,0 +1,9 @@
+{
+  "encryptionOnlyPaths": [
+    "apis/services/auth-api/.env.dev",
+    "apis/services/billing-api/.env.dev",
+    "apis/services/email-api/.env.dev"
+  ],
+  "protectedPatternsContainEnvNames": true,
+  "note": "Existing inclusion list stays unchanged; new field affects encryption only. No .gitignore/.gitattributes write was used for rollout."
+}
