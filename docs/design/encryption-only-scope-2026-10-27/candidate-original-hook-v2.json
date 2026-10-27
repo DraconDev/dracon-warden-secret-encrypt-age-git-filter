@@ -1,0 +1,27 @@
+{
+  "paths": [
+    {
+      "path": "apis/services/auth-api/.env.dev",
+      "wholeFileEncrypted": true,
+      "originalStagedBodyPreserved": true,
+      "secondCleanReusesCiphertext": true
+    },
+    {
+      "path": "apis/services/billing-api/.env.dev",
+      "wholeFileEncrypted": true,
+      "originalStagedBodyPreserved": true,
+      "secondCleanReusesCiphertext": true
+    },
+    {
+      "path": "apis/services/email-api/.env.dev",
+      "wholeFileEncrypted": true,
+      "originalStagedBodyPreserved": true,
+      "secondCleanReusesCiphertext": true
+    }
+  ],
+  "originalPrecommitExitCode": 0,
+  "privateRawLog": "/home/dracon/.local/state/dracon-sync/qualification/encryption-only-scope-2026-10-27/candidate-original-precommit-v2.log",
+  "livePolicyNotModified": true,
+  "copiedIndexOnly": true,
+  "note": "Warden-managed version header changes intentionally; original staged environment bodies compare byte-exact after removing only that managed header."
+}
