@@ -52,18 +52,83 @@ fn create_test_repo() -> tempfile::TempDir {
     tmp
 }
 
-/// Assert the operator's real global pre-push hook was not modified.
+/// Read the operator's real global pre-push hook, or None when absent.
 ///
-/// Every CLI test below is a candidate leak: a command that refreshes global
-/// hooks and is run without a private HOME silently edits the live fleet hook.
-#[track_caller]
-fn assert_live_hooks_untouched(before: &[u8; 32], after: &[u8; 32]) {
+/// Deliberately reads the LIVE path, not a fixture: the point is to observe
+/// whether a test run leaked into the operator's fleet-wide hooks directory.
+fn live_pre_push_hook() -> Option<Vec<u8>> {
+    std::fs::read(dirs_home()?.join(".config/git/hooks/pre-push")).ok()
+}
+
+/// The operator's real HOME, resolved independently of any test-local override.
+fn dirs_home() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
+/// INCIDENT 2026-10-27 regression: hook-refreshing CLI commands must not reach
+/// the operator's live hooks from inside the test suite.
+///
+/// The commands below all call `refresh_global_hooks_if_stale()`. Before the
+/// fix they ran with the inherited HOME, so `cargo test` rewrote the live
+/// `~/.config/git/hooks/pre-push` — and because that file carried the same
+/// warden marker before and after, the daemon and the test suite silently
+/// flipped the fleet between the fail-closed and fail-open hook variants.
+///
+/// This test asserts the live hook's bytes are byte-identical across a real
+/// `once` and `repair` invocation, and that the invocation actually landed in
+/// the private fixture HOME instead (so it cannot pass by doing nothing).
+#[test]
+fn hook_refreshing_commands_never_touch_the_operator_home() {
+    let Some(before) = live_pre_push_hook() else {
+        // No live hook on this machine (CI, fresh container): nothing to leak
+        // into, so there is no regression to observe here.
+        return;
+    };
+
+    let tmp = create_test_repo();
+    let repo = tmp.path().join("test-repo");
+    let home = private_home(&tmp);
+    let hooks = home.join(".config/git/hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+
+    let policy = tmp.path().join("warden.toml");
+    std::fs::write(
+        &policy,
+        "watch_roots = []\nrepo_roots = []\nprotected_patterns = [\"secret.txt\"]\n",
+    )
+    .unwrap();
+
+    for args in [vec!["once", repo.to_str().unwrap()], vec!["repair", repo.to_str().unwrap()]] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
+            .args(&args)
+            .env("HOME", &home)
+            .env("DRACON_WARDEN_POLICY", &policy)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", tmp.path().join("gitconfig"))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{args:?} should succeed in a private HOME: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    // The refresh really ran — otherwise "live hook unchanged" proves nothing.
+    assert!(
+        hooks.join("pre-push").exists(),
+        "the fixture HOME must receive the refreshed hook; an unchanged live hook \
+         is only meaningful if the refresh happened somewhere"
+    );
+
+    let after = live_pre_push_hook().expect("live hook must still exist");
     assert_eq!(
         before, after,
-        "test modified the operator's live ~/.config/git/hooks; every test that \
-         can trigger a global hook refresh must run with a private HOME"
+        "a warden CLI test rewrote the operator's live pre-push hook; hook-refreshing \
+         commands must run with a private HOME"
     );
 }
+
 #[test]
 fn test_warden_status() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
