@@ -97,9 +97,7 @@ trap 'rm -f "$SCAN_FILES_NUL" "$ADDED_FILES" "$CHANGED_NUL" "$REFS_FILE" "$REMOT
 reject_newline_paths() {
     nul_list="$1"
     stage="$2"
-    # Check each I/O stage: a failed scan is not an empty/safe path list.
-    tr -dc '\n' < "$nul_list" > "$ADDED_FILES" || return 1
-    nl_count=$(wc -c < "$ADDED_FILES") || return 1
+    nl_count=$(tr -dc '\n' < "$nul_list" | wc -c)
     [ "$nl_count" -gt 0 ] || return 0
     echo "❌ dracon-warden: refusing to push — $stage contains a path with an" >&2
     echo "   embedded NEWLINE character." >&2
@@ -386,15 +384,12 @@ while read local_ref local_sha remote_ref remote_sha; do
     fi
     for scan_commit in $NEW_COMMITS; do
     # Collect non-hatched files (skip files with a `.plaintext` sibling)
-    : > "$SCAN_FILES_NUL" || exit 1
+    : > "$SCAN_FILES_NUL"
     # FIXED 2026-10-09 (audit D15 / former F129): capture the -z list and
     # validate it BEFORE flattening — see reject_newline_paths.
-    git diff-tree --root -m -r --no-commit-id --name-only -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL" || {
-        echo 'warden: changed-path scan failed; refusing push' >&2; exit 1;
-    }
+    git diff-tree --root -m -r --no-commit-id --name-only -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL"
     reject_newline_paths "$CHANGED_NUL" "commit $scan_commit" || exit 1
-    tr '\0' '\n' < "$CHANGED_NUL" > "$ADDED_FILES" || exit 1
-    while IFS= read -r f; do
+    tr '\0' '\n' < "$CHANGED_NUL" | while IFS= read -r f; do
         # FIXED 2026-10-03 (audit R4-W-08): anchor to $REPO — the old
         # CWD-relative check assumed the hook runs at the repo root
         # (never verified against git source).
@@ -410,8 +405,8 @@ while read local_ref local_sha remote_ref remote_sha; do
             echo "hatched: $f" >&2
             continue
         fi
-        printf '%s\0' "$f" >> "$SCAN_FILES_NUL" || exit 1
-    done < "$ADDED_FILES"
+        printf '%s\0' "$f" >> "$SCAN_FILES_NUL"
+    done
 
     # Nothing left to scan — push is safe
     if [ ! -s "$SCAN_FILES_NUL" ]; then
@@ -426,13 +421,7 @@ while read local_ref local_sha remote_ref remote_sha; do
     #  * `--diff-filter=a`: ADDED files are excluded here — the full-blob
     #    loop below (with its blob-novelty check) judges them once, with
     #    binary safety the diff-line scan lacks.
-    if ! xargs -0 -r git diff-tree --root -m -r --no-commit-id -M100% --diff-filter=a -p --unified=0 "$scan_commit" -- < "$SCAN_FILES_NUL" > "$BLOB_SCAN" 2>/dev/null; then
-        echo 'warden: changed-content scan failed; refusing push' >&2
-        exit 1
-    fi
-    DIFF=$(grep -E '^\+[^+]' "$BLOB_SCAN")
-    DIFF_STATUS=$?
-    case "$DIFF_STATUS" in 0|1) ;; *) echo 'warden: diff read failed; refusing push' >&2; exit 1 ;; esac
+    DIFF=$(xargs -0 -r git diff-tree --root -m -r --no-commit-id -M100% --diff-filter=a -p --unified=0 "$scan_commit" -- < "$SCAN_FILES_NUL" 2>/dev/null | grep -E '^\+[^+]' || true)
     # CHANGED 2026-07-26 (v0.113.1, audit WARDEN-M2): `\x27` is NOT a
     # hex escape in GNU grep ERE (verified grep 3.12: "stray \ before
     # x" — the class became ["x27], matching literal x/2/7 instead of
@@ -459,11 +448,9 @@ while read local_ref local_sha remote_ref remote_sha; do
     # the first time. Modified text files keep the added-lines scan;
     # modified binaries compare secret matches with parent blobs below
     # so unrelated edits do not re-trip on grandfathered matches.
-    git diff-tree --root -m -r --no-commit-id -M100% --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL" || {
-        echo 'warden: added-path scan failed; refusing push' >&2; exit 1;
-    }
+    git diff-tree --root -m -r --no-commit-id -M100% --name-only --diff-filter=A -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL"
     reject_newline_paths "$CHANGED_NUL" "the added files of $scan_commit" || exit 1
-    tr '\0' '\n' < "$CHANGED_NUL" > "$ADDED_FILES" || exit 1
+    tr '\0' '\n' < "$CHANGED_NUL" > "$ADDED_FILES"
     while IFS= read -r af; do
         # Skip files hatched via a `.plaintext` sibling, matching the
         # text scan above. Anchored to $REPO (R4-W-08), not CWD.
@@ -495,28 +482,19 @@ while read local_ref local_sha remote_ref remote_sha; do
     # merge commit listed the same modified file N times and each iteration
     # re-scanned all N parents — O(parents x blob size) per merge push.
     # `awk '!seen[$0]++'` de-duplicates while preserving first-seen order.
-    git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=M -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL" || {
-        echo 'warden: modified-path scan failed; refusing push' >&2; exit 1;
-    }
+    git diff-tree --root -m -r --no-commit-id --name-only --diff-filter=M -z "$scan_commit" 2>/dev/null > "$CHANGED_NUL"
     reject_newline_paths "$CHANGED_NUL" "the modified files of $scan_commit" || exit 1
     # FIXED 2026-10-09 (audit F138): `-m` emits one row per parent, so a
     # merge commit listed the same modified file N times and each iteration
     # re-scanned all N parents — O(parents x blob size) per merge push.
     # `awk '!seen[$0]++'` de-duplicates while preserving first-seen order.
-    tr '\0' '\n' < "$CHANGED_NUL" > "$SCAN_FILES_NUL" || exit 1
-    awk '!seen[$0]++' "$SCAN_FILES_NUL" > "$ADDED_FILES" || exit 1
+    tr '\0' '\n' < "$CHANGED_NUL" | awk '!seen[$0]++' > "$ADDED_FILES"
     PARENTS=$(git show -s --format=%P "$scan_commit") || exit 1
     while IFS= read -r bf; do
         # Anchored to $REPO (R4-W-08), not CWD — see above.
         [ -f "$REPO/$bf.plaintext" ] && { echo "hatched: $bf" >&2; continue; }
-        if ! git diff-tree --root -m -r --no-commit-id --numstat "$scan_commit" -- "$bf" > "$BLOB_SCAN"; then
-            echo 'warden: binary classification failed; refusing push' >&2
-            exit 1
-        fi
-        awk '$1 == "-" && $2 == "-" { binary=1 } END { exit(binary ? 0 : 1) }' "$BLOB_SCAN"
-        BINARY_STATUS=$?
-        case "$BINARY_STATUS" in 0|1) ;; *) echo 'warden: binary scan read failed; refusing push' >&2; exit 1 ;; esac
-        if [ "$BINARY_STATUS" -eq 1 ]; then
+        if ! git diff-tree --root -m -r --no-commit-id --numstat "$scan_commit" -- "$bf" |
+            awk '$1 == "-" && $2 == "-" { binary=1 } END { exit(binary ? 0 : 1) }'; then
             continue
         fi
         OLD_MATCHES=$(for parent in $PARENTS; do
