@@ -7,6 +7,14 @@
       "elapsedSecs": 420.84,
       "rawLog": "/home/dracon/Dev/dracon-utilities/dracon-warden/docs/design/encryption-only-scope-2026-10-27/workspace-tests.log",
       "sha256": "6b0851793dc376533fe600cc4dec14eedce5ad3609f7993f16b0d954ec95777a"
+    },
+    {
+      "gate": "release",
+      "command": "cargo build --release --locked",
+      "exitCode": 0,
+      "elapsedSecs": 13.24,
+      "rawLog": "/home/dracon/Dev/dracon-utilities/dracon-warden/docs/design/encryption-only-scope-2026-10-27/workspace-release.log",
+      "sha256": "2e4c07bf71226d6f104dd4117ee8b7440c7ada61055855a1408ffb11db385682"
     }
   ],
   "allPassed": false,
