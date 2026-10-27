@@ -1,0 +1,15 @@
+{
+  "rows": [
+    {
+      "gate": "tests",
+      "command": "cargo test --workspace --locked",
+      "exitCode": 0,
+      "elapsedSecs": 782.95,
+      "rawLog": "/home/dracon/Dev/dracon-utilities/dracon-warden/docs/design/ssh-key-ciphertext-churn-2026-10-27/workspace-tests.log",
+      "sha256": "803cc477dcfdbaf2d30932b5522863b469aed945fb3569e7bdfcf4d8ce730eed"
+    }
+  ],
+  "allPassed": false,
+  "sourceInputsUnchanged": true,
+  "targetDir": "/home/dracon/.local/state/dracon-sync/qualification/ssh-key-ciphertext-churn-2026-10-27/target"
+}
