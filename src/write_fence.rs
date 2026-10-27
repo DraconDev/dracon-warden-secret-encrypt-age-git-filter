@@ -5,7 +5,8 @@
 //! NOT qualify the protocol: every affected producer must participate.
 use anyhow::{ensure, Context, Result};
 use std::fs::{File, OpenOptions};
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::process::CommandExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -13,6 +14,7 @@ use std::time::{Duration, Instant};
 /// Per-worktree Git directory, not the common directory: unrelated worktrees
 /// and repositories must remain independently writable.
 pub(crate) const FILE_NAME: &str = "dracon-canonical-writer-v1.lock";
+const INHERITED_FD: &str = "DRACON_CANONICAL_WRITER_FD_V1";
 
 /// Owned exclusive flock. Closing the descriptor releases it; no stale-lock
 /// deletion or PID-based lock stealing is permitted.
@@ -28,10 +30,21 @@ impl WriteFence {
         ensure!(Instant::now() < deadline, "canonical writer fence deadline expired");
         let gitdir = super::resolved_git_dir(repo).context("writer fence requires a worktree Git directory")?;
         let path = gitdir.join(FILE_NAME);
-        let file = OpenOptions::new()
-            .read(true).write(true).create(true).truncate(false)
-            .mode(0o600).custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-            .open(&path).context("open canonical writer fence")?;
+        let file = if let Some(raw) = std::env::var_os(INHERITED_FD) {
+            // Borrowing an inherited OFD is reentrant, unlike opening the same
+            // lock anew. Never trust an env token without checking the actual
+            // descriptor against this repository's lock namespace below.
+            let fd: i32 = raw.to_str().context("non-text writer fence descriptor")?.parse()?;
+            ensure!(fd >= 3, "invalid inherited writer fence descriptor");
+            let duplicate = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 3) };
+            ensure!(duplicate >= 0, "cannot duplicate inherited writer fence descriptor");
+            unsafe { File::from_raw_fd(duplicate) }
+        } else {
+            OpenOptions::new()
+                .read(true).write(true).create(true).truncate(false)
+                .mode(0o600).custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .open(&path).context("open canonical writer fence")?
+        };
         let fence = Self { file, path };
         fence.verify()?;
         loop {
