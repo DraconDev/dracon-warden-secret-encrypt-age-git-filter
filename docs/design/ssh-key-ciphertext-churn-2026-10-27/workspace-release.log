@@ -193,3 +193,10 @@
    Compiling zvariant_utils v4.2.0
    Compiling enumflags2 v0.7.12
    Compiling zcheapstr v1.1.0
+   Compiling toml v0.5.11
+   Compiling basic-toml v0.1.10
+   Compiling futures-executor v0.3.34
+   Compiling icu_provider v2.3.1
+   Compiling i18n-config v0.4.8
+   Compiling futures v0.3.34
+   Compiling intl_pluralrules v7.0.2
