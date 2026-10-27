@@ -4931,6 +4931,112 @@ protected_patterns = ["secrets.json"]
         );
     }
 
+    /// INCIDENT 2026-10-27: a stale installed binary regenerated the fail-OPEN
+    /// pre-push hook over the live fail-CLOSED one, and the daemon's per-repo
+    /// `dracon-warden once` re-applied that downgrade on every pass. The drift was
+    /// invisible because both variants carry the warden marker, so `refresh`
+    /// treated the older template as a legitimate upgrade.
+    ///
+    /// The guard is the marker GENERATION: a hook stamped newer than the running
+    /// binary must never be rewritten, and the refusal must be an ERROR (so the
+    /// pass reports it) rather than a silent success.
+    #[test]
+    fn refresh_never_downgrades_a_newer_hook_generation() {
+        let td = TestDir::new("refresh_no_downgrade");
+        let future = td.path().join("newer");
+        let future_generation = WARDEN_HOOK_GENERATION + 1;
+        let newer_body = format!(
+            "#!/bin/sh\n# dracon-warden-managed-hook-v{future_generation}\n\
+             echo 'fail-closed checks this binary has never heard of' >&2\nexit 1\n"
+        );
+        fs::write(&future, &newer_body).expect("write newer hook");
+
+        // Recognized as warden-owned, so it is never mistaken for foreign and
+        // appended to the chain as an unrelated hook.
+        assert!(is_warden_hook(&future), "a newer hook is still warden's own");
+        assert!(!is_legacy_warden_hook(&future));
+        assert!(hook_is_newer_than_binary(&future));
+
+        let err = refresh_warden_hook_if_stale(&future, PRE_PUSH_HOOK)
+            .expect_err("refreshing a newer hook must fail loudly, never downgrade");
+        assert!(
+            err.to_string().contains("refusing to downgrade newer warden hook"),
+            "refusal must name the downgrade: {err}"
+        );
+        assert_eq!(
+            fs::read_to_string(&future).expect("read untouched"),
+            newer_body,
+            "the newer hook's bytes must be preserved exactly"
+        );
+
+        // A hook of the SAME generation is still refreshable (normal drift fix).
+        let current_gen = td.path().join("current");
+        fs::write(
+            &current_gen,
+            format!("#!/bin/sh\n{}\nold body\n", current_hook_marker()),
+        )
+        .expect("write current-gen stale hook");
+        assert!(!hook_is_newer_than_binary(&current_gen));
+        assert!(
+            refresh_warden_hook_if_stale(&current_gen, PRE_PUSH_HOOK).expect("same gen refreshes")
+        );
+        assert_eq!(
+            fs::read_to_string(&current_gen).expect("read refreshed"),
+            render_hook(PRE_PUSH_HOOK, None)
+        );
+
+        // An OLDER generation is upgraded, never mistaken for a downgrade.
+        let older = td.path().join("older");
+        if WARDEN_HOOK_GENERATION > 1 {
+            fs::write(
+                &older,
+                format!(
+                    "#!/bin/sh\n# dracon-warden-managed-hook-v{}\nold body\n",
+                    WARDEN_HOOK_GENERATION - 1
+                ),
+            )
+            .expect("write older hook");
+            assert!(!hook_is_newer_than_binary(&older));
+            assert!(refresh_warden_hook_if_stale(&older, PRE_PUSH_HOOK).expect("older upgrades"));
+        }
+
+        // A comment MENTIONING the marker is not a marker (no false ownership).
+        let mention = td.path().join("mention");
+        fs::write(
+            &mention,
+            "#!/bin/sh\n# see # dracon-warden-managed-hook-v1 for details\nexit 0\n",
+        )
+        .expect("write mention");
+        assert!(
+            !is_warden_hook(&mention),
+            "a foreign hook that merely mentions the marker stays foreign"
+        );
+        assert!(!refresh_warden_hook_if_stale(&mention, PRE_PUSH_HOOK).expect("mention untouched"));
+    }
+
+    /// The rendered hooks must actually carry the CURRENT generation marker; a
+    /// template still stamping an older one would silently re-open the downgrade
+    /// window this guard exists to close.
+    #[test]
+    fn rendered_hooks_carry_the_current_generation_marker() {
+        for (name, template) in [
+            ("pre-commit", PRE_COMMIT_HOOK),
+            ("pre-push", PRE_PUSH_HOOK),
+            ("pre-rebase", PRE_REBASE_HOOK),
+        ] {
+            let rendered = render_hook(template, None);
+            assert_eq!(
+                warden_hook_generation(&rendered),
+                Some(WARDEN_HOOK_GENERATION),
+                "{name} must be stamped with the current generation"
+            );
+            assert!(
+                rendered.contains(&current_hook_marker()),
+                "{name} must contain the current marker line"
+            );
+        }
+    }
+
     #[test]
     fn pre_commit_wrapper_skips_legacy_warden_local_hook() {        let (td, hook_path) =
             make_repo_with_hook("chain_commit_legacy", "pre-commit", PRE_COMMIT_HOOK);
