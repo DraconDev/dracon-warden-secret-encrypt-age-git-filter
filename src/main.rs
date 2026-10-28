@@ -3126,6 +3126,25 @@ fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
     }
 }
 
+fn is_canonical_git_metadata_target(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some(".gitignore" | ".gitattributes")
+    )
+}
+
+fn acquire_resmudge_metadata_fence_until(
+    repo: &Path,
+    relative_path: &str,
+    apply: bool,
+    deadline: std::time::Instant,
+) -> Result<Option<write_fence::WriteFence>> {
+    if apply && is_canonical_git_metadata_target(Path::new(relative_path)) {
+        return write_fence::WriteFence::acquire_until(repo, deadline).map(Some);
+    }
+    Ok(None)
+}
+
 fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usize, usize)> {
     require_git_marker(repo)?;
     let protected = build_globset(&policy.effective_encryption_patterns())?;
@@ -3144,6 +3163,16 @@ fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usi
         if !protected.is_match(&rel_norm) {
             continue;
         }
+        // Only inspect a canonical metadata target after joining the shared
+        // per-worktree fence; resmudge policies can explicitly include these
+        // tracked dotfiles, and a post-exchange repair would otherwise write
+        // through an unfenced canonical name.
+        let _metadata_fence = acquire_resmudge_metadata_fence_until(
+            repo,
+            &rel_norm,
+            apply,
+            std::time::Instant::now() + Duration::from_secs(30),
+        )?;
         // Plaintext-sibling escape hatch: skip files that are intentionally plaintext.
         // Such files are not encrypted and do not need decryption.
         if repo.join(format!("{}.plaintext", rel_norm)).exists() {
