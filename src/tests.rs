@@ -4583,6 +4583,23 @@ protected_patterns = ["secrets.json"]
 
     #[cfg(unix)]
     #[test]
+    fn tracked_repair_writer_refuses_hardlink_alias_before_truncation() {
+        let td = TestDir::new("warden_repair_hardlink_alias");
+        let canonical = td.path().join(".gitignore");
+        let alias = td.path().join("secret.json");
+        let original = br#"{"secret":"[DRACON_SECRET:payload]"}"#;
+        fs::write(&canonical, original).expect("write canonical metadata");
+        fs::hard_link(&canonical, &alias).expect("create hardlink alias");
+
+        let error = write_tracked_repair_file(&alias, b"replacement")
+            .expect_err("repair writer must refuse a shared canonical inode");
+        assert!(error.to_string().contains("hard-linked"));
+        assert_eq!(fs::read(&canonical).expect("read canonical"), original);
+        assert_eq!(fs::read(&alias).expect("read alias"), original);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn backfill_rejects_tracked_symlink_without_modifying_target() {
         use std::os::unix::fs::symlink;
 

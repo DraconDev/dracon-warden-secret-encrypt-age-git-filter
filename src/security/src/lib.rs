@@ -4,7 +4,7 @@
 //! Age-based encryption, secret scanning, and filter pipeline for dracon-warden.
 
 use age::x25519;
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 
 use once_cell::sync::OnceCell;
@@ -46,6 +46,40 @@ pub(crate) fn refuse_unfenced_git_metadata_write(path: &Path, writer: &str) -> R
             path.display()
         );
     }
+    Ok(())
+}
+
+/// Write one regular, single-link file without following a final symlink or
+/// truncating until the opened inode is verified. Generic library writers use
+/// this after rejecting direct canonical Git metadata paths.
+pub(crate) fn write_single_link_file(path: &Path, contents: &[u8]) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    let mut options = fs::OpenOptions::new();
+    options
+        .write(true)
+        .create(true)
+        .custom_flags(libc::O_NOFOLLOW);
+    let mut file = options
+        .open(path)
+        .with_context(|| format!("failed to open single-link write target {}", path.display()))?;
+    let opened = file
+        .metadata()
+        .with_context(|| format!("failed to inspect opened write target {}", path.display()))?;
+    ensure!(opened.is_file(), "refusing non-regular write target {}", path.display());
+    ensure!(opened.nlink() == 1, "refusing hard-linked write target {}", path.display());
+    let named = fs::symlink_metadata(path)
+        .with_context(|| format!("failed to re-inspect write target {}", path.display()))?;
+    ensure!(
+        !named.file_type().is_symlink() && named.dev() == opened.dev() && named.ino() == opened.ino(),
+        "write target changed during setup: {}",
+        path.display()
+    );
+    file.set_len(0)
+        .with_context(|| format!("failed to truncate write target {}", path.display()))?;
+    file.write_all(contents)
+        .and_then(|_| file.flush())
+        .with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
 }
 

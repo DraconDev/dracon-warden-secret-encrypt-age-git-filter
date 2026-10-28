@@ -3073,10 +3073,10 @@ fn read_tracked_repair_file(path: &Path, max_bytes: Option<usize>) -> Result<Tra
     }
 }
 
-/// Write an already-read tracked repair path without following a symlink.
-/// Opening the existing file with `O_NOFOLLOW` makes the write safe even if
-/// the checkout path is replaced after the read-side metadata check. Missing,
-/// non-regular, and non-Unix existing paths fail closed.
+/// Write an already-read tracked repair path without following a symlink or
+/// modifying a hard-link alias. Open without truncation, validate the actual
+/// descriptor and named inode, then truncate only after the single-link check.
+/// Missing, non-regular, and non-Unix existing paths fail closed.
 fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
@@ -3101,24 +3101,32 @@ fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
     {
         use std::os::unix::fs::OpenOptionsExt;
 
+        use std::os::unix::fs::MetadataExt;
+
         let mut options = fs::OpenOptions::new();
-        options
-            .write(true)
-            .truncate(true)
-            .custom_flags(libc::O_NOFOLLOW);
+        options.write(true).custom_flags(libc::O_NOFOLLOW);
         let mut file = options
             .open(path)
             .with_context(|| format!("failed to open tracked repair path {}", path.display()))?;
-        if !file
+        let opened = file
             .metadata()
-            .with_context(|| format!("failed to inspect opened repair path {}", path.display()))?
-            .is_file()
-        {
+            .with_context(|| format!("failed to inspect opened repair path {}", path.display()))?;
+        if !opened.is_file() {
             anyhow::bail!(
                 "refusing to write non-regular tracked path {}",
                 path.display()
             );
         }
+        if opened.nlink() != 1 {
+            anyhow::bail!("refusing to write hard-linked tracked path {}", path.display());
+        }
+        let named = fs::symlink_metadata(path)
+            .with_context(|| format!("failed to re-inspect tracked repair path {}", path.display()))?;
+        if named.file_type().is_symlink() || named.dev() != opened.dev() || named.ino() != opened.ino() {
+            anyhow::bail!("tracked repair path changed during write setup: {}", path.display());
+        }
+        file.set_len(0)
+            .with_context(|| format!("failed truncating {}", path.display()))?;
         file.write_all(contents)
             .and_then(|_| file.flush())
             .with_context(|| format!("failed writing {}", path.display()))?;
