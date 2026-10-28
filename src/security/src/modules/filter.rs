@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::normalize_secret_marker;
 use crate::refuse_unfenced_git_metadata_write;
+use crate::write_single_link_file;
 use crate::strip_env_version_header;
 use crate::MarkerMigrationStats;
 use crate::SecretScanner;
@@ -631,7 +632,7 @@ impl WardenSecurity {
 
             let migrated = content.replace(&from_prefix, &to_prefix);
             if !dry_run {
-                fs::write(path, migrated)?;
+                write_single_link_file(path, migrated.as_bytes())?;
             }
 
             stats.files_changed += 1;

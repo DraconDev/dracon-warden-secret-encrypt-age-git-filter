@@ -6,7 +6,9 @@ use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use crate::{refuse_unfenced_git_metadata_write, WardenSecurity};
+use crate::{
+    refuse_unfenced_git_metadata_write, write_single_link_file, WardenSecurity,
+};
 
 fn write_backup(
     backup_dir: &Path,
@@ -127,8 +129,9 @@ impl WardenSecurity {
         let encrypted_content = fs::read(latest_backup)?;
         let decrypted_content = self.unlock_payload(&encrypted_content)?;
 
-        // Write back
-        fs::write(file_path, decrypted_content)?;
+        // Write back only after validating that the final target is a regular,
+        // single-link inode; never truncate a metadata hard-link alias.
+        write_single_link_file(file_path, &decrypted_content)?;
 
         Ok(latest_backup.clone())
     }
