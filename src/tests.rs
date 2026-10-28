@@ -299,7 +299,8 @@ mod tests {
             Sha256::digest(benign.as_bytes()),
             Sha256::digest(reported_match.as_bytes())
         );
-        let reviewed_hook = PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &pair);
+        let reviewed_hook =
+            PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &pair);
         fs::write(&hook, &reviewed_hook).unwrap();
         assert_eq!(
             reviewed_hook.matches(REVIEWED_BLOB).count(),
@@ -1144,26 +1145,49 @@ mod tests {
     fn pre_push_hook_masks_ciphertext_context_before_provider_extraction() {
         let body = format!("{}{}", "AIza", "A".repeat(36));
         for (name, changed, binary) in [
-            ("added_text", false, false), ("changed_text", true, false),
-            ("added_binary", false, true), ("changed_binary", true, true),
+            ("added_text", false, false),
+            ("changed_text", true, false),
+            ("added_binary", false, true),
+            ("changed_binary", true, true),
         ] {
             let (td, hook_path) = make_repo_with_pre_push_hook(&format!("cipher_context_{name}"));
             let repo = td.path();
             let mut base = ZERO_SHA.to_string();
             if changed {
-                fs::write(repo.join("opaque.dat"), if binary { b"baseline\0".as_slice() } else { b"baseline\n".as_slice() }).unwrap();
+                fs::write(
+                    repo.join("opaque.dat"),
+                    if binary {
+                        b"baseline\0".as_slice()
+                    } else {
+                        b"baseline\n".as_slice()
+                    },
+                )
+                .unwrap();
                 run_git_in(repo, &["add", "opaque.dat"]);
                 run_git_in(repo, &["commit", "-q", "-m", "baseline"]);
-                base = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_owned();
+                base = git_in_output(repo, &["rev-parse", "HEAD"])
+                    .trim()
+                    .to_owned();
             }
             let mut bytes = format!("[DRACON_SECRET:{body}]\n").into_bytes();
-            if binary { bytes.insert(0, 0); }
+            if binary {
+                bytes.insert(0, 0);
+            }
             fs::write(repo.join("opaque.dat"), bytes).unwrap();
             run_git_in(repo, &["add", "opaque.dat"]);
-            run_git_in(repo, &["commit", "-q", "-m", "opaque encrypted representation"]);
-            let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_owned();
+            run_git_in(
+                repo,
+                &["commit", "-q", "-m", "opaque encrypted representation"],
+            );
+            let head = git_in_output(repo, &["rev-parse", "HEAD"])
+                .trim()
+                .to_owned();
             let (status, stderr) = run_hook(repo, &hook_path, &head, &base);
-            assert_eq!(status.code(), Some(0), "{name}: ciphertext context was lost: {stderr}");
+            assert_eq!(
+                status.code(),
+                Some(0),
+                "{name}: ciphertext context was lost: {stderr}"
+            );
         }
     }
 
@@ -1171,19 +1195,31 @@ mod tests {
     fn pre_push_hook_ciphertext_context_keeps_exposed_and_malformed_shapes_blocked() {
         let body = format!("{}{}", "AIza", "A".repeat(36));
         for (name, bytes) in [
-            ("same_line_exposed", format!("[DRACON_SECRET:QUJD] {body}\n")),
+            (
+                "same_line_exposed",
+                format!("[DRACON_SECRET:QUJD] {body}\n"),
+            ),
             ("foreign_marker", format!("[MY_SECRET:{body}]\n")),
             ("unterminated", format!("[DRACON_SECRET:{body}\n")),
-            ("invalid_base64_length", format!("[DRACON_SECRET:{}]\n", &body[..39])),
+            (
+                "invalid_base64_length",
+                format!("[DRACON_SECRET:{}]\n", &body[..39]),
+            ),
         ] {
             let (td, hook_path) = make_repo_with_pre_push_hook(&format!("cipher_negative_{name}"));
             let repo = td.path();
             fs::write(repo.join("exposed.txt"), bytes).unwrap();
             run_git_in(repo, &["add", "exposed.txt"]);
             run_git_in(repo, &["commit", "-q", "-m", "meaningful refusal control"]);
-            let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_owned();
+            let head = git_in_output(repo, &["rev-parse", "HEAD"])
+                .trim()
+                .to_owned();
             let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
-            assert_eq!(status.code(), Some(1), "{name}: unprotected shape must block: {stderr}");
+            assert_eq!(
+                status.code(),
+                Some(1),
+                "{name}: unprotected shape must block: {stderr}"
+            );
         }
     }
 
@@ -1269,7 +1305,8 @@ mod tests {
     #[test]
     fn pre_push_hook_distinguishes_interpolated_placeholder_from_literal() {
         let placeholder = concat!(
-            "api_key=\"${", "keyPlaceholder}\"\n",
+            "api_key=\"${",
+            "keyPlaceholder}\"\n",
             "password=\"${cfg.value}\",  # env: X\n"
         );
         assert_pre_push_allows_content("hook_interpolated_placeholder", "doc.md", placeholder);
@@ -1277,7 +1314,8 @@ mod tests {
             "hook_literal_beside_placeholder",
             "doc2.md",
             concat!(
-                "api_key=\"${", "keyPlaceholder}\"\npassword=\"literal-value-never-echo\"\n"
+                "api_key=\"${",
+                "keyPlaceholder}\"\npassword=\"literal-value-never-echo\"\n"
             ),
         );
     }
@@ -4076,8 +4114,11 @@ watch_roots = ["/tmp/test"]
         let hooks = home.join(".config/git/hooks");
         fs::create_dir_all(&hooks).expect("private hooks");
         let private_hook = hooks.join("pre-commit");
-        fs::write(&private_hook, "# dracon-warden-managed-hook-v1\nstale-test-hook\n")
-            .expect("private stale hook");
+        fs::write(
+            &private_hook,
+            "# dracon-warden-managed-hook-v1\nstale-test-hook\n",
+        )
+        .expect("private stale hook");
         let _home_guard = HomeGuard::new(home.to_str().expect("utf8 home"));
         let result = harden_repos(&policy, vec![repo.clone()], true);
         assert!(result.is_ok(), "once should succeed: {:?}", result);
@@ -4376,30 +4417,39 @@ watch_roots = ["/tmp/test"]
         )
         .expect("acquire outer fence");
         let started = std::time::Instant::now();
-        assert!(acquire_resmudge_metadata_fence_until(
-            &repo,
-            ".gitignore",
-            true,
-            started + std::time::Duration::from_millis(40),
-        )
-        .is_err(), "applying resmudge must join the shared metadata fence");
+        assert!(
+            acquire_resmudge_metadata_fence_until(
+                &repo,
+                ".gitignore",
+                true,
+                started + std::time::Duration::from_millis(40),
+            )
+            .is_err(),
+            "applying resmudge must join the shared metadata fence"
+        );
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
-        assert!(acquire_resmudge_metadata_fence_until(
-            &repo,
-            ".gitignore",
-            false,
-            std::time::Instant::now() + std::time::Duration::from_secs(1),
-        )
-        .unwrap()
-        .is_none(), "dry-run must not acquire a writer fence");
-        assert!(acquire_resmudge_metadata_fence_until(
-            &repo,
-            "secrets.env",
-            true,
-            std::time::Instant::now() + std::time::Duration::from_secs(1),
-        )
-        .unwrap()
-        .is_none(), "ordinary encrypted files do not need the canonical metadata fence");
+        assert!(
+            acquire_resmudge_metadata_fence_until(
+                &repo,
+                ".gitignore",
+                false,
+                std::time::Instant::now() + std::time::Duration::from_secs(1),
+            )
+            .unwrap()
+            .is_none(),
+            "dry-run must not acquire a writer fence"
+        );
+        assert!(
+            acquire_resmudge_metadata_fence_until(
+                &repo,
+                "secrets.env",
+                true,
+                std::time::Instant::now() + std::time::Duration::from_secs(1),
+            )
+            .unwrap()
+            .is_none(),
+            "ordinary encrypted files do not need the canonical metadata fence"
+        );
 
         drop(held);
         assert!(acquire_resmudge_metadata_fence_until(
@@ -5003,14 +5053,18 @@ protected_patterns = ["secrets.json"]
 
         // Recognized as warden-owned, so it is never mistaken for foreign and
         // appended to the chain as an unrelated hook.
-        assert!(is_warden_hook(&future), "a newer hook is still warden's own");
+        assert!(
+            is_warden_hook(&future),
+            "a newer hook is still warden's own"
+        );
         assert!(!is_legacy_warden_hook(&future));
         assert!(hook_is_newer_than_binary(&future));
 
         let err = refresh_warden_hook_if_stale(&future, PRE_PUSH_HOOK)
             .expect_err("refreshing a newer hook must fail loudly, never downgrade");
         assert!(
-            err.to_string().contains("refusing to downgrade newer warden hook"),
+            err.to_string()
+                .contains("refusing to downgrade newer warden hook"),
             "refusal must name the downgrade: {err}"
         );
         assert_eq!(
@@ -5088,7 +5142,8 @@ protected_patterns = ["secrets.json"]
     }
 
     #[test]
-    fn pre_commit_wrapper_skips_legacy_warden_local_hook() {        let (td, hook_path) =
+    fn pre_commit_wrapper_skips_legacy_warden_local_hook() {
+        let (td, hook_path) =
             make_repo_with_hook("chain_commit_legacy", "pre-commit", PRE_COMMIT_HOOK);
         let repo = td.path();
         run_git_in(repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
@@ -5314,7 +5369,11 @@ protected_patterns = ["secrets.json"]
         run_git_in(repo, &["init", "-q"]);
         remove_ambient_local_hooks(repo);
         // No commit or identity override: these tests inspect the staged tree.
-        fs::write(repo.join(".gitattributes"), "*.env filter=dracon diff=dracon merge=dracon\n").unwrap();
+        fs::write(
+            repo.join(".gitattributes"),
+            "*.env filter=dracon diff=dracon merge=dracon\n",
+        )
+        .unwrap();
         for (key, value) in [
             ("filter.dracon.clean", "cat"),
             ("filter.dracon.required", "true"),
@@ -5356,11 +5415,20 @@ protected_patterns = ["secrets.json"]
             stage_hygiene_fixture(repo, path);
         }
         let (status, text) = run_hook_args(repo, &hook, &[]);
-        assert!(status.success(), "deliberately included source/evidence must pass: {text}");
-        run_git_in(repo, &["config", "--local", "filter.dracon.required", "false"]);
+        assert!(
+            status.success(),
+            "deliberately included source/evidence must pass: {text}"
+        );
+        run_git_in(
+            repo,
+            &["config", "--local", "filter.dracon.required", "false"],
+        );
         let (status, text) = run_hook_args(repo, &hook, &[]);
         assert!(!status.success());
-        assert!(text.contains("required is not true"), "hygiene permission must still reach security checks: {text}");
+        assert!(
+            text.contains("required is not true"),
+            "hygiene permission must still reach security checks: {text}"
+        );
     }
 
     #[test]
@@ -5379,31 +5447,79 @@ protected_patterns = ["secrets.json"]
         let repo = td.path();
         // Visual regression compares these versioned inputs; a path component
         // named screenshots alone is not proof that they are disposable frames.
-        fs::write(repo.join(".gitignore"),
-            "!docs/screenshots/baseline/reference.png\n!docs/screenshots/baseline/README.md\n").unwrap();
+        fs::write(
+            repo.join(".gitignore"),
+            "!docs/screenshots/baseline/reference.png\n!docs/screenshots/baseline/README.md\n",
+        )
+        .unwrap();
         stage_hygiene_fixture(repo, "docs/screenshots/baseline/reference.png");
         stage_hygiene_fixture(repo, "docs/screenshots/baseline/README.md");
         let (status, text) = run_hook_args(repo, &hook, &[]);
-        assert!(status.success(), "exactly declared visual inputs must pass: {text}");
-        run_git_in(repo, &["config", "--local", "filter.dracon.required", "false"]);
+        assert!(
+            status.success(),
+            "exactly declared visual inputs must pass: {text}"
+        );
+        run_git_in(
+            repo,
+            &["config", "--local", "filter.dracon.required", "false"],
+        );
         let (status, text) = run_hook_args(repo, &hook, &[]);
         assert!(!status.success());
-        assert!(text.contains("required is not true"), "source permission must retain the security gate: {text}");
+        assert!(
+            text.contains("required is not true"),
+            "source permission must retain the security gate: {text}"
+        );
     }
 
     #[test]
     fn pre_commit_hygiene_visual_source_permission_is_exact_and_not_cache_permission() {
         for (name, rules, path) in [
             ("missing", "", "docs/screenshots/baseline/reference.png"),
-            ("all_png", "!*.png\n", "docs/screenshots/baseline/reference.png"),
-            ("glob", "!docs/screenshots/baseline/*.png\n", "docs/screenshots/baseline/reference.png"),
-            ("other", "!docs/screenshots/baseline/reference.png\n", "docs/screenshots/baseline/other.png"),
-            ("generic_cache", "!screenshots/reference.png\n", "screenshots/reference.png"),
-            ("nested_cache", "!docs/screenshots/nested/screenshots/reference.png\n", "docs/screenshots/nested/screenshots/reference.png"),
-            ("audit_generic_cache", "!audit-evidence/run/screenshots/reference.png\n", "audit-evidence/run/screenshots/reference.png"),
-            ("scratch", "!docs/screenshots/scratch/reference.png\n", "docs/screenshots/scratch/reference.png"),
-            ("chrome", "!docs/screenshots/.pi/chrome-screenshots/reference.png\n", "docs/screenshots/.pi/chrome-screenshots/reference.png"),
-            ("audit_cache", "!docs/screenshots/audit-run/screenshots/reference.png\n", "docs/screenshots/audit-run/screenshots/reference.png"),
+            (
+                "all_png",
+                "!*.png\n",
+                "docs/screenshots/baseline/reference.png",
+            ),
+            (
+                "glob",
+                "!docs/screenshots/baseline/*.png\n",
+                "docs/screenshots/baseline/reference.png",
+            ),
+            (
+                "other",
+                "!docs/screenshots/baseline/reference.png\n",
+                "docs/screenshots/baseline/other.png",
+            ),
+            (
+                "generic_cache",
+                "!screenshots/reference.png\n",
+                "screenshots/reference.png",
+            ),
+            (
+                "nested_cache",
+                "!docs/screenshots/nested/screenshots/reference.png\n",
+                "docs/screenshots/nested/screenshots/reference.png",
+            ),
+            (
+                "audit_generic_cache",
+                "!audit-evidence/run/screenshots/reference.png\n",
+                "audit-evidence/run/screenshots/reference.png",
+            ),
+            (
+                "scratch",
+                "!docs/screenshots/scratch/reference.png\n",
+                "docs/screenshots/scratch/reference.png",
+            ),
+            (
+                "chrome",
+                "!docs/screenshots/.pi/chrome-screenshots/reference.png\n",
+                "docs/screenshots/.pi/chrome-screenshots/reference.png",
+            ),
+            (
+                "audit_cache",
+                "!docs/screenshots/audit-run/screenshots/reference.png\n",
+                "docs/screenshots/audit-run/screenshots/reference.png",
+            ),
         ] {
             let (td, hook) = managed_hygiene_fixture(&format!("hygiene_visual_{name}"));
             fs::write(td.path().join(".gitignore"), rules).unwrap();
@@ -5418,15 +5534,51 @@ protected_patterns = ["secrets.json"]
     fn pre_commit_hygiene_does_not_grant_blanket_or_nested_machine_local_exemptions() {
         for (name, rules, path) in [
             ("unclassified", "", "audit-evidence/unclassified.png"),
-            ("ignored", "audit-evidence/\n", "audit-evidence/run/generated/source.png"),
-            ("blanket", "!audit-evidence/**\n", "audit-evidence/run/source.png"),
-            ("blanket_file_glob", "!audit-evidence/run-2026/generated/*?\n", "audit-evidence/run-2026/generated/source.png"),
-            ("blanket_extension_glob", "!audit-evidence/run-2026/generated/*.[a-z]*\n", "audit-evidence/run-2026/generated/source.png"),
-            ("other_run", "!audit-evidence/run-2026/generated/*.png\n", "audit-evidence/other/generated/source.png"),
-            ("other_type", "!audit-evidence/run-2026/generated/*.png\n", "audit-evidence/run-2026/generated/source.jpg"),
-            ("scratch", "!audit-evidence/run-2026/scratch/*.png\n", "audit-evidence/run-2026/scratch/source.png"),
-            ("captures", "!audit-evidence/run-2026/.pi/chrome-screenshots/*.png\n", "audit-evidence/run-2026/.pi/chrome-screenshots/frame.png"),
-            ("loop_state", "!audit-evidence/run-2026/.pi-glla/active.jsonl\n", "audit-evidence/run-2026/.pi-glla/active.jsonl"),
+            (
+                "ignored",
+                "audit-evidence/\n",
+                "audit-evidence/run/generated/source.png",
+            ),
+            (
+                "blanket",
+                "!audit-evidence/**\n",
+                "audit-evidence/run/source.png",
+            ),
+            (
+                "blanket_file_glob",
+                "!audit-evidence/run-2026/generated/*?\n",
+                "audit-evidence/run-2026/generated/source.png",
+            ),
+            (
+                "blanket_extension_glob",
+                "!audit-evidence/run-2026/generated/*.[a-z]*\n",
+                "audit-evidence/run-2026/generated/source.png",
+            ),
+            (
+                "other_run",
+                "!audit-evidence/run-2026/generated/*.png\n",
+                "audit-evidence/other/generated/source.png",
+            ),
+            (
+                "other_type",
+                "!audit-evidence/run-2026/generated/*.png\n",
+                "audit-evidence/run-2026/generated/source.jpg",
+            ),
+            (
+                "scratch",
+                "!audit-evidence/run-2026/scratch/*.png\n",
+                "audit-evidence/run-2026/scratch/source.png",
+            ),
+            (
+                "captures",
+                "!audit-evidence/run-2026/.pi/chrome-screenshots/*.png\n",
+                "audit-evidence/run-2026/.pi/chrome-screenshots/frame.png",
+            ),
+            (
+                "loop_state",
+                "!audit-evidence/run-2026/.pi-glla/active.jsonl\n",
+                "audit-evidence/run-2026/.pi-glla/active.jsonl",
+            ),
         ] {
             let (td, hook) = managed_hygiene_fixture(&format!("hygiene_{name}"));
             fs::write(td.path().join(".gitignore"), rules).unwrap();

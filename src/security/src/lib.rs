@@ -1425,8 +1425,7 @@ impl WardenSecurity {
             // upgrade moves that whitespace inside whole-file encryption.
             let old_plaintext = smudge_with_security(self, old)?;
             let exterior_matches = whole
-                && old.splitn(2, |b| *b == b']').nth(1)
-                    == fresh.splitn(2, |b| *b == b']').nth(1);
+                && old.splitn(2, |b| *b == b']').nth(1) == fresh.splitn(2, |b| *b == b']').nth(1);
             let inline_matches = exterior_matches
                 && std::str::from_utf8(old)
                     .ok()
@@ -1438,7 +1437,8 @@ impl WardenSecurity {
             // or unchanged worktree headers re-encrypt forever. Scope this to
             // .env files and a real generated managed header, not arbitrary text.
             let generated_env_header_matches = whole
-                && std::path::Path::new(path).file_name()
+                && std::path::Path::new(path)
+                    .file_name()
                     .and_then(|name| name.to_str())
                     .is_some_and(|name| name.starts_with(".env"))
                 && {

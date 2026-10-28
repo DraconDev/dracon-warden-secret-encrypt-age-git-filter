@@ -1064,8 +1064,11 @@ pub(crate) fn build_gitattributes_block(policy: &WardenPolicy) -> Result<String>
         plaintext_patterns.insert(p.clone());
     }
     let mut protected_patterns = BTreeSet::new();
-    for p in policy.effective_protected_patterns().into_iter()
-        .chain(policy.encryption_only_patterns.iter().cloned()) {
+    for p in policy
+        .effective_protected_patterns()
+        .into_iter()
+        .chain(policy.encryption_only_patterns.iter().cloned())
+    {
         if !plaintext_patterns.contains(&p) {
             protected_patterns.insert(p);
         }
@@ -2031,7 +2034,8 @@ pub(crate) fn harden_repo(
     // It must cover the complete read/render/write operation, including the
     // explicit once/repair paths that bypass checkout coordination.
     let write_fence = write_fence::WriteFence::acquire_until(
-        repo, std::time::Instant::now() + Duration::from_secs(30),
+        repo,
+        std::time::Instant::now() + Duration::from_secs(30),
     )?;
 
     // Acquire git's index.lock before writing ANY working-tree files.
@@ -2408,7 +2412,12 @@ async fn run_cli() -> Result<()> {
 
     let storage_encrypt = matches!(&cli.cmd, Command::StorageEncrypt { .. });
     match cli.cmd {
-        Command::WriteFence { repo, wait_secs, run_secs, command } => {
+        Command::WriteFence {
+            repo,
+            wait_secs,
+            run_secs,
+            command,
+        } => {
             write_fence::exec_writer(&repo, wait_secs, run_secs, &command)?;
         }
         Command::StorageEncrypt { repo, max_bytes }
@@ -6343,9 +6352,9 @@ fn install_hooks_for_repo(repo: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod encryption_scope_tests;
 #[cfg(test)]
 mod prepush_failclosed_tests;
+#[cfg(test)]
+mod tests;
 // end-to-end test: 2026-06-21T12:26:19Z — verify daemon still auto-pushes after .gitignore change
