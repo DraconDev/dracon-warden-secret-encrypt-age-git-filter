@@ -614,6 +614,12 @@ impl WardenSecurity {
         let to_prefix = format!("[{}:", to);
         let mut stats = MarkerMigrationStats::default();
 
+        if fs::symlink_metadata(root).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+            anyhow::bail!(
+                "refusing marker migration through symlink root {}",
+                root.display()
+            );
+        }
         if !root.exists() {
             return Err(anyhow::anyhow!("Path does not exist: {:?}", root));
         }

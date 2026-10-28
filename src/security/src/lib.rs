@@ -2216,6 +2216,49 @@ mod tests {
             .contains("hard-linked"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn generic_marker_migration_refuses_symlink_root_before_reading() {
+        use std::os::unix::fs::symlink;
+
+        let security = WardenSecurity::new(None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = dir.path().join(".gitignore");
+        let alias = dir.path().join("rules.json");
+        let original = b"[OLD_SECRET:canonical metadata]\n";
+        std::fs::write(&metadata, original).unwrap();
+        symlink(&metadata, &alias).unwrap();
+
+        let error = security
+            .migrate_markers_in_path(&alias, false, false, "OLD_SECRET", "DRACON_SECRET")
+            .expect_err("migration must refuse a symlink root");
+        assert!(error.to_string().contains("symlink root"));
+        assert_eq!(std::fs::read(&metadata).unwrap(), original);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn generic_backup_restore_refuses_hardlink_alias_to_git_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let metadata = dir.path().join(".gitattributes");
+        let alias = dir.path().join("rules.dat");
+        let original = b"canonical filter metadata\n";
+        std::fs::write(&metadata, original).unwrap();
+        std::fs::hard_link(&metadata, &alias).unwrap();
+
+        let mut security = WardenSecurity::new(None).unwrap();
+        security.add_memory_identity(x25519::Identity::generate());
+        security.set_mock_home(home);
+        security.backup_file(&alias, original).unwrap();
+        let error = security
+            .restore_file(&alias)
+            .expect_err("restore must refuse a hardlink alias before truncation");
+        assert!(error.to_string().contains("hard-linked"));
+        assert_eq!(std::fs::read(&metadata).unwrap(), original);
+        assert_eq!(std::fs::read(&alias).unwrap(), original);
+    }
+
     #[test]
     fn test_strip_env_version_header_only_strips_top_marker() {
         // A marker PAST the top lines is body content, not a header —
