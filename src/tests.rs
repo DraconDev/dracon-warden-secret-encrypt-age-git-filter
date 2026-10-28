@@ -4405,6 +4405,51 @@ watch_roots = ["/tmp/test"]
 
     #[cfg(unix)]
     #[test]
+    fn resmudge_apply_waits_at_metadata_fence_before_reading_canonical_file() {
+        let td = TestDir::new("warden_resmudge_metadata_fence_integration");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        run_git_in(&repo, &["init", "-q", "-b", "main"]);
+        let metadata = repo.join(".gitignore");
+        let original = b"[DRACON_SECRET:untrusted-payload]\n";
+        fs::write(&metadata, original).expect("write canonical metadata");
+        run_git_in(&repo, &["add", "--", ".gitignore"]);
+        let index_before = fs::read(repo.join(".git/index")).expect("read index");
+        let policy = WardenPolicy {
+            protected_patterns: vec![".gitignore".to_string()],
+            ..Default::default()
+        };
+
+        let held = write_fence::WriteFence::acquire_until(
+            &repo,
+            std::time::Instant::now() + std::time::Duration::from_secs(1),
+        )
+        .expect("acquire outer fence");
+        let started = std::time::Instant::now();
+        let error = resmudge_repo_until(
+            &repo,
+            &policy,
+            true,
+            started + std::time::Duration::from_millis(50),
+        )
+        .expect_err("resmudge apply must wait for the canonical metadata writer fence");
+        assert!(error
+            .to_string()
+            .contains("canonical writer fence deadline expired"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert_eq!(
+            fs::read(&metadata).expect("read canonical metadata"),
+            original
+        );
+        assert_eq!(
+            fs::read(repo.join(".git/index")).expect("read index after refusal"),
+            index_before
+        );
+        drop(held);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn resmudge_metadata_write_fence_is_bounded_and_scoped_to_apply_targets() {
         let td = TestDir::new("warden_resmudge_metadata_fence");
         let repo = td.path().join("repo");

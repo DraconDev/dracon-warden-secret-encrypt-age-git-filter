@@ -3176,6 +3176,20 @@ fn acquire_resmudge_metadata_fence_until(
 }
 
 fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usize, usize)> {
+    resmudge_repo_until(
+        repo,
+        policy,
+        apply,
+        std::time::Instant::now() + Duration::from_secs(30),
+    )
+}
+
+fn resmudge_repo_until(
+    repo: &Path,
+    policy: &WardenPolicy,
+    apply: bool,
+    deadline: std::time::Instant,
+) -> Result<(usize, usize)> {
     require_git_marker(repo)?;
     let protected = build_globset(&policy.effective_encryption_patterns())?;
     let files = git_ls_files(repo)?;
@@ -3197,12 +3211,8 @@ fn resmudge_repo(repo: &Path, policy: &WardenPolicy, apply: bool) -> Result<(usi
         // per-worktree fence; resmudge policies can explicitly include these
         // tracked dotfiles, and a post-exchange repair would otherwise write
         // through an unfenced canonical name.
-        let _metadata_fence = acquire_resmudge_metadata_fence_until(
-            repo,
-            &rel_norm,
-            apply,
-            std::time::Instant::now() + Duration::from_secs(30),
-        )?;
+        let _metadata_fence =
+            acquire_resmudge_metadata_fence_until(repo, &rel_norm, apply, deadline)?;
         // Plaintext-sibling escape hatch: skip files that are intentionally plaintext.
         // Such files are not encrypted and do not need decryption.
         if repo.join(format!("{}.plaintext", rel_norm)).exists() {
