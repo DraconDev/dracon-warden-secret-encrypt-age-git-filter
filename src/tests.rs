@@ -4362,6 +4362,56 @@ watch_roots = ["/tmp/test"]
         assert!(result.is_ok(), "scrub dry-run should succeed: {:?}", result);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn resmudge_metadata_write_fence_is_bounded_and_scoped_to_apply_targets() {
+        let td = TestDir::new("warden_resmudge_metadata_fence");
+        let repo = td.path().join("repo");
+        fs::create_dir_all(&repo).expect("repo");
+        run_git_in(&repo, &["init", "-q", "-b", "main"]);
+
+        let held = write_fence::WriteFence::acquire_until(
+            &repo,
+            std::time::Instant::now() + std::time::Duration::from_secs(1),
+        )
+        .expect("acquire outer fence");
+        let started = std::time::Instant::now();
+        assert!(acquire_resmudge_metadata_fence_until(
+            &repo,
+            ".gitignore",
+            true,
+            started + std::time::Duration::from_millis(40),
+        )
+        .is_err(), "applying resmudge must join the shared metadata fence");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(acquire_resmudge_metadata_fence_until(
+            &repo,
+            ".gitignore",
+            false,
+            std::time::Instant::now() + std::time::Duration::from_secs(1),
+        )
+        .unwrap()
+        .is_none(), "dry-run must not acquire a writer fence");
+        assert!(acquire_resmudge_metadata_fence_until(
+            &repo,
+            "secrets.env",
+            true,
+            std::time::Instant::now() + std::time::Duration::from_secs(1),
+        )
+        .unwrap()
+        .is_none(), "ordinary encrypted files do not need the canonical metadata fence");
+
+        drop(held);
+        assert!(acquire_resmudge_metadata_fence_until(
+            &repo,
+            ".gitattributes",
+            true,
+            std::time::Instant::now() + std::time::Duration::from_secs(1),
+        )
+        .expect("fence reacquires after owner close")
+        .is_some());
+    }
+
     #[test]
     fn cli_resmudge_reports_on_plaintext_repo() {
         let td = TestDir::new("warden_resmudge_plain");
