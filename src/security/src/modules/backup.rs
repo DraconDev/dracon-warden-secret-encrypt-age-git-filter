@@ -6,9 +6,7 @@ use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use crate::{
-    refuse_unfenced_git_metadata_write, write_single_link_file, WardenSecurity,
-};
+use crate::{refuse_unfenced_git_metadata_write, write_single_link_file, WardenSecurity};
 
 fn write_backup(
     backup_dir: &Path,

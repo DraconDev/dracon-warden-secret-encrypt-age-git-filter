@@ -66,12 +66,22 @@ pub(crate) fn write_single_link_file(path: &Path, contents: &[u8]) -> Result<()>
     let opened = file
         .metadata()
         .with_context(|| format!("failed to inspect opened write target {}", path.display()))?;
-    ensure!(opened.is_file(), "refusing non-regular write target {}", path.display());
-    ensure!(opened.nlink() == 1, "refusing hard-linked write target {}", path.display());
+    ensure!(
+        opened.is_file(),
+        "refusing non-regular write target {}",
+        path.display()
+    );
+    ensure!(
+        opened.nlink() == 1,
+        "refusing hard-linked write target {}",
+        path.display()
+    );
     let named = fs::symlink_metadata(path)
         .with_context(|| format!("failed to re-inspect write target {}", path.display()))?;
     ensure!(
-        !named.file_type().is_symlink() && named.dev() == opened.dev() && named.ino() == opened.ino(),
+        !named.file_type().is_symlink()
+            && named.dev() == opened.dev()
+            && named.ino() == opened.ino(),
         "write target changed during setup: {}",
         path.display()
     );
@@ -2181,6 +2191,29 @@ mod tests {
             assert!(error.to_string().contains("unfenced Git metadata target"));
             assert_eq!(std::fs::read(&path).unwrap(), original);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn generic_marker_migration_refuses_hardlink_alias_to_git_metadata() {
+        let security = WardenSecurity::new(None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = dir.path().join(".gitignore");
+        let alias = dir.path().join("rules.json");
+        let original = br#"{"value":"[OLD_SECRET:payload]"}"#;
+        std::fs::write(&metadata, original).unwrap();
+        std::fs::hard_link(&metadata, &alias).unwrap();
+
+        let stats = security
+            .migrate_markers_in_path(dir.path(), true, false, "OLD_SECRET", "DRACON_SECRET")
+            .expect("migration should report and skip a hardlink alias");
+        assert_eq!(stats.files_changed, 0);
+        assert_eq!(std::fs::read(&metadata).unwrap(), original);
+        assert_eq!(std::fs::read(&alias).unwrap(), original);
+        assert!(write_single_link_file(&alias, b"replacement")
+            .unwrap_err()
+            .to_string()
+            .contains("hard-linked"));
     }
 
     #[test]

@@ -3118,12 +3118,25 @@ fn write_tracked_repair_file(path: &Path, contents: &[u8]) -> Result<()> {
             );
         }
         if opened.nlink() != 1 {
-            anyhow::bail!("refusing to write hard-linked tracked path {}", path.display());
+            anyhow::bail!(
+                "refusing to write hard-linked tracked path {}",
+                path.display()
+            );
         }
-        let named = fs::symlink_metadata(path)
-            .with_context(|| format!("failed to re-inspect tracked repair path {}", path.display()))?;
-        if named.file_type().is_symlink() || named.dev() != opened.dev() || named.ino() != opened.ino() {
-            anyhow::bail!("tracked repair path changed during write setup: {}", path.display());
+        let named = fs::symlink_metadata(path).with_context(|| {
+            format!(
+                "failed to re-inspect tracked repair path {}",
+                path.display()
+            )
+        })?;
+        if named.file_type().is_symlink()
+            || named.dev() != opened.dev()
+            || named.ino() != opened.ino()
+        {
+            anyhow::bail!(
+                "tracked repair path changed during write setup: {}",
+                path.display()
+            );
         }
         file.set_len(0)
             .with_context(|| format!("failed truncating {}", path.display()))?;

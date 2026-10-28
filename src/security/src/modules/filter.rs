@@ -8,8 +8,8 @@ use std::path::Path;
 
 use crate::normalize_secret_marker;
 use crate::refuse_unfenced_git_metadata_write;
-use crate::write_single_link_file;
 use crate::strip_env_version_header;
+use crate::write_single_link_file;
 use crate::MarkerMigrationStats;
 use crate::SecretScanner;
 use crate::WardenSecurity;
