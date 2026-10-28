@@ -33,6 +33,22 @@ pub use modules::scanner::SecretScanner;
 // `WardenSecurity` normalizes to when `DRACON_SECRET_MARKER` is unset.
 pub(crate) const DEFAULT_SECRET_MARKER: &str = "DRACON_SECRET";
 
+/// Generic library writers cannot provide the shared Warden/Git writer fence.
+/// Refuse their direct attempts to update metadata owned by the fenced repair
+/// path rather than silently allowing an unfenced canonical write.
+pub(crate) fn refuse_unfenced_git_metadata_write(path: &Path, writer: &str) -> Result<()> {
+    if matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some(".gitignore" | ".gitattributes")
+    ) {
+        anyhow::bail!(
+            "{writer} refuses unfenced Git metadata target {}; use the Warden fenced repository writer",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
 /// Age encryption header magic. Mirrors the module-private duplicates in
 /// `modules/filter.rs` and `modules/crypto.rs` (kept private per module;
 /// this crate's established pattern). Used to distinguish REAL whole-file
@@ -2110,6 +2126,27 @@ mod tests {
         assert!(migrated.contains("[DRACON_SECRET:abc]"));
         assert!(migrated.contains("[DRACON_SECRET:def]"));
         assert!(!migrated.contains("[OLD_SECRET:"));
+    }
+
+    #[test]
+    fn generic_warden_library_writers_refuse_canonical_git_metadata() {
+        let security = WardenSecurity::new(None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        for name in [".gitignore", ".gitattributes"] {
+            let path = dir.path().join(name);
+            let original = b"[OLD_SECRET:canonical metadata]\n";
+            std::fs::write(&path, original).unwrap();
+
+            let error = security
+                .migrate_markers_in_path(&path, false, false, "OLD_SECRET", "DRACON_SECRET")
+                .expect_err("generic migration must refuse unfenced metadata");
+            assert!(error.to_string().contains("unfenced Git metadata target"));
+            let error = security
+                .restore_file(&path)
+                .expect_err("generic restore must refuse unfenced metadata before backup lookup");
+            assert!(error.to_string().contains("unfenced Git metadata target"));
+            assert_eq!(std::fs::read(&path).unwrap(), original);
+        }
     }
 
     #[test]

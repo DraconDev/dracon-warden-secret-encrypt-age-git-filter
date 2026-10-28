@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use crate::WardenSecurity;
+use crate::{refuse_unfenced_git_metadata_write, WardenSecurity};
 
 fn write_backup(
     backup_dir: &Path,
@@ -78,6 +78,7 @@ impl WardenSecurity {
     }
 
     pub fn restore_file(&self, file_path: &Path) -> Result<PathBuf> {
+        refuse_unfenced_git_metadata_write(file_path, "Warden backup restore")?;
         let home = self.get_home()?;
         let backup_dir = home.join(".dracon").join("backups");
 

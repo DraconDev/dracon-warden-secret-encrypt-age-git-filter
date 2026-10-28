@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::normalize_secret_marker;
+use crate::refuse_unfenced_git_metadata_write;
 use crate::strip_env_version_header;
 use crate::MarkerMigrationStats;
 use crate::SecretScanner;
@@ -602,6 +603,7 @@ impl WardenSecurity {
         from_marker: &str,
         to_marker: &str,
     ) -> Result<MarkerMigrationStats> {
+        refuse_unfenced_git_metadata_write(root, "Warden marker migration")?;
         let from = normalize_secret_marker(from_marker)
             .ok_or_else(|| anyhow::anyhow!("Invalid source marker: {}", from_marker))?;
         let to = normalize_secret_marker(to_marker)
