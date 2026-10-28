@@ -372,7 +372,8 @@ fn resmudge_apply_waits_safely_and_releases_the_fence_after_publication() {
         "protected_patterns = [\".gitignore\"]\nrepo_roots = []\n",
     )
     .unwrap();
-    let plaintext = b"# synthetic encrypted fixture\nSYNTHETIC_VALUE=not-a-real-secret\n";
+    let plaintext =
+        b"# synthetic encrypted fixture\nTOKEN=[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhWDJpWXN1THdmR1cxb21sTkpoZzNreWdXcnlqcWkySzZpeWswaHJ2V3hrCkw1OUtrMFZWQmhiTXVoRUxJeFNGMktuSzV3T1NoZnNhMWdFblFSZVpyTjAKLT4gWDI1NTE5IDNieWdQUVZvOW9HT1VwRDY0dUZ5WnVLOFQvZDlia0V6MTk1MzRBc3dRRGMKeFZld1hHNzM3NjRMY3YwQTZVdWI2ajRlajBuejNNYlArOERwQ0lJamc4TQotPiBYMjU1MTkgak5EaEYzVWtTZDZDK25mZFZhQm44dkFnc0hnMjBTWm5pOEJXVEpEVzBocwpCUGNTREZ2ODVMcU1YaEQ5MVlOaXlWRzdpOUYrRHE4UldLVFFFRzZXZ1dnCi0+IFgyNTUxOSB4KzFFNTRmbGVvZ0tVT0p2N3M3N0ordmhOOHFBUHptV0I1cUtlbXFvRzJvCnQ5RGxIc2p2VVlKaUJVSTAyclEvbXExSVVEM2tCUS9VZnJRV3BEMERkSncKLT4gWDI1NTE5IFdaTnA0Y3U0VDBocDRZaVdqZkpBWGU0RDJScXpVQllzRmNFbFZUcTREQ2MKUFBEMjlhcE0vVWhzK1laODJwaTBCRk1FQmgvZHZZN2tOT0JCM1VBZDZVUQotPiArai1ncmVhc2UgYjMgQ0hoCjZDZW5NKzM1clEyUzQxdGl3akVUQ2pHOG5ueFNkN2YrY21nNUpXZ0Z4NmNJNnJLYmk3MGpTRFZUTlEKLS0tIG9PcG1WNkxvTnhkcHczK0gwTU5CN1VMNHZuUlRsanU0bnlmSFdNREpmQjAKcmCp20eRMFt8IxCezapIoIrFi28h3t91ngAHBYhyqieSL9iodDWFn9W2QeFVYX+qhybor6uz+k35kKfquCg270Oi46XsO84y]\n";
     let mut clean = warden_with_policy(&home, &policy, &global_gitconfig)
         .args(["filter-clean", ".gitignore"])
         .current_dir(&repo)
