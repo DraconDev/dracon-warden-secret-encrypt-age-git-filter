@@ -2,7 +2,7 @@
 //!
 //! These tests verify end-to-end behavior using real git repos.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A private HOME for one test process, returned together with the tempdir that
 /// owns it.
@@ -28,6 +28,82 @@ fn warden_in_home(home: &std::path::Path, args: &[&str]) -> std::process::Output
         .env("HOME", home)
         .output()
         .unwrap()
+}
+
+fn warden_with_policy(
+    home: &Path,
+    policy: &Path,
+    global_gitconfig: &Path,
+) -> std::process::Command {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"));
+    command
+        .env("HOME", home)
+        .env("DRACON_WARDEN_POLICY", policy)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", global_gitconfig);
+    command
+}
+
+fn git_cmd_with_private_config(
+    repo: &Path,
+    global_gitconfig: &Path,
+    args: &[&str],
+) -> std::process::Output {
+    let git_bin = std::env::var("DRACON_SYNC_GIT_BIN").unwrap_or_else(|_| "git".to_string());
+    std::process::Command::new(&git_bin)
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", global_gitconfig)
+        .output()
+        .unwrap()
+}
+
+#[cfg(target_os = "linux")]
+struct KillChildOnDrop(std::process::Child);
+
+#[cfg(target_os = "linux")]
+impl Drop for KillChildOnDrop {
+    fn drop(&mut self) {
+        if self
+            .0
+            .try_wait()
+            .map(|status| status.is_none())
+            .unwrap_or(true)
+        {
+            let _ = self.0.kill();
+        }
+        let _ = self.0.wait();
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_fence_fd(child: &mut std::process::Child, fence_path: &Path) {
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.try_wait().expect("poll resmudge child") {
+            panic!("resmudge exited before reaching its metadata fence: {status}");
+        }
+        let fd_dir = PathBuf::from(format!("/proc/{}/fd", child.id()));
+        let opened = std::fs::read_dir(fd_dir)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| std::fs::read_link(entry.path()).ok())
+            .any(|path| path == fence_path);
+        if opened {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "resmudge never opened its fence descriptor"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 /// Helper to run a git command.
@@ -108,7 +184,10 @@ fn hook_refreshing_commands_never_touch_the_operator_home() {
     )
     .unwrap();
 
-    for args in [vec!["once", repo.to_str().unwrap()], vec!["repair", repo.to_str().unwrap()]] {
+    for args in [
+        vec!["once", repo.to_str().unwrap()],
+        vec!["repair", repo.to_str().unwrap()],
+    ] {
         let output = std::process::Command::new(env!("CARGO_BIN_EXE_dracon-warden"))
             .args(&args)
             .env("HOME", &home)
@@ -240,6 +319,167 @@ fn test_warden_filter_smudge() {
         "filter-smudge should succeed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn resmudge_apply_waits_safely_and_releases_the_fence_after_publication() {
+    use secrecy::ExposeSecret;
+    use std::io::Write;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("test-repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let global_gitconfig = tmp.path().join("gitconfig");
+    std::fs::write(&global_gitconfig, "").unwrap();
+    for (args, label) in [
+        (&["init", "-q", "-b", "main"][..], "git init"),
+        (
+            &["config", "user.email", "test@example.invalid"][..],
+            "git email",
+        ),
+        (&["config", "user.name", "Warden test"][..], "git name"),
+    ] {
+        let output = git_cmd_with_private_config(&repo, &global_gitconfig, args);
+        assert!(
+            output.status.success(),
+            "{label}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let home = private_home(&tmp);
+    let identity_dir = home.join(".dracon/keys");
+    std::fs::create_dir_all(&identity_dir).unwrap();
+    let identity = age::x25519::Identity::generate();
+    let identity_text = identity.to_string();
+    let identity_path = identity_dir.join("identity.age");
+    std::fs::write(
+        &identity_path,
+        format!("{}\n", identity_text.expose_secret()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&identity_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let policy = tmp.path().join("warden.toml");
+    std::fs::write(
+        &policy,
+        "protected_patterns = [\".gitignore\"]\nrepo_roots = []\n",
+    )
+    .unwrap();
+    let plaintext = b"# synthetic encrypted fixture\nSYNTHETIC_VALUE=not-a-real-secret\n";
+    let mut clean = warden_with_policy(&home, &policy, &global_gitconfig)
+        .args(["filter-clean", ".gitignore"])
+        .current_dir(&repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    clean.stdin.take().unwrap().write_all(plaintext).unwrap();
+    let cleaned = clean.wait_with_output().unwrap();
+    assert!(
+        cleaned.status.success(),
+        "filter-clean: {}",
+        String::from_utf8_lossy(&cleaned.stderr)
+    );
+    let ciphertext = cleaned.stdout;
+    assert!(
+        ciphertext
+            .windows(b"DRACON_SECRET".len())
+            .any(|window| window == b"DRACON_SECRET"),
+        "filter-clean did not produce a Warden ciphertext marker"
+    );
+    std::fs::write(repo.join(".gitignore"), &ciphertext).unwrap();
+    let staged =
+        git_cmd_with_private_config(&repo, &global_gitconfig, &["add", "-f", "--", ".gitignore"]);
+    assert!(
+        staged.status.success(),
+        "git add: {}",
+        String::from_utf8_lossy(&staged.stderr)
+    );
+    let index_before = std::fs::read(repo.join(".git/index")).unwrap();
+    let staged_ciphertext =
+        git_cmd_with_private_config(&repo, &global_gitconfig, &["show", ":.gitignore"]);
+    assert!(staged_ciphertext.status.success());
+    assert_eq!(staged_ciphertext.stdout, ciphertext);
+
+    // Hold the same cooperative lock as the apply command. Cancel the real CLI
+    // while it is waiting, then prove both the worktree and staged ciphertext
+    // remained untouched before releasing the lock.
+    let fence_path = repo.join(".git/dracon-canonical-writer-v1.lock");
+    let fence = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&fence_path)
+        .unwrap();
+    assert_eq!(unsafe { libc::flock(fence.as_raw_fd(), libc::LOCK_EX) }, 0);
+    let mut blocked = KillChildOnDrop(
+        warden_with_policy(&home, &policy, &global_gitconfig)
+            .args(["resmudge", "--apply", repo.to_str().unwrap()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_for_fence_fd(&mut blocked.0, &fence_path);
+    std::thread::sleep(Duration::from_millis(25));
+    assert_eq!(
+        unsafe { libc::kill(blocked.0.id() as libc::pid_t, libc::SIGTERM) },
+        0,
+        "cancel waiting resmudge"
+    );
+    let cancelled = blocked.0.wait().unwrap();
+    assert_eq!(cancelled.signal(), Some(libc::SIGTERM));
+    assert_eq!(std::fs::read(repo.join(".gitignore")).unwrap(), ciphertext);
+    assert_eq!(
+        std::fs::read(repo.join(".git/index")).unwrap(),
+        index_before
+    );
+    drop(fence);
+
+    let applied = warden_with_policy(&home, &policy, &global_gitconfig)
+        .args(["resmudge", "--apply", repo.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "resmudge --apply: {}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    assert_eq!(std::fs::read(repo.join(".gitignore")).unwrap(), plaintext);
+    assert_eq!(
+        std::fs::read(repo.join(".git/index")).unwrap(),
+        index_before
+    );
+    let staged_after =
+        git_cmd_with_private_config(&repo, &global_gitconfig, &["show", ":.gitignore"]);
+    assert!(staged_after.status.success());
+    assert_eq!(
+        staged_after.stdout, ciphertext,
+        "resmudge must not rewrite the Git index"
+    );
+
+    // A subsequent writer can acquire immediately after the final worktree
+    // write has returned and the resmudge process has exited.
+    let probe = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&fence_path)
+        .unwrap();
+    assert_eq!(
+        unsafe { libc::flock(probe.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+        0,
+        "resmudge leaked its canonical-writer fence"
+    );
+    assert_eq!(unsafe { libc::flock(probe.as_raw_fd(), libc::LOCK_UN) }, 0);
 }
 
 #[test]
