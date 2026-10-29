@@ -373,7 +373,7 @@ fn resmudge_apply_waits_safely_and_releases_the_fence_after_publication() {
     )
     .unwrap();
     let plaintext =
-        b"# synthetic encrypted fixture\nTOKEN=[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhWDJpWXN1THdmR1cxb21sTkpoZzNreWdXcnlqcWkySzZpeWswaHJ2V3hrCkw1OUtrMFZWQmhiTXVoRUxJeFNGMktuSzV3T1NoZnNhMWdFblFSZVpyTjAKLT4gWDI1NTE5IDNieWdQUVZvOW9HT1VwRDY0dUZ5WnVLOFQvZDlia0V6MTk1MzRBc3dRRGMKeFZld1hHNzM3NjRMY3YwQTZVdWI2ajRlajBuejNNYlArOERwQ0lJamc4TQotPiBYMjU1MTkgak5EaEYzVWtTZDZDK25mZFZhQm44dkFnc0hnMjBTWm5pOEJXVEpEVzBocwpCUGNTREZ2ODVMcU1YaEQ5MVlOaXlWRzdpOUYrRHE4UldLVFFFRzZXZ1dnCi0+IFgyNTUxOSB4KzFFNTRmbGVvZ0tVT0p2N3M3N0ordmhOOHFBUHptV0I1cUtlbXFvRzJvCnQ5RGxIc2p2VVlKaUJVSTAyclEvbXExSVVEM2tCUS9VZnJRV3BEMERkSncKLT4gWDI1NTE5IFdaTnA0Y3U0VDBocDRZaVdqZkpBWGU0RDJScXpVQllzRmNFbFZUcTREQ2MKUFBEMjlhcE0vVWhzK1laODJwaTBCRk1FQmgvZHZZN2tOT0JCM1VBZDZVUQotPiArai1ncmVhc2UgYjMgQ0hoCjZDZW5NKzM1clEyUzQxdGl3akVUQ2pHOG5ueFNkN2YrY21nNUpXZ0Z4NmNJNnJLYmk3MGpTRFZUTlEKLS0tIG9PcG1WNkxvTnhkcHczK0gwTU5CN1VMNHZuUlRsanU0bnlmSFdNREpmQjAKcmCp20eRMFt8IxCezapIoIrFi28h3t91ngAHBYhyqieSL9iodDWFn9W2QeFVYX+qhybor6uz+k35kKfquCg270Oi46XsO84y]\n";
+        b"# synthetic encrypted fixture\nTOKEN=[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3eTdIdFErZnVoTWR3TEgxOUNJbjJuVXdDcy85OStHQ3hSSElUN1FOM0ZrClpvV09aWlg5Q3hNdVFkbUtKODB1cS9OODhRVDNaeENBN3dqRlRhdDVobVkKLT4gWDI1NTE5IHh5Z3NxZXJmdFNXWERKUGIxcGZTeFZXSXk5MHBnMFJFZytBUmRkMVB6aFEKR2JSRWRWSXN2RHlMTnNhd09Pd045Uk5XNm5PNEQxMzdzQTd2RG5WcDJPUQotPiBYMjU1MTkgTUNTc3JLL2ZXdnUzTFdlZ0tvMU5SamNPUUhNZEUycHY2RGdqUTRVcWVUawp4UTQvdS9UVjN0Q0QzSkxTTG9EcWMvQk1FNUdRK1o3UDc1VElQdnYrc3N3Ci0+IFgyNTUxOSByd1VydDdVQXlHcjRDVk9yeTZkYWVlV1luZy92TUFNY3ZCVnhZTWthbnhvCkNkR3RMdnVyTFRFSTJyUEp6RitKQVgrdG1vL1R0N21iWDRuSm9kcVFCNFUKLT4gWDI1NTE5IFRZeUZzazVGNnJIZjVwejRLRzhPNjJxSkxvUkpvelBFUVpNQXFsMHF3aG8KUnJCeDQ1UkZFekgzMHlFQjZmdmp3dHdhS2RnMEtSb2dUdzQ4S3E3Z1pmYwotPiBnYTwuXnAtZ3JlYXNlIFNyPFF7JTMgcywkRlcgWGtLKGt4IDVyClpoUktZUHVXMEhEdXpJdVNENVRYa0NTWW5MMDdiYy83Ci0tLSBKai9mZC9JTDBEZmNSbllIOUxzRHhjYktseVZGSlZvNG1yK29XdGY0eURBCor96Fygo9cf96mg7gn1YtcFhwQ6UiDLddXsQm75s7tMkXpVZMlcaZdEFjFnwo/6S3SZ9WkS/yeQA5P+EFtbIbLutJY/Pn5t+Q==]\n";
     let mut clean = warden_with_policy(&home, &policy, &global_gitconfig)
         .args(["filter-clean", ".gitignore"])
         .current_dir(&repo)
@@ -481,6 +481,269 @@ fn resmudge_apply_waits_safely_and_releases_the_fence_after_publication() {
         "resmudge leaked its canonical-writer fence"
     );
     assert_eq!(unsafe { libc::flock(probe.as_raw_fd(), libc::LOCK_UN) }, 0);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn resmudge_apply_fences_gitattributes_through_final_close_against_cooperative_writer() {
+    use secrecy::ExposeSecret;
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("test-repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let global_gitconfig = tmp.path().join("gitconfig");
+    std::fs::write(&global_gitconfig, "").unwrap();
+    for (args, label) in [
+        (&["init", "-q", "-b", "main"][..], "git init"),
+        (
+            &["config", "user.email", "test@example.invalid"][..],
+            "git email",
+        ),
+        (
+            &["config", "user.name", "Warden test"][..],
+            "git name",
+        ),
+    ] {
+        let output = git_cmd_with_private_config(&repo, &global_gitconfig, args);
+        assert!(
+            output.status.success(),
+            "{label}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let home = private_home(&tmp);
+    let identity_dir = home.join(".dracon/keys");
+    std::fs::create_dir_all(&identity_dir).unwrap();
+    let identity = age::x25519::Identity::generate();
+    let identity_text = identity.to_string();
+    let identity_path = identity_dir.join("identity.age");
+    std::fs::write(
+        &identity_path,
+        format!("{}\n", identity_text.expose_secret()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&identity_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let policy = tmp.path().join("warden.toml");
+    std::fs::write(
+        &policy,
+        "protected_patterns = [\".gitattributes\"]\nrepo_roots = []\n",
+    )
+    .unwrap();
+    let plaintext = b"*.png filter=dracon\n# TOKEN=[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA1RENUQ0Z0bkZGQ3VBRzdGTjJRbjhpMndvdmVTQms1bEQ0UzY0UThOS0NvClBkRk5ROGg2dTJKNGN4WWhnRmlDUHBvdXZxckRvVTNGRnhwbW5rQmd6a2cKLT4gWDI1NTE5IDRIMEJGZmtHM3IxNTRVTlVQSTVnUGx0UDV6bkZvKy9HbktwMm9JQjJLeWsKQlNzMnhmTHRrNFRLZG4xbDlWM3JDeFRSY3FOakwzRlRQQjE5RDNVK3FobwotPiBYMjU1MTkgaXEwaGYzdk5DcVBNTDRzcjc2ZWZUTEhQK294cXJoWWdZY3FhaFAzamFBSQpGWDh2QWJvYnFUcklBN2o3NWMyMSsvWXZNVkJuL3lTMTVtcHlqSFhOL2xjCi0+IFgyNTUxOSAzazRpUWw2Q1NjUXdTWmE3YkpRQlhLMGZRUmVqbUNDQURWVUZPS0YyZlV3CnFjQlVOYjJVSVZYM3gyaVdUVk5xbWhXSGNGZHNHQy9TdXNIQjhlaFRwR00KLT4gWDI1NTE5IFpmd1libXRGZW05N3pacWRXdDVOU0hPYVplVHl2aSt0b3B2ZitydndHWFkKcEI0bG84U0RTUFR5WGdUSkpzTXEvL3BCbEtuUS9KOFVPbEEwMkEyUVB6ZwotPiBiOCtJLWdyZWFzZSAka09qSEJOIiBVUiBFNzcka1loIGAKMEk3VUVQeU95cCt0ZnowTi9kRkRMUlRob3l6WGw3V2JGemcKLS0tIDB4TmkxMmVlendmU0FpSHNpNmloUk5Jd01JM2lzeTNhb0hiWlpDS2E0bUEKHKQglaYkTzufn7lbA270l7ZB4wZ5ZNLTBG3d5wJit02CZfaIvt9fgHGaV0pQplXAVA/FjNaIJv38dGQxYToeTXbezAfN4YV7]\n";
+    let mut clean = warden_with_policy(&home, &policy, &global_gitconfig)
+        .args(["filter-clean", ".gitattributes"])
+        .current_dir(&repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    clean.stdin.take().unwrap().write_all(plaintext).unwrap();
+    let cleaned = clean.wait_with_output().unwrap();
+    assert!(
+        cleaned.status.success(),
+        "filter-clean: {}",
+        String::from_utf8_lossy(&cleaned.stderr)
+    );
+    let ciphertext = cleaned.stdout;
+    assert!(
+        ciphertext
+            .windows(b"DRACON_SECRET".len())
+            .any(|window| window == b"DRACON_SECRET"),
+        "filter-clean did not produce a Warden ciphertext marker"
+    );
+    let target = repo.join(".gitattributes");
+    std::fs::write(&target, &ciphertext).unwrap();
+    let staged = git_cmd_with_private_config(
+        &repo,
+        &global_gitconfig,
+        &["add", "-f", "--", ".gitattributes"],
+    );
+    assert!(
+        staged.status.success(),
+        "git add: {}",
+        String::from_utf8_lossy(&staged.stderr)
+    );
+    let index_before = std::fs::read(repo.join(".git/index")).unwrap();
+    let staged_ciphertext = git_cmd_with_private_config(
+        &repo,
+        &global_gitconfig,
+        &["show", ":.gitattributes"],
+    );
+    assert!(staged_ciphertext.status.success());
+    assert_eq!(staged_ciphertext.stdout, ciphertext);
+
+    // A read lease lets resmudge inspect the target, then blocks its actual
+    // write-open. SIGIO marks that exact boundary so a second real Warden CLI
+    // writer can be queued behind the same per-worktree fence before we release
+    // the lease. The second writer records what it sees after admission.
+    let ready = tmp.path().join("lease-ready");
+    let breaking = tmp.path().join("lease-breaking");
+    let release = tmp.path().join("lease-release");
+    let lease_script = r#"
+import fcntl, os, signal, sys, time
+from pathlib import Path
+fd = os.open(sys.argv[1], os.O_RDONLY | os.O_CLOEXEC)
+signal.signal(signal.SIGIO, lambda _sig, _frame: Path(sys.argv[2]).write_text("breaking"))
+fcntl.fcntl(fd, fcntl.F_SETLEASE, fcntl.F_RDLCK)
+Path(sys.argv[3]).write_text("ready")
+while not Path(sys.argv[4]).exists():
+    time.sleep(0.005)
+fcntl.fcntl(fd, fcntl.F_SETLEASE, fcntl.F_UNLCK)
+os.close(fd)
+"#;
+    let mut lease_owner = KillChildOnDrop(
+        Command::new("python3")
+            .arg("-c")
+            .arg(lease_script)
+            .arg(&target)
+            .arg(&breaking)
+            .arg(&ready)
+            .arg(&release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let wait_for_path = |path: &Path, label: &str| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !path.exists() {
+            assert!(Instant::now() < deadline, "timed out waiting for {label}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    let wait_for_exit = |child: &mut std::process::Child, label: &str| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = child.try_wait().expect("poll child") {
+                return status;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{label} did not exit within its bounded test deadline");
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    wait_for_path(&ready, "the .gitattributes read lease");
+
+    let fence_path = repo.join(".git/dracon-canonical-writer-v1.lock");
+    let mut resmudge = KillChildOnDrop(
+        warden_with_policy(&home, &policy, &global_gitconfig)
+            .args(["resmudge", "--apply"])
+            .arg(&repo)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_for_path(&breaking, "resmudge's blocked .gitattributes write-open");
+    assert!(
+        resmudge.0.try_wait().unwrap().is_none(),
+        "resmudge exited instead of waiting for the target write-open"
+    );
+
+    let after_payload = b"*.png -filter\n# cooperative writer after resmudge\n";
+    let after_hex = after_payload
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let observed = tmp.path().join("writer-observed");
+    let entered = tmp.path().join("writer-entered");
+    let writer_script = "from pathlib import Path; import sys; target=Path(sys.argv[1]); Path(sys.argv[3]).write_bytes(target.read_bytes()); Path(sys.argv[2]).write_text('entered'); target.write_bytes(bytes.fromhex(sys.argv[4]))";
+    let mut writer = KillChildOnDrop(
+        warden_with_policy(&home, &policy, &global_gitconfig)
+            .args(["write-fence", "--repo"])
+            .arg(&repo)
+            .args(["--wait-secs", "20", "--run-secs", "10", "--", "python3", "-c"])
+            .arg(writer_script)
+            .arg(&target)
+            .arg(&entered)
+            .arg(&observed)
+            .arg(after_hex)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_for_fence_fd(&mut writer.0, &fence_path);
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(
+        !entered.exists(),
+        "the cooperative writer crossed the held metadata fence"
+    );
+    let probe = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&fence_path)
+        .unwrap();
+    let probe_result = unsafe {
+        libc::flock(
+            probe.as_raw_fd(),
+            libc::LOCK_EX | libc::LOCK_NB,
+        )
+    };
+    if probe_result == 0 {
+        let _ = unsafe { libc::flock(probe.as_raw_fd(), libc::LOCK_UN) };
+        panic!("resmudge released its fence before the target write completed");
+    }
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::EWOULDBLOCK),
+        "the second writer must be excluded by the canonical metadata fence"
+    );
+
+    std::fs::write(&release, b"release").unwrap();
+    let lease_status = wait_for_exit(&mut lease_owner.0, "read-lease owner");
+    assert!(lease_status.success(), "read-lease owner failed");
+    let resmudge_status = wait_for_exit(&mut resmudge.0, "resmudge");
+    assert!(resmudge_status.success(), "resmudge failed");
+    let writer_status = wait_for_exit(&mut writer.0, "cooperative writer");
+    assert!(writer_status.success(), "cooperative writer failed");
+    assert!(entered.exists(), "the second writer never acquired the fence");
+    assert_eq!(
+        std::fs::read(&observed).unwrap(),
+        plaintext,
+        "the admitted writer must observe the completed resmudge bytes"
+    );
+    assert_eq!(std::fs::read(&target).unwrap(), after_payload);
+    assert_eq!(
+        std::fs::read(repo.join(".git/index")).unwrap(),
+        index_before,
+        "neither metadata writer may mutate the staged index"
+    );
+    let staged_after = git_cmd_with_private_config(
+        &repo,
+        &global_gitconfig,
+        &["show", ":.gitattributes"],
+    );
+    assert!(staged_after.status.success());
+    assert_eq!(staged_after.stdout, ciphertext);
+    let final_probe = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&fence_path)
+        .unwrap();
+    assert_eq!(
+        unsafe {
+            libc::flock(
+                final_probe.as_raw_fd(),
+                libc::LOCK_EX | libc::LOCK_NB,
+            )
+        },
+        0,
+        "the final cooperative writer leaked the canonical fence"
+    );
+    assert_eq!(unsafe { libc::flock(final_probe.as_raw_fd(), libc::LOCK_UN) }, 0);
 }
 
 #[test]
