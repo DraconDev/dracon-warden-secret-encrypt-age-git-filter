@@ -5880,7 +5880,7 @@ while read local_ref local_sha remote_ref remote_sha; do
     # forbidden, so the push blocked forever. The receipt binds the entire
     # scan output and each individual match, so any edited value, any extra
     # match, or any change elsewhere in the same scan still refuses.
-    DIFF_MATCHES=$(printf '%s\n' "$DIFF" | mask_warden_tags | grep -aoE "$SECRET_RE" | canonical_secret_matches | reviewed_text_matches)
+    DIFF_MATCHES=$(printf '%s\n' "$DIFF" | mask_warden_tags | grep -aoE "$SECRET_RE" | canonical_secret_matches)
     if [ -n "$DIFF_MATCHES" ]; then
         echo "⚠️  Possible plaintext secrets detected in push." >&2
         echo "   The warden filter may have been bypassed." >&2
