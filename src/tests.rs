@@ -392,7 +392,10 @@ mod tests {
         // Control 1: the UNMODIFIED hook must still refuse — this is what
         // makes the acceptance below meaningful rather than vacuous.
         let (status, err) = run_hook(repo, &hook, head.trim(), base.trim());
-        assert!(!status.success(), "diff-scan placeholder was not refused at all");
+        assert!(
+            !status.success(),
+            "diff-scan placeholder was not refused at all"
+        );
         assert!(err.contains("Possible plaintext secrets"), "{err}");
 
         // Control 2: a receipt bound to the exact match but a DIFFERENT
@@ -411,7 +414,10 @@ mod tests {
         )
         .unwrap();
         let (status, err) = run_hook(repo, &hook, head.trim(), base.trim());
-        assert!(!status.success(), "match receipt accepted without its scan binding");
+        assert!(
+            !status.success(),
+            "match receipt accepted without its scan binding"
+        );
         assert!(err.contains("Possible plaintext secrets"), "{err}");
 
         // Acceptance: bind BOTH halves. The scan digest is exactly what the
@@ -422,8 +428,18 @@ mod tests {
         let scan_out = std::process::Command::new("git")
             .current_dir(repo)
             .args([
-                "diff-tree", "--root", "-m", "-r", "--no-commit-id", "-M100%",
-                "--diff-filter=a", "-p", "--unified=0", head.trim(), "--", "fixture.js",
+                "diff-tree",
+                "--root",
+                "-m",
+                "-r",
+                "--no-commit-id",
+                "-M100%",
+                "--diff-filter=a",
+                "-p",
+                "--unified=0",
+                head.trim(),
+                "--",
+                "fixture.js",
             ])
             .output()
             .expect("run diff-tree");
@@ -448,7 +464,10 @@ mod tests {
 
         // Control 3: changing ANY byte of the matched text invalidates the
         // receipt. Nothing about a filename or path grants permission.
-        let edited = format!("clean baseline\n{}\n", line.replace("placeholder", "changed"));
+        let edited = format!(
+            "clean baseline\n{}\n",
+            line.replace("placeholder", "changed")
+        );
         fs::write(repo.join("fixture.js"), edited).unwrap();
         run_git_in(repo, &["commit", "-qam", "edited value"]);
         let edited_head = git_in_output(repo, &["rev-parse", "HEAD"]);
@@ -1506,11 +1525,33 @@ mod tests {
     fn pre_push_binary_pem_labels_are_not_private_keys_but_material_is_blocked() {
         let header = concat!("-----", "BEGIN RSA PRIVATE KEY-----");
         for (name, payload, blocked) in [
-            ("compiled-label", format!("ELF\0{header}\0crypto error\n"), false),
-            ("compiled-label-next-literal", format!("ELF\0{header}\0\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\n"), false),
-            ("armored-key", format!("ELF\0{header}\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\n"), true),
-            ("one-line-key", format!("ELF\0{header}ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\0"), true),
-            ("legacy-key", format!("ELF\0{header}\r\nProc-Type: 4,ENCRYPTED\r\nDEK-Info: AES-256-CBC,00\r\n\r\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\r\n"), true),
+            (
+                "compiled-label",
+                format!("ELF\0{header}\0crypto error\n"),
+                false,
+            ),
+            (
+                "compiled-label-next-literal",
+                format!("ELF\0{header}\0\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\n"),
+                false,
+            ),
+            (
+                "armored-key",
+                format!("ELF\0{header}\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\n"),
+                true,
+            ),
+            (
+                "one-line-key",
+                format!("ELF\0{header}ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\0"),
+                true,
+            ),
+            (
+                "legacy-key",
+                format!(
+                    "ELF\0{header}\r\nProc-Type: 4,ENCRYPTED\r\nDEK-Info: AES-256-CBC,00\r\n\r\nABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP\r\n"
+                ),
+                true,
+            ),
             ("bare-text-marker", format!("{header}\n"), true),
         ] {
             let (td, hook_path) = make_repo_with_pre_push_hook(name);
@@ -1518,7 +1559,9 @@ mod tests {
             fs::write(repo.join("artifact.bin"), payload).unwrap();
             run_git_in(repo, &["add", "artifact.bin"]);
             run_git_in(repo, &["commit", "-q", "-m", "add fixture"]);
-            let head = git_in_output(repo, &["rev-parse", "HEAD"]).trim().to_string();
+            let head = git_in_output(repo, &["rev-parse", "HEAD"])
+                .trim()
+                .to_string();
             let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
             assert_eq!(!status.success(), blocked, "{name}: {stderr}");
         }
@@ -2080,16 +2123,10 @@ mod tests {
                 filter_clean_refusal_with_limit(true, limit + 1, None, limit, &[], &[], &[])
                     .is_some()
             );
-            assert!(filter_clean_refusal_with_limit(
-                true,
-                1,
-                Some("../secret"),
-                limit,
-                &[],
-                &[],
-                &[]
-            )
-            .is_some());
+            assert!(
+                filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit, &[], &[], &[])
+                    .is_some()
+            );
         }
         for limit in [
             0,
@@ -2644,10 +2681,12 @@ mod tests {
             error.to_string().contains("target directory symlink"),
             "error should identify the rejected target directory: {error:#}"
         );
-        assert!(fs::symlink_metadata(repo.join(".dracon"))
-            .expect("inspect directory link")
-            .file_type()
-            .is_symlink());
+        assert!(
+            fs::symlink_metadata(repo.join(".dracon"))
+                .expect("inspect directory link")
+                .file_type()
+                .is_symlink()
+        );
         assert!(
             !external_dir.join("data").exists(),
             "publication must not create output below an external target directory"
@@ -4534,9 +4573,11 @@ watch_roots = ["/tmp/test"]
             started + std::time::Duration::from_millis(50),
         )
         .expect_err("resmudge apply must wait for the canonical metadata writer fence");
-        assert!(error
-            .to_string()
-            .contains("canonical writer fence deadline expired"));
+        assert!(
+            error
+                .to_string()
+                .contains("canonical writer fence deadline expired")
+        );
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         assert_eq!(
             fs::read(&metadata).expect("read canonical metadata"),
@@ -4598,14 +4639,16 @@ watch_roots = ["/tmp/test"]
         );
 
         drop(held);
-        assert!(acquire_resmudge_metadata_fence_until(
-            &repo,
-            ".gitattributes",
-            true,
-            std::time::Instant::now() + std::time::Duration::from_secs(1),
-        )
-        .expect("fence reacquires after owner close")
-        .is_some());
+        assert!(
+            acquire_resmudge_metadata_fence_until(
+                &repo,
+                ".gitattributes",
+                true,
+                std::time::Instant::now() + std::time::Duration::from_secs(1),
+            )
+            .expect("fence reacquires after owner close")
+            .is_some()
+        );
     }
 
     #[test]
@@ -7177,16 +7220,18 @@ mod binary_carve_out_tests {
         let protected = vec!["secrets/**".to_string()];
 
         // Unprotected: the carve-out applies (the D2 fix itself).
-        assert!(filter_clean_refusal_with_limit(
-            true,
-            OVER,
-            Some("assets/dump.png"),
-            LIMIT,
-            &exempt(),
-            &[],
-            &[]
-        )
-        .is_none());
+        assert!(
+            filter_clean_refusal_with_limit(
+                true,
+                OVER,
+                Some("assets/dump.png"),
+                LIMIT,
+                &exempt(),
+                &[],
+                &[]
+            )
+            .is_none()
+        );
 
         // Same extension, same size, but under a protected directory:
         // the operator said "this path is sensitive", and that wins.
@@ -7253,53 +7298,61 @@ mod binary_carve_out_tests {
         let media = vec!["internal-dashboards/**".to_string()];
         // Opted-in: same extension, same size as the carve-out case,
         // but the operator asked for encryption — fail closed.
-        assert!(filter_clean_refusal_with_limit(
-            true,
-            OVER,
-            Some("internal-dashboards/shot.png"),
-            LIMIT,
-            &exempt(),
-            &[],
-            &media,
-        )
-        .is_some());
+        assert!(
+            filter_clean_refusal_with_limit(
+                true,
+                OVER,
+                Some("internal-dashboards/shot.png"),
+                LIMIT,
+                &exempt(),
+                &[],
+                &media,
+            )
+            .is_some()
+        );
         // The option off (empty media list): the carve-out applies.
-        assert!(filter_clean_refusal_with_limit(
-            true,
-            OVER,
-            Some("internal-dashboards/shot.png"),
-            LIMIT,
-            &exempt(),
-            &[],
-            &[],
-        )
-        .is_none());
+        assert!(
+            filter_clean_refusal_with_limit(
+                true,
+                OVER,
+                Some("internal-dashboards/shot.png"),
+                LIMIT,
+                &exempt(),
+                &[],
+                &[],
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn unknown_extension_is_not_exempt() {
         // `.bin` is exempt but `.weirdext` is not — the carve-out is an
         // explicit allowlist, not a "looks binary" heuristic.
-        assert!(filter_clean_refusal_with_limit(
-            true,
-            OVER,
-            Some("a/b.bin"),
-            LIMIT,
-            &exempt(),
-            &[],
-            &[]
-        )
-        .is_none());
-        assert!(filter_clean_refusal_with_limit(
-            true,
-            OVER,
-            Some("a/b.weirdext"),
-            LIMIT,
-            &exempt(),
-            &[],
-            &[]
-        )
-        .is_some());
+        assert!(
+            filter_clean_refusal_with_limit(
+                true,
+                OVER,
+                Some("a/b.bin"),
+                LIMIT,
+                &exempt(),
+                &[],
+                &[]
+            )
+            .is_none()
+        );
+        assert!(
+            filter_clean_refusal_with_limit(
+                true,
+                OVER,
+                Some("a/b.weirdext"),
+                LIMIT,
+                &exempt(),
+                &[],
+                &[]
+            )
+            .is_some()
+        );
     }
 
     #[test]
@@ -7314,16 +7367,18 @@ mod binary_carve_out_tests {
 
     #[test]
     fn smudge_direction_is_never_refused() {
-        assert!(filter_clean_refusal_with_limit(
-            false,
-            OVER,
-            Some("a/b.png"),
-            LIMIT,
-            &exempt(),
-            &[],
-            &[]
-        )
-        .is_none());
+        assert!(
+            filter_clean_refusal_with_limit(
+                false,
+                OVER,
+                Some("a/b.png"),
+                LIMIT,
+                &exempt(),
+                &[],
+                &[]
+            )
+            .is_none()
+        );
     }
 
     // --- the generated .gitattributes block ----------------------------
