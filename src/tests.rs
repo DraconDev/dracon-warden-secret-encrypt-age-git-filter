@@ -414,11 +414,25 @@ mod tests {
         assert!(!status.success(), "match receipt accepted without its scan binding");
         assert!(err.contains("Possible plaintext secrets"), "{err}");
 
-        // Acceptance: bind BOTH halves. We cannot know the scan digest from
-        // here, so derive it the same way the test above does — by running
-        // the hook, reading the digest it would compare, and re-running.
-        let scan_digest = diff_scan_digest(repo, head.trim(), base.trim(), &hook)
-            .expect("hook exposes the scan digest for the bound match");
+        // Acceptance: bind BOTH halves. The scan digest is exactly what the
+        // hook feeds to `reviewed_text_matches` — reproduce the hook's own
+        // command (single non-hatched changed file, so one pathspec) rather
+        // than guessing it.
+        let scan_file = repo.join("blob.scan");
+        let scan_out = std::process::Command::new("git")
+            .current_dir(repo)
+            .args([
+                "diff-tree", "--root", "-m", "-r", "--no-commit-id", "-M100%",
+                "--diff-filter=a", "-p", "--unified=0", head.trim(), "--", "fixture.js",
+            ])
+            .output()
+            .expect("run diff-tree");
+        assert!(scan_out.status.success(), "diff-tree failed");
+        fs::write(&scan_file, &scan_out.stdout).unwrap();
+        let scan_digest = {
+            let bytes = fs::read(&scan_file).unwrap();
+            format!("{:x}", Sha256::digest(&bytes))
+        };
         let pair = format!("{scan_digest}:{:x}", Sha256::digest(match_text.as_bytes()));
         fs::write(
             &hook,
