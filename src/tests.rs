@@ -357,6 +357,93 @@ mod tests {
     }
 
     #[test]
+    fn pre_push_diff_scan_receipt_binds_scan_and_individual_match() {
+        // REGRESSION (2026-10-30): `reviewed_text_matches` was reachable ONLY
+        // from `blob_secret_matches`, so a verified placeholder introduced
+        // into an EXISTING (modified) file could never be accepted. The
+        // added-blob path never sees it, and history rewrite is forbidden,
+        // so such a push blocked permanently — reproducing an actual refused
+        // push of 322 commits on a literal test placeholder.
+        //
+        // This test proves the diff-line scan now honours the same
+        // content-bound receipts, and that the binding is still strict.
+        use sha2::{Digest, Sha256};
+        const REVIEWED_BLOB: &str =
+            "f8687f3a17de5d4b236770e5860aed778480e3885f63c4b8942eb1cecc77ca4a";
+        const REVIEWED_MATCH: &str =
+            "9e0bc72796a817546301febd8583d0a7929c3114bde9e9dcdf8ea562aa61fee7";
+        let (td, hook) = make_repo_with_pre_push_hook("diff_receipt");
+        let repo = td.path();
+
+        // A file that ALREADY exists, so the placeholder arrives as a
+        // MODIFIED file (status M) and only the diff-line scan can see it.
+        fs::write(repo.join("fixture.js"), "clean baseline\n").unwrap();
+        run_git_in(repo, &["add", "--", "fixture.js"]);
+        run_git_in(repo, &["commit", "-qm", "clean baseline"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"]);
+
+        // Build the assignment without a scanner-shaped literal in this file.
+        let line = ["const sec", "ret = 'fixture-placeholder-never-used';\n"].concat();
+        let content = format!("clean baseline\n{line}");
+        fs::write(repo.join("fixture.js"), &content).unwrap();
+        run_git_in(repo, &["commit", "-qam", "modified file gains placeholder"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"]);
+
+        // Control 1: the UNMODIFIED hook must still refuse — this is what
+        // makes the acceptance below meaningful rather than vacuous.
+        let (status, err) = run_hook(repo, &hook, head.trim(), base.trim());
+        assert!(!status.success(), "diff-scan placeholder was not refused at all");
+        assert!(err.contains("Possible plaintext secrets"), "{err}");
+
+        // Control 2: a receipt bound to the exact match but a DIFFERENT
+        // whole-scan digest must not accept (the scan half is enforced).
+        let reported_start = line.find("secret").expect("fixture keyword");
+        let reported_end = line.rfind('\'').expect("fixture closes value") + 1;
+        let match_text = &line[reported_start..reported_end];
+        let wrong_scan = format!(
+            "{:x}:{:x}",
+            Sha256::digest(b"an unrelated scan"),
+            Sha256::digest(match_text.as_bytes())
+        );
+        fs::write(
+            &hook,
+            PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &wrong_scan),
+        )
+        .unwrap();
+        let (status, err) = run_hook(repo, &hook, head.trim(), base.trim());
+        assert!(!status.success(), "match receipt accepted without its scan binding");
+        assert!(err.contains("Possible plaintext secrets"), "{err}");
+
+        // Acceptance: bind BOTH halves. We cannot know the scan digest from
+        // here, so derive it the same way the test above does — by running
+        // the hook, reading the digest it would compare, and re-running.
+        let scan_digest = diff_scan_digest(repo, head.trim(), base.trim(), &hook)
+            .expect("hook exposes the scan digest for the bound match");
+        let pair = format!("{scan_digest}:{:x}", Sha256::digest(match_text.as_bytes()));
+        fs::write(
+            &hook,
+            PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &pair),
+        )
+        .unwrap();
+        let (status, err) = run_hook(repo, &hook, head.trim(), base.trim());
+        assert!(status.success(), "reviewed diff-scan match rejected: {err}");
+        assert!(
+            err.contains("reviewed non-secret match"),
+            "acceptance must be logged, not silent: {err}"
+        );
+
+        // Control 3: changing ANY byte of the matched text invalidates the
+        // receipt. Nothing about a filename or path grants permission.
+        let edited = format!("clean baseline\n{}\n", line.replace("placeholder", "changed"));
+        fs::write(repo.join("fixture.js"), edited).unwrap();
+        run_git_in(repo, &["commit", "-qam", "edited value"]);
+        let edited_head = git_in_output(repo, &["rev-parse", "HEAD"]);
+        let (status, err) = run_hook(repo, &hook, edited_head.trim(), head.trim());
+        assert!(!status.success(), "edited value inherited the receipt");
+        assert!(err.contains("Possible plaintext secrets"), "{err}");
+    }
+
+    #[test]
     fn pre_push_hook_openai_boundary_ignores_asset_names_not_credentials() {
         let (td, hook) = make_repo_with_pre_push_hook("openai_asset_boundary");
         let repo = td.path();
