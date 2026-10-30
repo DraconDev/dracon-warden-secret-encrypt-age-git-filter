@@ -5714,6 +5714,7 @@ reviewed_text_matches() {
             04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:8bca1bb2c590d8da610b1f5991a27cf8f598a17ba3e913c52b06f1b968d8ce73|\
             04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:ec8b975e7d58592b7739c81b1549fd472c8174fc03e2a6f88f5ded441eb7cf98|\
             04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:5a1e908a7dee00419725c2ed891fa753ec55b6b73a4d45d492ce9fad3c403ff0|\
+            9008b71ed309a0c9917b72d63ba61e7ae7cd6afdd6d3f81e800adf2cb6a3c805:f34ddbecf0bf513ba949439bd648619821ed461e03f035b4e4aeba331cf64241|\
             f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:8bca1bb2c590d8da610b1f5991a27cf8f598a17ba3e913c52b06f1b968d8ce73|\
             f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:ec8b975e7d58592b7739c81b1549fd472c8174fc03e2a6f88f5ded441eb7cf98|\
             f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:5a1e908a7dee00419725c2ed891fa753ec55b6b73a4d45d492ce9fad3c403ff0)
@@ -5871,7 +5872,15 @@ while read local_ref local_sha remote_ref remote_sha; do
     # warden ciphertext tag, so a CHANGED line carrying that ciphertext must
     # not block a repository that encrypted a secret correctly. A genuine
     # credential elsewhere in the same line survives canonicalization.
-    DIFF_MATCHES=$(printf '%s\n' "$DIFF" | mask_warden_tags | grep -aoE "$SECRET_RE" | canonical_secret_matches)
+    # CHANGED 2026-10-30: the modified-text diff scan now honours the same
+    # content-bound review receipts as the added-blob scan below. Before this,
+    # `reviewed_text_matches` was reachable ONLY from `blob_secret_matches`, so
+    # a verified placeholder introduced into an EXISTING file could never be
+    # accepted — the added-blob path never sees it, and history rewrite is
+    # forbidden, so the push blocked forever. The receipt binds the entire
+    # scan output and each individual match, so any edited value, any extra
+    # match, or any change elsewhere in the same scan still refuses.
+    DIFF_MATCHES=$(printf '%s\n' "$DIFF" | mask_warden_tags | grep -aoE "$SECRET_RE" | canonical_secret_matches | reviewed_text_matches)
     if [ -n "$DIFF_MATCHES" ]; then
         echo "⚠️  Possible plaintext secrets detected in push." >&2
         echo "   The warden filter may have been bypassed." >&2
