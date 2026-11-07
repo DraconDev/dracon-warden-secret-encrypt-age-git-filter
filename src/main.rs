@@ -402,7 +402,7 @@ enum Command {
 }
 
 fn default_hygiene_patterns() -> Vec<String> {
-    vec![
+    let mut patterns = vec![
         "**/.pi*".to_owned(),
         // 2026-09-30 audit: aider writes `.aider.chat.history.md` and
         // `.aider.input.history` into the working dir by default, and its
@@ -414,7 +414,22 @@ fn default_hygiene_patterns() -> Vec<String> {
         "**/.vite/".to_owned(),
         "**/.turbo/".to_owned(),
         "**/.cache/".to_owned(),
-    ]
+    ];
+    // OPTION A (2026-11-07): shipped LLM session dumps are ignored by
+    // default so the auto-commit daemon never stages them. They remain in
+    // encryption scope (see `default_conversation_patterns` and
+    // `effective_encryption_patterns`), so a force-added or already-tracked
+    // dump is still whole-file encrypted on the way into git. An operator
+    // who explicitly lists one of these patterns in `protected_patterns`
+    // re-tracks it (the emitted `!` negation wins by order — see
+    // `build_gitignore_block_with_existing`).
+    //
+    // Deployments with an explicit `hygiene_patterns` list replace these
+    // shipped defaults, so `build_gitignore_block_with_existing` merges
+    // `default_conversation_patterns()` on top regardless — one place to
+    // look for the fleet behaviour.
+    patterns.extend(default_conversation_patterns());
+    patterns
 }
 
 /// ADDED 2026-09-27 (audit decision D2). Binary media and archives that
