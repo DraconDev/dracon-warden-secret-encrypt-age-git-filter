@@ -1040,6 +1040,20 @@ fn build_gitignore_block_with_existing(
             all_hygiene.insert(p);
         }
     }
+    // CHANGED 2026-11-07 (option A): shipped LLM session dumps are always
+    // ignored, even for deployments with an explicit `hygiene_patterns`
+    // list that would otherwise replace the shipped hygiene defaults.
+    // The daemon's commit-all policy stages every untracked file that is
+    // not ignored; ignoring these dumps is what stops a churning 68 MiB
+    // export from re-committing on every cycle (34.5 GiB observed).
+    // Dumps stay in encryption scope (see `effective_encryption_patterns`),
+    // so tracked or force-added copies are still ciphertext in git, and an
+    // explicit `protected_patterns` entry still re-tracks one pattern via
+    // the `!` negations emitted below (they are written after these lines,
+    // so git's last-match-wins restores tracking for that pattern only).
+    for p in default_conversation_patterns() {
+        all_hygiene.insert(p);
+    }
 
     let mut lines = Vec::new();
     lines.push(BLOCK_BEGIN.to_string());
