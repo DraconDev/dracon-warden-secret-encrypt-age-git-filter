@@ -582,6 +582,56 @@ mod tests {
         );
     }
 
+    /// A remote sha that is NOT in the local object store must not make the
+    /// hook abort silently.
+    ///
+    /// This is the exact shape a SANCTIONED history rewrite leaves behind
+    /// (docs/design/sanctioned-slimming-2026-09-26.md): filter-repo/gc drops
+    /// the pre-rewrite tip, so `git rev-list <local> --not <remote>` exits
+    /// non-zero. The pre-2026-11-07 hook turned that into a bare `exit 1`
+    /// with no output at all, so every push of the rewritten history failed
+    /// with only "failed to push some refs" and the documented procedure
+    /// could never complete without --no-verify.
+    ///
+    /// The fix must (a) still fail closed when it genuinely cannot enumerate,
+    /// and (b) in this recoverable case, say why and scan the larger
+    /// `--not --remotes` set. The assertion below therefore requires a clean
+    /// pass AND the explicit note — a silent pass would hide the condition
+    /// just as badly as a silent failure did.
+    #[test]
+    fn pre_push_hook_survives_remote_sha_absent_from_object_store() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_missing_remote_sha");
+        let repo = td.path();
+
+        fs::write(repo.join("hello.txt"), "hello world\n").unwrap();
+        run_git_in(repo, &["add", "hello.txt"]);
+        run_git_in(repo, &["commit", "-q", "-m", "init"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        // A well-formed sha that provably is not in this object store and is
+        // not on any remote: the post-rewrite "remote has commits I no longer
+        // have" shape. Generated so it cannot accidentally exist.
+        let absent = "c0ffee0000000000000000000000000000000000";
+        assert!(
+            !git_in_output(repo, &["cat-file", "-e", &format!("{absent}^{{commit}}")])
+                .contains(absent),
+            "fixture precondition: the sha must not resolve locally"
+        );
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, absent);
+        assert!(
+            status.success(),
+            "an unresolvable remote sha must not abort the push: {:?} / {stderr}",
+            status.code()
+        );
+        assert!(
+            stderr.contains("is not in this object store"),
+            "the operator must be told WHY the scan widened, got: {stderr}"
+        );
+    }
+
     /// A tag pushed alongside an already-scanned branch commit must not
     /// rescan the entire historical tree. This is the production release
     /// shape: the branch and tag point at the same new commit, while an older
