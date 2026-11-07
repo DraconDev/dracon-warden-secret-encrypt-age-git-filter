@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- LLM conversation/session exports (`conversation-*`, `pi-session-*`, `trajectory-*`, transcript-only `rollout-*`) are now **ignored by default instead of tracked as ciphertext** (option A, 2026-11-07). A single 68 MiB repo-root `pi-session-*.html` was rewritten 516 times and auto-committed by the sync daemon, producing 34.5 GiB of history churn on ai-auto-video and making `git gc` unable to finish. The warden now emits the shipped dump patterns as hygiene ignores in the managed `.gitignore` block (always, even when the operator sets an explicit `hygiene_patterns` list) and no longer unions them into `effective_protected_patterns` (so no `!` negations re-track them). Encryption is kept: the same patterns ride `effective_encryption_patterns` (encryption-only scope) and the managed `.gitattributes` filter lines, so a dump that is already tracked or force-added is still whole-file age-encrypted. An operator who still wants a dump pattern persisted lists it explicitly in `protected_patterns` — the negation is written after the ignore lines, so it re-tracks that pattern only. `.gitignore` does not untrack already-tracked files; run `git rm --cached` (or the repo's slimming procedure) to stop an already-tracked dump from churning further.
+
 ### Fixed
 
 - The security crate's tests no longer depend on the machine they run on. The encryption round trips took their identity from the operator's key search path, so on a runner without one the encryption had no recipient ("No master identity or public recipients found for encryption") and the tests failed; each now uses an in-memory age identity. The round-trip tests also use ONE security object, so the body is encrypted and decrypted with the same key — before, each call built a new object with a newly generated identity, and the round trip only passed where a stable identity happened to be loaded from the search path.
