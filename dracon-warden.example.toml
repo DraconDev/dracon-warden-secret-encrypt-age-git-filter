@@ -149,6 +149,12 @@ plaintext_patterns = []
 # scratch paths) — those entries are NOT compiled defaults, they are what a
 # working dracon-platform checkout should add. Set an explicit list to extend
 # or replace the defaults for a particular installation.
+#
+# NOTE (2026-11-07, option A): shipped LLM session dumps (`conversation-*`,
+# `pi-session-*`, `trajectory-*`, transcript-only `rollout-*`) are NOT listed
+# here on purpose. The generator always appends them to the managed ignore
+# block (even when an explicit list like this one replaces the shipped
+# defaults), so they stay untracked without operator bookkeeping.
 hygiene_patterns = [
     # --- shipped defaults ---
     "**/.pi*",
