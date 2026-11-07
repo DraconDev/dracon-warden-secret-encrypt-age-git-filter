@@ -614,10 +614,15 @@ mod tests {
         // not on any remote: the post-rewrite "remote has commits I no longer
         // have" shape. Generated so it cannot accidentally exist.
         let absent = "c0ffee0000000000000000000000000000000000";
+        let probe = ProcessCommand::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["cat-file", "-e", &format!("{absent}^{{commit}}")])
+            .output()
+            .expect("git command");
         assert!(
-            !git_in_output(repo, &["cat-file", "-e", &format!("{absent}^{{commit}}")])
-                .contains(absent),
-            "fixture precondition: the sha must not resolve locally"
+            !probe.status.success(),
+            "fixture precondition: {absent} must not resolve in this repo"
         );
 
         let (status, stderr) = run_hook(repo, &hook_path, &head, absent);
