@@ -1118,11 +1118,12 @@ pub(crate) fn build_gitattributes_block(policy: &WardenPolicy) -> Result<String>
         plaintext_patterns.insert(p.clone());
     }
     let mut protected_patterns = BTreeSet::new();
-    for p in policy
-        .effective_protected_patterns()
-        .into_iter()
-        .chain(policy.encryption_only_patterns.iter().cloned())
-    {
+    // CHANGED 2026-11-07 (option A): route through the effective ENCRYPTION
+    // scope, not protected-only. Shipped conversation dumps live there now
+    // (ignored for staging, still filtered if tracked/force-added), so they
+    // must carry `filter=dracon` declarations without `!` gitignore
+    // negations. Plaintext exclusion is unchanged.
+    for p in policy.effective_encryption_patterns() {
         if !plaintext_patterns.contains(&p) {
             protected_patterns.insert(p);
         }
