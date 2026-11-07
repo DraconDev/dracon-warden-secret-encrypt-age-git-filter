@@ -3421,11 +3421,14 @@ watch_roots = ["/tmp/test"]
         assert!(block.contains("secrets/** filter=dracon"));
     }
 
-    // --- 2026-09-30: LLM conversation dumps protected by default ---
+    // --- 2026-09-30 LLM conversation dumps, CHANGED 2026-11-07 (option A) ---
     //
     // `conversation-*.txt` / `pi-session-*.html` session exports land in
-    // repos carrying pasted secrets and PII, so the shipped defaults opt
-    // them in to whole-file age encryption without a config edit.
+    // repos carrying pasted secrets and PII in free prose. They used to be
+    // persisted as ciphertext via `!` gitignore negations; that auto-committed
+    // a single 68 MiB dump 516 times (34.5 GiB). They are now ignored by
+    // default (daemon never stages them) but remain in encryption scope, so
+    // a tracked or force-added dump is still whole-file age-encrypted.
 
     #[test]
     fn effective_protected_patterns_empty_stays_empty() {
@@ -3434,23 +3437,28 @@ watch_roots = ["/tmp/test"]
         let policy = WardenPolicy::default();
         assert!(policy.protected_patterns.is_empty());
         assert!(policy.effective_protected_patterns().is_empty());
+        // And legacy encryption scope stays empty too — the security crate's
+        // filename rule still whole-file encrypts dumps because the gate
+        // passes everything.
+        assert!(policy.effective_encryption_patterns().is_empty());
     }
 
     #[test]
-    fn effective_protected_patterns_union_conversation_defaults() {
+    fn effective_protected_patterns_do_not_union_conversation_defaults() {
+        // OPTION A: dumps are NOT protected/tracked by default.
         let effective = sample_policy().effective_protected_patterns();
         // Operator entries survive.
         assert!(effective.contains(&"*.env".to_string()));
         assert!(effective.contains(&"secrets/**".to_string()));
-        // Every shipped default rides along.
-        for p in default_conversation_protected_patterns() {
+        // Shipped dump patterns do NOT ride along here anymore.
+        for p in default_conversation_patterns() {
             assert!(
-                effective.contains(&p),
-                "shipped default missing from effective list: {p}"
+                !effective.contains(&p),
+                "dump pattern must not be protected (would re-track): {p}"
             );
         }
-        // Sorted + deduped: an operator entry that repeats a default
-        // appears exactly once.
+        // Sorted + deduped: an operator entry that repeats a dump pattern
+        // appears exactly once (and that entry is how a repo re-tracks it).
         let mut sorted = effective.clone();
         sorted.sort();
         assert_eq!(effective, sorted, "effective list is not sorted");
@@ -3467,6 +3475,27 @@ watch_roots = ["/tmp/test"]
             1,
             "duplicate pattern in effective list"
         );
+        assert!(effective.contains(&"conversation-*.txt".to_string()));
+    }
+
+    #[test]
+    fn effective_encryption_patterns_carry_conversation_defaults() {
+        // Dumps stay encrypted when tracked/force-added.
+        let effective = sample_policy().effective_encryption_patterns();
+        assert!(effective.contains(&"*.env".to_string()));
+        for p in default_conversation_patterns() {
+            assert!(
+                effective.contains(&p),
+                "dump pattern missing from encryption scope: {p}"
+            );
+        }
+        // Sorted + deduped.
+        let mut sorted = effective.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(effective, sorted, "encryption list is not sorted/deduped");
+        // No source extensions leak into scope.
+        assert!(!effective.contains(&"*.rs".to_string()));
     }
 
     #[test]
@@ -3477,12 +3506,39 @@ watch_roots = ["/tmp/test"]
     }
 
     #[test]
-    fn gitignore_block_negates_conversation_dumps() {
-        // Persisted, not ignored: the `!` negations keep dumps tracked
-        // (as ciphertext) even if a hygiene pattern would match them.
+    fn gitignore_block_ignores_conversation_dumps() {
+        // OPTION A: ignored, not negated. sample_policy has explicit hygiene
+        // (target/, *.log) that does NOT list dumps — the generated block
+        // must still ignore them, or the daemon would keep staging them.
         let block = build_gitignore_block(&sample_policy()).expect("block");
-        assert!(block.contains("!conversation-*.txt"));
+        for p in default_conversation_patterns() {
+            assert!(
+                block.lines().any(|l| l.trim() == p),
+                "dump pattern missing from ignore block: {p}"
+            );
+            assert!(
+                !block.contains(&format!("!{p}")),
+                "dump pattern must not be negated (would re-track): {p}"
+            );
+        }
+    }
+
+    #[test]
+    fn gitignore_block_retracks_dumps_only_when_explicitly_protected() {
+        // Escape hatch: an operator who still wants one dump pattern
+        // persisted as ciphertext lists it in protected_patterns. The `!`
+        // negation is written after the ignore lines, so last-match-wins
+        // restores tracking for that pattern only.
+        let mut policy = sample_policy();
+        policy.protected_patterns.push("pi-session-*.html".into());
+        let block = build_gitignore_block(&policy).expect("block");
         assert!(block.contains("!pi-session-*.html"));
+        assert!(!block.contains("!conversation-*.txt"));
+        // The ignore line is still present; the negation wins by order.
+        assert!(block.lines().any(|l| l.trim() == "pi-session-*.html"));
+        let ignore_pos = block.find("\npi-session-*.html\n").expect("ignore line");
+        let negate_pos = block.find("!pi-session-*.html").expect("negation");
+        assert!(ignore_pos < negate_pos, "negation must come after ignore");
     }
 
     #[test]
@@ -3490,7 +3546,7 @@ watch_roots = ["/tmp/test"]
         use dracon_security_kit::is_llm_conversation_dump;
         use dracon_security_kit::path_matches_any_pattern;
 
-        let defaults = default_conversation_protected_patterns();
+        let defaults = default_conversation_patterns();
         assert_eq!(defaults.len(), 14, "shipped default set changed shape");
         // Every default glob, instantiated, is a dump by the filename
         // rule AND matches the gate matcher the filter enforces.
