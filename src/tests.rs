@@ -2262,6 +2262,8 @@ mod tests {
         let policy: WardenPolicy =
             toml::from_str("repo_roots = []\n").expect("parse policy without hygiene list");
         let patterns: Vec<&str> = policy.hygiene_patterns.iter().map(String::as_str).collect();
+        // CHANGED 2026-11-07 (option A): shipped LLM session dumps are now
+        // part of the product hygiene defaults (ignored by default).
         assert_eq!(
             patterns,
             vec![
@@ -2272,11 +2274,28 @@ mod tests {
                 "**/.vite/",
                 "**/.turbo/",
                 "**/.cache/",
+                "conversation-*.txt",
+                "conversation-*.md",
+                "conversation-*.json",
+                "conversation-*.html",
+                "pi-session-*.html",
+                "pi-session-*.txt",
+                "pi-session-*.md",
+                "pi-session-*.json",
+                "trajectory-*.json",
+                "trajectory-*.txt",
+                "trajectory-*.md",
+                "trajectory-*.html",
+                "rollout-*.jsonl",
+                "rollout-*.json",
             ]
         );
 
         // An explicit list remains an operator override rather than being
-        // silently merged with the product defaults.
+        // silently merged with the product defaults IN THE POLICY FIELD.
+        // The generated block still merges shipped conversation dumps (see
+        // gitignore_block_ignores_conversation_dumps) so a fleet override
+        // cannot resurrect the unbounded auto-commit churn.
         let explicit_empty: WardenPolicy =
             toml::from_str("hygiene_patterns = []\n").expect("parse explicit empty list");
         assert!(explicit_empty.hygiene_patterns.is_empty());
