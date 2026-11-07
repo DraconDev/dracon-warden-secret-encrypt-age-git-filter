@@ -231,7 +231,7 @@ pub fn path_matches_any_pattern(path_str: &str, patterns: &[String]) -> bool {
 /// only the dump extensions match, and `rollout-` is transcript-only
 /// (`.json`/`.jsonl`) because deploy rollout docs share the prefix.
 /// Keep in agreement with the warden binary's
-/// `default_conversation_protected_patterns` (a cross-crate test pins it).
+/// `default_conversation_patterns` (a cross-crate test pins it).
 pub fn is_llm_conversation_dump(filename: &str) -> bool {
     const TEXT_DUMP_EXTS: [&str; 4] = [".txt", ".md", ".json", ".html"];
     const TRANSCRIPT_EXTS: [&str; 2] = [".json", ".jsonl"];
