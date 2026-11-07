@@ -625,7 +625,33 @@ mod tests {
             "fixture precondition: {absent} must not resolve in this repo"
         );
 
-        let (status, stderr) = run_hook(repo, &hook_path, &head, absent);
+        let (status, stderr) = {
+            // Sanctioned-rewrite mode: an absent remote sha IS the rewrite
+            // shape, so the history guard is the FIRST gate it meets. That
+            // guard is bypassed only by DRACON_ALLOW_REWRITE=1, which is what
+            // the procedure tells the operator to set. Running without it
+            // would test the guard, not the enumeration fix under test.
+            use std::io::Write;
+            let mut child = ProcessCommand::new(&hook_path)
+                .current_dir(repo)
+                .env("DRACON_ALLOW_REWRITE", "1")
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .expect("spawn hook");
+            child
+                .stdin
+                .as_mut()
+                .expect("stdin")
+                .write_all(format!("refs/heads/main {head} refs/heads/main {absent}\n").as_bytes())
+                .expect("write stdin");
+            let output = child.wait_with_output().expect("wait hook");
+            (
+                output.status,
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            )
+        };
         assert!(
             status.success(),
             "an unresolvable remote sha must not abort the push: {:?} / {stderr}",
