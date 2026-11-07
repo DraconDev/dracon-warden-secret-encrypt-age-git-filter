@@ -642,12 +642,19 @@ impl WardenPolicy {
             .unwrap_or_else(default_binary_filter_exempt_patterns)
     }
 
-    /// ADDED 2026-09-30: the protected list every consumer must use — the
-    /// operator's `protected_patterns` UNION the shipped LLM-conversation
-    /// defaults, deduped and sorted for stable output. The union (not a
-    /// serde default) is what makes the defaults real for existing
-    /// installations: an operator config that already sets
-    /// `protected_patterns` would otherwise never see them.
+    /// The protected list every consumer must use. This is the operator's
+    /// `protected_patterns`, deduped and sorted for stable output.
+    ///
+    /// CHANGED 2026-11-07 (option A): LLM conversation/session dumps are NO
+    /// LONGER unioned in here. They are ignored by default (see
+    /// `default_conversation_patterns` and the hygiene merge in
+    /// `build_gitignore_block_with_existing`) so the sync daemon never
+    /// auto-commits them; they stay in encryption scope via
+    /// `effective_encryption_patterns` so tracked or force-added dumps are
+    /// still whole-file encrypted. An operator who still wants a dump
+    /// pattern persisted as ciphertext lists it explicitly in
+    /// `protected_patterns` — the emitted `!` negation then re-tracks it
+    /// (it is written after the ignore lines, so last-match-wins).
     ///
     /// An EMPTY operator list stays empty (legacy scan-everything):
     /// `path_is_protected` treats empty as "scan everything", and flipping
@@ -661,21 +668,26 @@ impl WardenPolicy {
         if self.protected_patterns.is_empty() {
             return Vec::new();
         }
-        let mut merged = BTreeSet::new();
-        for p in default_conversation_protected_patterns() {
-            merged.insert(p);
-        }
-        for p in &self.protected_patterns {
-            merged.insert(p.clone());
-        }
+        let merged = self.protected_patterns.iter().cloned().collect::<BTreeSet<_>>();
         merged.into_iter().collect()
     }
 
+    /// Filter scope: everything that must be encrypted if it reaches git.
+    ///
+    /// CHANGED 2026-11-07 (option A): shipped LLM conversation/session dump
+    /// patterns ride HERE, as encryption-only scope, rather than in
+    /// `effective_protected_patterns`. The ignore block then leaves new
+    /// dumps untracked (daemon never stages them) while the attribute and
+    /// managed-pattern gate still whole-file encrypts dumps that are
+    /// already tracked or explicitly added.
     pub(crate) fn effective_encryption_patterns(&self) -> Vec<String> {
         let mut patterns = self.effective_protected_patterns();
         // Preserve legacy scan-everything when the protected list is empty.
         if patterns.is_empty() {
             return patterns;
+        }
+        for p in default_conversation_patterns() {
+            patterns.push(p);
         }
         patterns.extend(self.encryption_only_patterns.iter().cloned());
         patterns.sort();
