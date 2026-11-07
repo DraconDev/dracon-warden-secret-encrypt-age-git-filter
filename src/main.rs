@@ -5813,7 +5813,30 @@ while read local_ref local_sha remote_ref remote_sha; do
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
         NEW_COMMITS=$(git rev-list --reverse "$local_sha" --not --remotes 2>/dev/null) || exit 1
     else
-        NEW_COMMITS=$(git rev-list --reverse "$local_sha" --not "$remote_sha" 2>/dev/null) || exit 1
+        # FIXED 2026-11-07: a remote sha that is NOT in the local object store
+        # made `rev-list --not <sha>` exit non-zero, and the bare `|| exit 1`
+        # then aborted the push with no message at all. That is exactly what a
+        # SANCTIONED history rewrite does: filter-repo/gc drops the pre-rewrite
+        # tip, so the remote sha stops resolving locally and every push of the
+        # new history becomes an unexplained "failed to push some refs".
+        #
+        # The fallback scans everything reachable here that the remote does not
+        # already have (`--not --remotes`), which is a strictly larger set than
+        # the two-endpoint form: it can over-scan, never under-scan. Also say
+        # WHICH sha was unresolvable, so the next failure is diagnosable.
+        if ! git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+            echo "dracon-warden: note: $remote_sha is not in this object store" >&2
+            echo "  (expected after a sanctioned rewrite); scanning all local commits not on a remote" >&2
+            NEW_COMMITS=$(git rev-list --reverse "$local_sha" --not --remotes 2>/dev/null) || {
+                echo "❌ dracon-warden: cannot enumerate commits to scan for $local_sha." >&2
+                exit 1
+            }
+        else
+            NEW_COMMITS=$(git rev-list --reverse "$local_sha" --not "$remote_sha" 2>/dev/null) || {
+                echo "❌ dracon-warden: cannot enumerate commits to scan for $local_sha --not $remote_sha." >&2
+                exit 1
+            }
+        fi
     fi
     for scan_commit in $NEW_COMMITS; do
     # Collect non-hatched files (skip files with a `.plaintext` sibling)
