@@ -38,16 +38,28 @@ repo_roots = ["~/.dracon", "~/Dev"]
 # Example: ["*.key", "*.pem", "*.env", ".ssh/*", "secrets/*"]
 #
 # ADDED 2026-09-30 — shipped LLM-conversation defaults: as soon as this list
-# is non-empty, the warden additionally protects `conversation-*` and
-# `pi-session-*` (Muse / Pi session exports), `trajectory-*` (`muse export`
-# RAW transcripts) and transcript-only `rollout-*` (Codex session copies),
-# each in their dump extensions — all carry pasted secrets and PII in free
-# prose. They are persisted but whole-file age-encrypted in git, at any
-# depth. An empty list keeps the legacy scan-everything behavior (which
-# already covers dumps via the filename rule). Per-file opt-out: touch
-# `<file>.plaintext`. Note: dumps can be tens of MB (57 MB observed), so a
-# default 10 MiB `filter_max_bytes` install fails closed on the largest
-# ones — raise the limit (64 MiB ceiling) rather than disabling the filter.
+# is non-empty, the warden puts `conversation-*` and `pi-session-*` (Muse /
+# Pi session exports), `trajectory-*` (`muse export` RAW transcripts) and
+# transcript-only `rollout-*` (Codex session copies), each in their dump
+# extensions — all carry pasted secrets and PII in free prose — into
+# encryption scope (see `encryption_only_patterns` below for the mechanism).
+#
+# CHANGED 2026-11-07 (option A): those dumps are now IGNORED by default, not
+# persisted as ciphertext. A single 68 MiB repo-root `pi-session-*.html` was
+# rewritten 516 times and auto-committed each cycle (34.5 GiB of history
+# churn, measured on ai-auto-video). The warden now emits them as hygiene
+# ignores (in the managed .gitignore block) so the sync daemon never stages
+# them, while keeping them in encryption scope — a dump that is already
+# tracked or explicitly added is still whole-file age-encrypted. An empty
+# list keeps the legacy scan-everything behavior (which already covers dumps
+# via the filename rule). To persist a dump pattern as ciphertext again,
+# list it explicitly here (the emitted `!` negation, written after the
+# ignore lines, re-tracks that pattern only). Per-file opt-out: touch
+# `<file>.plaintext`. Note: dumps can be tens of MB (57 MB observed, 68 MB
+# measured), so a default 10 MiB `filter_max_bytes` install fails closed on
+# the largest ones if they are force-added — raise the limit (64 MiB
+# ceiling) rather than disabling the filter. New dumps do not need the
+# filter subsidy at all since they are ignored.
 protected_patterns = []
 
 # Extra encryption scope WITHOUT .gitignore negations. Use this when tracked
