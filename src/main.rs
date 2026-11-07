@@ -473,13 +473,26 @@ fn default_binary_filter_exempt_patterns() -> Vec<String> {
     .collect()
 }
 
-/// ADDED 2026-09-30: shipped protected patterns for LLM conversation/session
-/// exports (Muse `conversation-<ts>.txt` and `trajectory-<ts>.json`, Pi
+/// ADDED 2026-09-30: shipped patterns for LLM conversation/session exports
+/// (Muse `conversation-<ts>.txt` and `trajectory-<ts>.json`, Pi
 /// `pi-session-<ts>_<uuid>.html`, Codex `rollout-<ts>-<uuid>.jsonl`, ...).
 /// These dumps land in repos and carry pasted secrets, credentials, internal
-/// paths, and PII in free prose, so they are protected (persisted, but
-/// age-encrypted in git) by default rather than relying on the operator to
-/// list them.
+/// paths, and PII in free prose.
+///
+/// CHANGED 2026-11-07 (option A): they are now IGNORED by default, not
+/// protected/tracked. Rationale, measured on ai-auto-video: one 68 MiB
+/// repo-root `pi-session-*.html` was rewritten 516 times, each version
+/// auto-committed by the sync daemon, for 34.5 GiB of history churn that
+/// also made `git gc` unable to finish. Ignoring new dumps stops the
+/// accumulation without deleting anything on disk. Encryption is kept:
+/// the same list rides `effective_encryption_patterns` (encryption-only
+/// scope — filter treatment without staging inclusion), so a dump that is
+/// already tracked or force-added is still whole-file age-encrypted.
+///
+/// The old behaviour (persisted as ciphertext via `!` gitignore negations)
+/// remains available per-repo by listing the pattern explicitly in
+/// `protected_patterns`, which re-emits the negation after the ignore line
+/// (last-match-wins restores tracking for that pattern only).
 ///
 /// Basename globs on purpose (no `/`): like every other entry they match at
 /// any depth. Extension-scoped on purpose: a bare `pi-session-*` would also
@@ -489,7 +502,7 @@ fn default_binary_filter_exempt_patterns() -> Vec<String> {
 /// `rollout-` is transcript-only (`.json`/`.jsonl`). Keep in agreement with
 /// the security crate's `is_llm_conversation_dump` whole-file rule (a test
 /// pins it).
-fn default_conversation_protected_patterns() -> Vec<String> {
+fn default_conversation_patterns() -> Vec<String> {
     [
         "conversation-*.txt",
         "conversation-*.md",
