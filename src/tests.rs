@@ -658,7 +658,11 @@ mod tests {
             status.code()
         );
         assert!(
-            stderr.contains("is not in this object store"),
+            !stderr.trim().is_empty(),
+            "the failure must explain itself; the pre-fix hook exited with empty stderr"
+        );
+        assert!(
+            stderr.contains("not in this object store"),
             "the operator must be told WHY the scan widened, got: {stderr}"
         );
     }
