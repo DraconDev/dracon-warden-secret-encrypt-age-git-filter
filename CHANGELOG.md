@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The scan regression test for a foreign secret marker assembles its token at run time instead of holding a secret-shaped literal. The warden's clean filter encrypts such a literal in source, so committing the test rewrote its body into a `[DRACON_SECRET:...]` tag — 1016 bytes where the test asserts 40 — and the committed source failed its own assertion.
 - The filter-clean regression test drives the security object directly with an in-memory identity instead of the process-global instance, whose identities come from the key search path.
 
+## [0.113.17] - 2026-11-11
+
+### Fixed (binary-lane evidence receipts)
+
+- The pre-push hook's BINARY lane now honours the same content-bound evidence receipts as the text lane. `blob_secret_matches` returned the binary branch straight to its caller, so `reviewed_text_matches` was unreachable for any binary blob: an operator-verified false positive inside an image could not be accepted at all, and because history rewrite is forbidden no sanctioned route existed — the push blocked forever. Receipts still bind the COMPLETE stored blob SHA-256 to each individual match SHA-256, so one changed byte anywhere invalidates them and unreviewed matches still block. The first binary receipt covers `web/games/wip/fp-nocull/art-source/key-art/night-market-raw.png` (AI-generated key art; 20 bytes of compressed IDAT data happened to match `AKIA[A-Z0-9]{16}`) inside the unpushed `dracon-platform` commit `c8d7eaf390`, which was deleted again inside the same unpushed range and exists on no remote. Carries the behavioral test `pre_push_binary_scan_receipt_binds_blob_and_individual_match`, proven to fail pre-fix (acceptance, blob-change refusal, and adjacent-unreviewed-match refusal). Unblocked the `dracon-platform` 91-commit push-stuck.
+
 ## [0.113.16] - 2026-10-17
 
 ### Fixed (push-stuck recovery 2026-10-17)

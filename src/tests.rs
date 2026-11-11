@@ -562,6 +562,122 @@ mod tests {
     }
 
     #[test]
+    fn pre_push_binary_scan_receipt_binds_blob_and_individual_match() {
+        // REGRESSION (2026-11-11): `blob_secret_matches` returned the BINARY
+        // lane straight to its caller, so `reviewed_text_matches` was
+        // unreachable for a binary blob. An operator-verified false positive
+        // inside an image — a provider-token shape appearing in compressed
+        // pixel data — blocked the push FOREVER, and history rewrite is
+        // forbidden, so no sanctioned route existed. This test proves the
+        // binary lane now honours the same content-bound receipts and that the
+        // binding is still strict (blob edit AND match edit both refuse).
+        use sha2::{Digest, Sha256};
+        const REVIEWED_BLOB: &str =
+            "f8687f3a17de5d4b236770e5860aed778480e3885f63c4b8942eb1cecc77ca4a";
+        const REVIEWED_MATCH: &str =
+            "9e0bc72796a817546301febd8583d0a7929c3114bde9e9dcdf8ea562aa61fee7";
+        let (td, hook) = make_repo_with_pre_push_hook("binary_receipt");
+        let repo = td.path();
+
+        // A NUL keeps grep in the binary lane (`grep -Iq .` is false), and the
+        // token is built in two halves so this test file never contains a
+        // scanner-shaped assignment of its own.
+        let token = format!("{}{}", "AKIA", "A".repeat(16));
+        let payload = format!("header\0{token}\0trailer\0").into_bytes();
+        fs::write(repo.join("art.dat"), &payload).unwrap();
+        run_git_in(repo, &["add", "--", "art.dat"]);
+        run_git_in(repo, &["commit", "-qm", "binary asset"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"]);
+
+        // Control 1: the UNMODIFIED hook refuses. This is what makes the
+        // acceptance below meaningful rather than vacuous.
+        let (status, err) = run_hook(repo, &hook, head.trim(), ZERO_SHA);
+        assert!(
+            !status.success(),
+            "binary match was not refused at all: {err}"
+        );
+        assert!(err.contains("binary-safe scan"), "{err}");
+
+        // Control 2: a receipt bound to the exact match but a DIFFERENT whole
+        // blob digest must not accept (the blob half is enforced).
+        let wrong_pair = format!(
+            "{:x}:{:x}",
+            Sha256::digest(b"an unrelated blob"),
+            Sha256::digest(token.as_bytes())
+        );
+        fs::write(
+            &hook,
+            PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &wrong_pair),
+        )
+        .unwrap();
+        let (status, err) = run_hook(repo, &hook, head.trim(), ZERO_SHA);
+        assert!(!status.success(), "binary match accepted without blob binding");
+        assert!(err.contains("binary-safe scan"), "{err}");
+
+        // Control 3: a receipt bound to the exact blob but a DIFFERENT match
+        // must not accept either. This is NOT a whole-blob exemption.
+        let mixed_pair = format!(
+            "{:x}:{:x}",
+            Sha256::digest(&payload),
+            Sha256::digest(b"some-other-token")
+        );
+        fs::write(
+            &hook,
+            PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &mixed_pair),
+        )
+        .unwrap();
+        let (status, err) = run_hook(repo, &hook, head.trim(), ZERO_SHA);
+        assert!(!status.success(), "unreviewed match inherited the blob receipt");
+        assert!(err.contains("binary-safe scan"), "{err}");
+
+        // Acceptance: bind BOTH halves. The blob digest is over the stored
+        // blob (`git cat-file blob`), which is what the binary lane judges.
+        let stored = std::process::Command::new("git")
+            .current_dir(repo)
+            .args(["cat-file", "blob", &format!("{}:art.dat", head.trim())])
+            .output()
+            .expect("run cat-file");
+        assert!(stored.status.success(), "cat-file failed");
+        let pair = format!(
+            "{:x}:{:x}",
+            Sha256::digest(&stored.stdout),
+            Sha256::digest(token.as_bytes())
+        );
+        fs::write(
+            &hook,
+            PRE_PUSH_HOOK.replace(&format!("{REVIEWED_BLOB}:{REVIEWED_MATCH}"), &pair),
+        )
+        .unwrap();
+        let (status, err) = run_hook(repo, &hook, head.trim(), ZERO_SHA);
+        assert!(status.success(), "reviewed binary match rejected: {err}");
+        assert!(
+            err.contains("reviewed non-secret match"),
+            "acceptance must be logged, not silent: {err}"
+        );
+
+        // Control 4: one byte changed anywhere invalidates the blob receipt,
+        // even though the match text itself is unchanged. The parent scan still
+        // ACCEPTS the (now receipted) parent blob, so the new blob's identical
+        // match reaches the modified-binary path instead of the added-file
+        // path; either refusal proves the receipt did not carry over.
+        let mut edited = payload.clone();
+        edited[0] ^= 0x01;
+        fs::write(repo.join("art.dat"), &edited).unwrap();
+        run_git_in(repo, &["add", "--", "art.dat"]);
+        run_git_in(repo, &["commit", "-qm", "one byte changed"]);
+        let edited_head = git_in_output(repo, &["rev-parse", "HEAD"]);
+        let (status, err) = run_hook(repo, &hook, edited_head.trim(), head.trim());
+        assert!(
+            !status.success(),
+            "changed blob inherited the stale receipt: {err}"
+        );
+        assert!(
+            err.contains("binary-safe scan") || err.contains("changed binary file"),
+            "refusal must name the binary path: {err}"
+        );
+    }
+
+    #[test]
     fn pre_push_hook_passes_on_clean_commit() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_clean");
         let repo = td.path();

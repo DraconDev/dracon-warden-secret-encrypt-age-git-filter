@@ -5756,6 +5756,27 @@ canonical_secret_matches() {
 # match to the COMPLETE blob SHA-256, not a path, extension or mutable
 # worktree marker. Any byte change invalidates the receipt. Unknown matches
 # remain blocked. Review record: docs/design/reviewed-hook-matches-2026-10-17.md.
+#
+# CHANGED 2026-11-11: the BINARY lane reaches this filter too. Before this,
+# `blob_secret_matches` returned the binary branch straight to its caller, so
+# a receipt was UNREACHABLE for any binary blob: an operator-verified false
+# positive inside an image (a provider-token shape appearing in compressed
+# pixel data) blocked the push forever, and history rewrite is forbidden, so
+# no sanctioned route existed. The receipt still binds the ENTIRE stored blob
+# plus each individual match, so a one-byte edit invalidates it. The binary
+# lane drops bare PEM headers BEFORE this filter on both the accept and reject
+# path, so the whole-blob digest describes exactly the bytes being judged.
+#
+# Receipts added 2026-11-11 (operator-reviewed false positives):
+#  5670ccd4b90e257d7099d9b3c6ddd402d11f46e10f1ccf26780840e3a460be3a
+#    :b9074074c21bdbe81d07bd632e02172a782a20a00ebe1ab82cc148175037c76e
+#  web/games/wip/fp-nocull/art-source/key-art/night-market-raw.png, in the
+#  unpushed dracon-platform commit c8d7eaf390 (blob f56618effbc2), is
+#  AI-generated key art (agnes_image, 768x768 RGB). The scan matched
+#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA2T2IwYjdwcEwrYTA0c210UTB1MEF2KzNpSWJwcEFVNnNOTFBXREY0cFZNCmo4b3FKczdWKzZVQ0FxVDNESk84T2dQb0NCajdlSWRaenMyNXVCVllvWGMKLT4gWDI1NTE5IE9ESjcwSm1nVFk2bWMxbmZIZWE0ZnpZOWRWdmtuakh6R3FXT051OGlsRkUKd1I2ZnlnSyt0SG54SG8rV1hnVEZTdm4yN0hTVUFNNmJTQ0NUS25Td3lNYwotPiBYMjU1MTkgd1NVTENGOWhWNGVWU04yRmhoOHdDT1owYi9ENDNiSEhZM3ZodTFKUnpncwpueWhnRmV6azMvbkxjNWhzNSs3eS9abWcxNjVCQUpOQ0lWL3o2QkZBWEYwCi0+IFgyNTUxOSBlREtQK1NGOW91TEc0M2QzSFgzKytVNkF0bE40SGJCNnFVSEE1STQwZXpnCjRvNS80Z1dVUkFBOG1YK1dPMVhLYUJYV3VwajBXc3lXbWRxeU9iWlRuY00KLT4gWDI1NTE5IG1BdHNnd0w5YWNDYzFYTlNSVnRRV014RkE4MTVRMFdhcVlMVGJaREdYR1EKUXhpY2NsWTZTRWk1ZHpGellCYTJIRVNGM1p4NmJlMm5KZVd1T2o2cDBnMAotPiB3JCItZ3JlYXNlIHxEYCAxNzxFCkUwUHFialIzV2o3MjhzOTdHb2JHL0RsUHc4bUJIeFVRbnlmV3E5MFd3bUk3cXNQdTJySXUKLS0tIHM1RWNkMUd1c1RKbXg5aDhYSG43c0dab1BXdXA3RlBaMEJyR2tzdEpyZlEKebQX6USwW/fTdFY+XCKHG+HTmfaPTZmymKVbbdG9M2CW82dApXHOQSjm/0Ccw3ZmykNqSA==]`: 20 bytes of compressed IDAT pixel data that happen
+#  to satisfy AKIA[A-Z0-9]{16}. They are not an AWS access key. The blob was
+#  deleted inside the same unpushed range (commit 3303148766) and exists on
+#  no remote, so accepting it publishes nothing.
 reviewed_text_matches() {
     reviewed_blob=$(sha256sum "$BLOB_SCAN") || return 2
     reviewed_blob=${reviewed_blob%% *}
@@ -5769,6 +5790,7 @@ reviewed_text_matches() {
             04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:8bca1bb2c590d8da610b1f5991a27cf8f598a17ba3e913c52b06f1b968d8ce73|\
             04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:ec8b975e7d58592b7739c81b1549fd472c8174fc03e2a6f88f5ded441eb7cf98|\
             04839542aab3443cb43c7949d92472124c794aaabf64084c617a83ab07092556:5a1e908a7dee00419725c2ed891fa753ec55b6b73a4d45d492ce9fad3c403ff0|\
+            5670ccd4b90e257d7099d9b3c6ddd402d11f46e10f1ccf26780840e3a460be3a:b9074074c21bdbe81d07bd632e02172a782a20a00ebe1ab82cc148175037c76e|\
             9008b71ed309a0c9917b72d63ba61e7ae7cd6afdd6d3f81e800adf2cb6a3c805:f34ddbecf0bf513ba949439bd648619821ed461e03f035b4e4aeba331cf64241|\
             4396dae298bc20e3ea14f967de82216d2cdd60c5b55413bf1223d06899f2f379:f34ddbecf0bf513ba949439bd648619821ed461e03f035b4e4aeba331cf64241|\
             f1d0ff1fcb8b82d9bb3d835b07393f7cb94dca40c50dfba4136b847240b88612:8bca1bb2c590d8da610b1f5991a27cf8f598a17ba3e913c52b06f1b968d8ce73|\
@@ -5795,7 +5817,12 @@ blob_secret_matches() {
         printf '%s\n' "$text_matches" | canonical_secret_matches | reviewed_text_matches
         return $?
     fi
-    mask_warden_tags < "$BLOB_SCAN" | grep -aoE "$SECRET_RE" | canonical_secret_matches | grep -v '^-----''BEGIN ' || true
+    # CHANGED 2026-11-11: the binary lane honours reviewed receipts too. The
+    # filter runs AFTER the PEM-header drop, so an unreviewed binary blob is
+    # refused exactly as before; only a content-bound receipt accepts.
+    mask_warden_tags < "$BLOB_SCAN" | grep -aoE "$SECRET_RE" \
+        | canonical_secret_matches | grep -v '^-----''BEGIN ' \
+        | reviewed_text_matches || true
     # NUL separates compiled string literals. Do NOT join material across it.
     # A valid (or truncated) PEM body starts with base64, with optional legacy
     # encryption metadata. One-line armor is checked too. No payload is emitted.
