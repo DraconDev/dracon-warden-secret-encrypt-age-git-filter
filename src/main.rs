@@ -5749,7 +5749,18 @@ canonical_secret_matches() {
     # A value that is ENTIRELY a template interpolation is code, not a
     # committed literal: `api_key="${keyPlaceholder}"` is a documented
     # placeholder. A literal value in the same position still blocks.
-    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?[$][{][^}]*[}][\"']?[[:space:]]*,?[[:space:]]*(#.*)?$"
+    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?[$][{][^}]*[}][\"']?[[:space:]]*,?[[:space:]]*(#.*)?$" |
+    # ADDED 2026-11-15: a value that is a shell COMMAND SUBSTITUTION is code
+    # that reads the credential at run time, not a committed literal:
+    # `secret="$(grep -m1 '^LITESTREAM_SECRET_ACCESS_KEY=' "$NEW" | cut …)"`
+    # in dracon-platform's key-rotation script blocked publication. The scan's
+    # match stops at the first quote, so what arrives here is the assignment
+    # head (`secret="$(grep -m1 '`). The assignment match also SWALLOWS
+    # whatever lies inside its span, so a provider token written inside the
+    # substitution (`$(echo <token>)`) would vanish with it; the drop is
+    # therefore refused when any run of 20+ token characters appears after
+    # `$(`. A token after an inner quote is reported separately by `grep -o`.
+    grep -v -E "^[A-Za-z_]*(key|secret|password|token|credential)[A-Za-z_]*[[:space:]]*[=:][[:space:]]*[\"']?[$][(]([A-Za-z0-9_-]{0,19}[^A-Za-z0-9_\"'-])*[A-Za-z0-9_-]{0,19}[\"']?$"
 }
 
 # Operator-reviewed false positives (2026-10-17). Bind each individual
@@ -5773,7 +5784,7 @@ canonical_secret_matches() {
 #  web/games/wip/fp-nocull/art-source/key-art/night-market-raw.png, in the
 #  unpushed dracon-platform commit c8d7eaf390 (blob f56618effbc2), is
 #  AI-generated key art (agnes_image, 768x768 RGB). The scan matched
-#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA2T2IwYjdwcEwrYTA0c210UTB1MEF2KzNpSWJwcEFVNnNOTFBXREY0cFZNCmo4b3FKczdWKzZVQ0FxVDNESk84T2dQb0NCajdlSWRaenMyNXVCVllvWGMKLT4gWDI1NTE5IE9ESjcwSm1nVFk2bWMxbmZIZWE0ZnpZOWRWdmtuakh6R3FXT051OGlsRkUKd1I2ZnlnSyt0SG54SG8rV1hnVEZTdm4yN0hTVUFNNmJTQ0NUS25Td3lNYwotPiBYMjU1MTkgd1NVTENGOWhWNGVWU04yRmhoOHdDT1owYi9ENDNiSEhZM3ZodTFKUnpncwpueWhnRmV6azMvbkxjNWhzNSs3eS9abWcxNjVCQUpOQ0lWL3o2QkZBWEYwCi0+IFgyNTUxOSBlREtQK1NGOW91TEc0M2QzSFgzKytVNkF0bE40SGJCNnFVSEE1STQwZXpnCjRvNS80Z1dVUkFBOG1YK1dPMVhLYUJYV3VwajBXc3lXbWRxeU9iWlRuY00KLT4gWDI1NTE5IG1BdHNnd0w5YWNDYzFYTlNSVnRRV014RkE4MTVRMFdhcVlMVGJaREdYR1EKUXhpY2NsWTZTRWk1ZHpGellCYTJIRVNGM1p4NmJlMm5KZVd1T2o2cDBnMAotPiB3JCItZ3JlYXNlIHxEYCAxNzxFCkUwUHFialIzV2o3MjhzOTdHb2JHL0RsUHc4bUJIeFVRbnlmV3E5MFd3bUk3cXNQdTJySXUKLS0tIHM1RWNkMUd1c1RKbXg5aDhYSG43c0dab1BXdXA3RlBaMEJyR2tzdEpyZlEKebQX6USwW/fTdFY+XCKHG+HTmfaPTZmymKVbbdG9M2CW82dApXHOQSjm/0Ccw3ZmykNqSA==]`: 20 bytes of compressed IDAT pixel data that happen
+#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWOXJ6SXlnNTR2WktXNTRZNm8wem5aQ1g0YzBYRk0xYWE0N1QzTFBXQm04CmJJazdBbGpYck9JVUdoSm8zc0Vpa1pJdnZZWlBCTDFjQVk3NzRDYkFwZjgKLT4gWDI1NTE5IDlRVTJmeTdYczV0YW1QV2t6L2NVaVExbUVZZ1BLMUxOOHFsVWtBcFUzWEUKVVhrZEFzTU9mUHFLaDk2emxwTnAwRTFtMHdLZkdJanNRZDdnbHhoc2dCcwotPiBYMjU1MTkgVHJ4bFhOR0ZwaVN3Y3FZM0tieGxrNUJnb1Q0NjJlYkZ4WkFmamhMRDV6WQpqMlU5dnc2L2RBU2pSS2h6TWVZaGtIYUUyWnE5dGxXbzRmTUI5WlpIWHhzCi0+IFgyNTUxOSBJeWxsSUVKS1Jhd1V0VVkvMkFzT1NUUGc4K2RacURnRlRZMjM4bEc2SzJNCk1TQ2dudmFHSjdsblZ4aHpOVTRBb0pTTVpFT3JtV0VQdFVFWlRUNmZBdDAKLT4gWDI1NTE5IDdoMkdJdGFCakR2Vkh1SjFZL1MrRWVMcFNyaGVWY052OEtOVUcxdm9aR0EKZVpmK3YyOTV4ZWRvV1J1MDdpaml2cmlwdlY4VHIxRmIwY2FqMFBMSm1IawotPiBudEFFNytyMS1ncmVhc2UgIyxzJSZJVjYgYTNJUktAY1YgLidGaTosKCBoN35HPgpEcEtiUk1Kb211b0FraDJRZFQ0cHRsVTdXVWgxZ1E2VFE0L21adwotLS0gUGlBS1d0VDRUYWM4cmdjbENQVHE1NXAySDRkVGZiRlVjN0RvdE10cXdCVQojWGDsWm5ndrWTQgBKY5O7oOdfj3sKWyCP2qkvlEFRRjL5kg/7EH6fqYok9+aFimYzYdV0]`: 20 bytes of compressed IDAT pixel data that happen
 #  to satisfy AKIA[A-Z0-9]{16}. They are not an AWS access key. The blob was
 #  deleted inside the same unpushed range (commit 3303148766) and exists on
 #  no remote, so accepting it publishes nothing.

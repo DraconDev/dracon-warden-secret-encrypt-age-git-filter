@@ -1641,6 +1641,34 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-11-15: a shell command substitution reads the credential at
+    /// run time; it is not a committed literal. A provider token written
+    /// inside the substitution, or a literal beside it, must still block.
+    #[test]
+    fn pre_push_hook_allows_command_substitution_but_not_a_token_inside_it() {
+        let script = concat!(
+            "key_id=\"$(grep -m1 '^LITESTREAM_ACCESS_KEY_ID=' \"$NEW\" | cut -d= -f2- || true)\"\n",
+            "secret=\"$(grep -m1 '^LITESTREAM_SECRET_ACCESS_KEY=' \"$NEW\" | cut -d= -f2- || true)\"\n",
+            "password=$(cat /run/secrets/db)\n",
+        );
+        assert_pre_push_allows_content("hook_command_substitution", "rotate.sh", script);
+        assert_pre_push_blocks_content(
+            "hook_token_inside_substitution",
+            "rotate2.sh",
+            concat!("secret=\"$(echo gh", "p_abcdefghijklmnopqrstuvwxyz0123456789)\"\n"),
+        );
+        assert_pre_push_blocks_content(
+            "hook_quoted_token_inside_substitution",
+            "rotate3.sh",
+            concat!("secret=\"$(printf '%s' 'gh", "p_abcdefghijklmnopqrstuvwxyz0123456789')\"\n"),
+        );
+        assert_pre_push_blocks_content(
+            "hook_literal_beside_substitution",
+            "rotate4.sh",
+            "secret=\"$(cat /run/x)\"\npassword=\"literal-value-never-echo\"\n",
+        );
+    }
+
     #[test]
     fn pre_push_hook_blocks_github_token_shape() {
         let (td, hook_path) = make_repo_with_pre_push_hook("hook_github_token");
