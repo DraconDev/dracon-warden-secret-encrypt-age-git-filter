@@ -28,6 +28,7 @@ use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
+use time::{format_description::well_known::Rfc3339, macros::format_description, OffsetDateTime};
 use walkdir::WalkDir;
 use zeroize::Zeroizing;
 
@@ -101,7 +102,9 @@ impl DraconEvent {
             severity,
             path: path.to_string(),
             message: message.to_string(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .expect("current UTC time fits RFC 3339"),
         }
     }
 }
@@ -2303,9 +2306,13 @@ pub(crate) fn run_keygen() -> Result<()> {
         .and_then(|n| n.to_str())
         .unwrap_or("unknown");
 
+    let created = OffsetDateTime::now_local()
+        .unwrap_or_else(|_| OffsetDateTime::now_utc())
+        .format(format_description!("[year]-[month]-[day] [hour]:[minute]:[second]"))
+        .context("formatting key creation timestamp")?;
     let secret_content = Zeroizing::new(format!(
         "# created by dracon-warden keygen on {}\n# public key: {}\n# machine: {}\n{}\n",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        created,
         recipient,
         hostname,
         identity.to_string().expose_secret()
@@ -5784,7 +5791,7 @@ canonical_secret_matches() {
 #  web/games/wip/fp-nocull/art-source/key-art/night-market-raw.png, in the
 #  unpushed dracon-platform commit c8d7eaf390 (blob f56618effbc2), is
 #  AI-generated key art (agnes_image, 768x768 RGB). The scan matched
-#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWOXJ6SXlnNTR2WktXNTRZNm8wem5aQ1g0YzBYRk0xYWE0N1QzTFBXQm04CmJJazdBbGpYck9JVUdoSm8zc0Vpa1pJdnZZWlBCTDFjQVk3NzRDYkFwZjgKLT4gWDI1NTE5IDlRVTJmeTdYczV0YW1QV2t6L2NVaVExbUVZZ1BLMUxOOHFsVWtBcFUzWEUKVVhrZEFzTU9mUHFLaDk2emxwTnAwRTFtMHdLZkdJanNRZDdnbHhoc2dCcwotPiBYMjU1MTkgVHJ4bFhOR0ZwaVN3Y3FZM0tieGxrNUJnb1Q0NjJlYkZ4WkFmamhMRDV6WQpqMlU5dnc2L2RBU2pSS2h6TWVZaGtIYUUyWnE5dGxXbzRmTUI5WlpIWHhzCi0+IFgyNTUxOSBJeWxsSUVKS1Jhd1V0VVkvMkFzT1NUUGc4K2RacURnRlRZMjM4bEc2SzJNCk1TQ2dudmFHSjdsblZ4aHpOVTRBb0pTTVpFT3JtV0VQdFVFWlRUNmZBdDAKLT4gWDI1NTE5IDdoMkdJdGFCakR2Vkh1SjFZL1MrRWVMcFNyaGVWY052OEtOVUcxdm9aR0EKZVpmK3YyOTV4ZWRvV1J1MDdpaml2cmlwdlY4VHIxRmIwY2FqMFBMSm1IawotPiBudEFFNytyMS1ncmVhc2UgIyxzJSZJVjYgYTNJUktAY1YgLidGaTosKCBoN35HPgpEcEtiUk1Kb211b0FraDJRZFQ0cHRsVTdXVWgxZ1E2VFE0L21adwotLS0gUGlBS1d0VDRUYWM4cmdjbENQVHE1NXAySDRkVGZiRlVjN0RvdE10cXdCVQojWGDsWm5ndrWTQgBKY5O7oOdfj3sKWyCP2qkvlEFRRjL5kg/7EH6fqYok9+aFimYzYdV0]`: 20 bytes of compressed IDAT pixel data that happen
+#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBod1M3NFVwcXBiQ2xPcGlzdHIxdmloaW5jVWhIaE4xcEhxZUUrTEN1RTNVCldVVS9KRzk1UC9nTFhZQlRpdG9mL0VQQjM5RCtTblRQK0FFa1RaZjZSck0KLT4gWDI1NTE5IE5uNVo5WHV0R3BkOWRKK08xRldnZmx5aERZQVpNSTRyeGgwalJub3RBQ2sKSmxwNGZjYlFvUnQxSXJ1VmdyY3BNNHowQkhPbk9zaXNJUkFLMHJuTDU2cwotPiBYMjU1MTkgZ1J4eS83UlF1WjAxUituRUpIK2hFU2h2Q0xWNlZ3MWRPZ3lZTFN4RkZ3bwp4cnh5RVlDZ0RrVUdKZUdpS2RpSUw5SmFpZ09ZVm5WdEFWZzZmRHNLV0lrCi0+IFgyNTUxOSB0bVZXR3R3MHNCSHViK2xqS0NvNk5tRWczRnhoSWVOcVJvZE1JTThSbEY0CklyaFo3c0R2dDRUU1IxRTd3N1hCeXIzMjMzdWJLaGhuWFQvZGhDWFU1Q00KLT4gWDI1NTE5IFBqcWZIbUJtaGdhUUE0bGQzV2xFdXRHRmxCVTVuZFZjbXFuOXRFYys2RDAKSnlBT29DNW1HYUhoVjRpcGNlZE4wRE1vZHJvRVBXcHRqVlBsbUh5L1lTUQotPiAoQS1ncmVhc2UgKyBJUnM9IiBQdU40IE8yCkhBM04rdjREZUI5WnZBcEN2RU9CbUw3SEpXZDdxN0pCVjBiZlBOZW5udmFyS05RQ3pwN2RyNXNRMzRCbEU0RWgKcmFKcng2b28wQUVuSVBycUgwOWpGQUxGSHZEK3hJYUs2cjFZNzV5TFFENAotLS0gZEdLNy92ZmN4QXpkY0JsaksxTGJ4MUw2NU5KajVSWEZ0MmptbWhRclZCOAqUBWa/pjcf6K7QUndW6trJC5c2jC3Rl0XB50IRuPeX0O8ThQOxN8tGneFmOcfUC00q4U4T]`: 20 bytes of compressed IDAT pixel data that happen
 #  to satisfy AKIA[A-Z0-9]{16}. They are not an AWS access key. The blob was
 #  deleted inside the same unpushed range (commit 3303148766) and exists on
 #  no remote, so accepting it publishes nothing.
