@@ -5793,7 +5793,7 @@ canonical_secret_matches() {
 #  web/games/wip/fp-nocull/art-source/key-art/night-market-raw.png, in the
 #  unpushed dracon-platform commit c8d7eaf390 (blob f56618effbc2), is
 #  AI-generated key art (agnes_image, 768x768 RGB). The scan matched
-#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCTWdJVEowMVBndjA4YnFBcGRRTUdTN1d0OUZhbnh4cmFFOFcyczR0SGlzCk1ScjRRQ1RSTUhLODl1UlgzVVFNaUFJQ1h0cFZHbE5ZWndveUl3TWtCWEkKLT4gWDI1NTE5IFpNa3FKdG0rek44WnNSdVVXSGZiRTBhWExBSWxuMnZRcXZuQzRwMndvR3cKalI1UmhmcGJ3cUZyYXJpZStYM3I5dmJqYlZydnJjVjVZVzNFamxKTWF4NAotPiBYMjU1MTkgbi9mWjMvZjFWWjF1dTZsUW5iZGFmVVFpRjJlcnZ5S093a2czdXRHUUhRQQpMS1dGaGxqQW92S2lrbCttWGJIOGpmakFxOC9FaWtQSkFHUGtUbHYrbWNRCi0+IFgyNTUxOSB1RU9tbElENUFCQng4T3NyeFR5WVArdUVsQnk5ZWZHbldzNGV0ZTVMdVJ3Cm4wRmlLQkxHQ2NHQUlnQUhJS3E3bXF2Y1JpS1FDYUVMcHJCOTlRWmo5QkUKLT4gWDI1NTE5IFJrVzZtL240RWlCZjZJdFBSa3NDdHZyVkVCek1kaGlKNDRjM3FoNUtuUW8KZ0g3eEg0SDlxNUpJZUVwR1Ztam5uSDVkYTNhSVQra0F2TmhLcENUMHlCVQotPiBqSi1ncmVhc2UgKnFaQiBjXUdlPjggVzIKd2EzaUQ1TWJZZngxcEpEMG80ZmVzZnJka2ZLdDZWZ1A1TCtodTU1WDZvR3NXVUVXZlJJdUlEUmVFMENTK0xNYQpOV0JOQXJ6dWkybwotLS0gZGwva1d6N2VPZWRwTWxSVWRjUU5tU0pkWkxPQ0RYUVdxd3MwQ01XcmxSNArw/MxYr2XMkQirLW+rQ+1zXgnaqB34iLXzqxhy6GKFXrqMHM1HX1KQLybKcksSJi13JtlP]`: 20 bytes of compressed IDAT pixel data that happen
+#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBoRUJZeGxmMy83Z2xCRGt4MjNFblVsYVg2bUJISGZucXl1TUs5cXB0MURRCmt0YThtOGk1Mk5uUjY1cmdUQzZzOXhnS0lrNEhjeFpwN04xejJyUlRsbzQKLT4gWDI1NTE5IGE0bk1QMFI2QVowdlJvQ1doWmV5V08yUDZwNUdON2c0ZkhEcXFmNWgxVDAKNVZsdGwvVC9KMVVVT0NzU1A2cGxHWlpBcXhWL0xqaTQ2bkF4T3FWcWY3bwotPiBYMjU1MTkgTEZjb2VyZVI1SVB0bjQxOEZSajlvTkdQUCtuN0c1VkpIY21NQVJzSVdqQQp6VmVyaDV1YVNoeVJzUVRnMnFyU0JjRnpnRGxZV0JtcVlEVlNZNEpTTlZJCi0+IFgyNTUxOSBUNnhaa0NIaUxNYkRrS0V3Z0VucVpPL2s5MHFuQ01yTU1Vc01BWXI2Q3hBCm1sbHJzbEMrNGtteXovUWFhd0pMV0Y2dGFaVmxJV0p5dStVQk8xZFdzTFUKLT4gWDI1NTE5IEJ0RlN6ZHhmdWhwNUpXYVNWanRHZkdjQmVPUHhITGFYdnlma3d4VTdrMk0KbGoyOVRKSnlHNEZKZlVkWXk1R1pzdXYzWWZYN05VaUVUMkdVUktoaElGZwotPiAtQnEwLWdyZWFzZQpITWVka3VpRFZ3MUozV2JYMGtNcFYwRVRmVWpGd2hRa2s2VHl5NThOdHRHaFlFeHZ2Znk3ZzlEYlY2NzdIZUJ3CmZlVDhMeWYvWXFyQmVUdVpySStDdkNmMTVnUTNPaEl2REEKLS0tICs5Vm1kUzhlYW1xYnYyRi9QbkI0QWVzQmxzL1NJQTdmREMvNS8zVDZnTkEKbCtmnxYn/wzMeAj4GReUltlipCFSpEOgqPeHU56XjWiF4kIo7EVcEe/UoHRMQRcpcf/fYw==]`: 20 bytes of compressed IDAT pixel data that happen
 #  to satisfy AKIA[A-Z0-9]{16}. They are not an AWS access key. The blob was
 #  deleted inside the same unpushed range (commit 3303148766) and exists on
 #  no remote, so accepting it publishes nothing.
@@ -6268,6 +6268,7 @@ exit 0
 /// - fast-forward moves pass immediately;
 /// - a non-fast-forward move passes when the OLD tip is unpublished
 ///   (amending/resetting local-only work stays allowed).
+///
 /// Bypass for sanctioned rewrites: DRACON_ALLOW_REWRITE=1 (the daemon's
 /// auto-repair sets it). Like pre-rebase, "published" means LOCAL
 /// remote-tracking refs; the daemon keeps them fresh.
