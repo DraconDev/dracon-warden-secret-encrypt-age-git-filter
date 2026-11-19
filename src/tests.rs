@@ -8040,3 +8040,181 @@ mod binary_carve_out_tests {
         }
     }
 }
+
+/// ADDED 2026-11-19: the reference-transaction history guard, exercised
+/// through REAL git commands (amend/reset/branch -f/commit/revert), not by
+/// invoking the script directly — the incident it exists for (an amend 3s
+/// after the daemon pushed) is only visible at Git's ref-update layer.
+#[cfg(all(test, unix))]
+mod reference_transaction_guard_tests {
+    use crate::REFERENCE_TRANSACTION_HOOK;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Output};
+
+    struct Fixture {
+        _temp: tempfile::TempDir,
+        repo: PathBuf,
+    }
+
+    fn git_raw(repo: &Path, args: &[&str], envs: &[(&str, &str)]) -> Output {
+        let mut cmd = Command::new("git");
+        cmd.arg("-C").arg(repo).args(args);
+        cmd.env_remove("DRACON_ALLOW_REWRITE");
+        for (key, value) in envs {
+            cmd.env(key, value);
+        }
+        cmd.output().expect("spawn git")
+    }
+
+    fn git(repo: &Path, args: &[&str]) -> String {
+        let out = git_raw(repo, args, &[]);
+        assert!(
+            out.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    fn write_exec(path: &Path, body: &str) {
+        std::fs::write(path, body).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// Repo whose ONLY active hook is the guard; commit A is "published"
+    /// (refs/remotes/origin/main points at it).
+    fn fixture() -> Fixture {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        let hooks = temp.path().join("hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        git(temp.path(), &["init", "-q", "-b", "main", repo.to_str().unwrap()]);
+        for (key, value) in [
+            ("user.email", "guard@test.local"),
+            ("user.name", "guard"),
+            ("commit.gpgsign", "false"),
+            ("core.hooksPath", hooks.to_str().unwrap()),
+        ] {
+            git(&repo, &["config", key, value]);
+        }
+        write_exec(&hooks.join("reference-transaction"), REFERENCE_TRANSACTION_HOOK);
+        git(&repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
+        publish(&repo);
+        Fixture { _temp: temp, repo }
+    }
+
+    fn publish(repo: &Path) {
+        let head = git(repo, &["rev-parse", "HEAD"]);
+        git(repo, &["update-ref", "refs/remotes/origin/main", &head]);
+    }
+
+    fn head(repo: &Path) -> String {
+        git(repo, &["rev-parse", "HEAD"])
+    }
+
+    #[test]
+    fn amend_of_published_commit_is_refused_and_branch_unchanged() {
+        let f = fixture();
+        let before = head(&f.repo);
+        let out = git_raw(
+            &f.repo,
+            &["commit", "-q", "--amend", "--allow-empty", "-m", "A amended"],
+            &[],
+        );
+        assert!(!out.status.success(), "amend of a published commit must fail");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("refusing to move main"), "stderr: {stderr}");
+        assert!(stderr.contains("origin/main"), "names the remote: {stderr}");
+        assert_eq!(head(&f.repo), before, "branch must not move");
+    }
+
+    #[test]
+    fn amend_of_unpublished_commit_is_allowed() {
+        let f = fixture();
+        git(&f.repo, &["commit", "-q", "--allow-empty", "-m", "B local"]);
+        git(&f.repo, &["commit", "-q", "--amend", "--allow-empty", "-m", "B reworded"]);
+        assert_eq!(git(&f.repo, &["log", "-1", "--format=%s"]), "B reworded");
+    }
+
+    #[test]
+    fn ordinary_commits_merges_and_revert_are_allowed() {
+        let f = fixture();
+        std::fs::write(f.repo.join("a.txt"), "one\n").unwrap();
+        git(&f.repo, &["add", "a.txt"]);
+        git(&f.repo, &["commit", "-q", "-m", "add a"]);
+        publish(&f.repo);
+        git(&f.repo, &["revert", "--no-edit", "HEAD"]);
+        git(&f.repo, &["checkout", "-q", "-b", "side"]);
+        git(&f.repo, &["commit", "-q", "--allow-empty", "-m", "side"]);
+        git(&f.repo, &["checkout", "-q", "main"]);
+        git(&f.repo, &["merge", "-q", "--no-edit", "--no-ff", "side"]);
+        git(&f.repo, &["branch", "-q", "-D", "side"]);
+    }
+
+    #[test]
+    fn reset_and_branch_force_off_published_commit_are_refused() {
+        let f = fixture();
+        git(&f.repo, &["commit", "-q", "--allow-empty", "-m", "B"]);
+        publish(&f.repo);
+        let before = head(&f.repo);
+        let reset = git_raw(&f.repo, &["reset", "-q", "--hard", "HEAD~1"], &[]);
+        assert!(!reset.status.success(), "reset past a published commit must fail");
+        assert_eq!(head(&f.repo), before);
+
+        git(&f.repo, &["checkout", "-q", "--detach"]);
+        let force = git_raw(&f.repo, &["branch", "-f", "main", "HEAD~1"], &[]);
+        assert!(!force.status.success(), "branch -f off a published tip must fail");
+        assert_eq!(git(&f.repo, &["rev-parse", "main"]), before);
+    }
+
+    #[test]
+    fn bypass_env_allows_sanctioned_rewrite() {
+        let f = fixture();
+        let out = git_raw(
+            &f.repo,
+            &["commit", "-q", "--amend", "--allow-empty", "-m", "A sanctioned"],
+            &[("DRACON_ALLOW_REWRITE", "1")],
+        );
+        assert!(
+            out.status.success(),
+            "bypass must allow: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
+    fn remote_tracking_and_tag_updates_are_untouched() {
+        let f = fixture();
+        git(&f.repo, &["commit", "-q", "--allow-empty", "-m", "B"]);
+        // A non-fast-forward move of a remote-tracking ref (what a fetch of a
+        // force-pushed remote does) and of a tag must never be refused.
+        git(&f.repo, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        git(&f.repo, &["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
+        git(&f.repo, &["tag", "t1", "HEAD"]);
+        git(&f.repo, &["tag", "-f", "t1", "HEAD~1"]);
+    }
+
+    #[test]
+    fn repository_local_hook_is_chained_with_state_and_refs() {
+        let f = fixture();
+        let common = PathBuf::from(git(
+            &f.repo,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        ));
+        let log = f.repo.join("..").join("local-hook.log");
+        write_exec(
+            &common.join("hooks").join("reference-transaction"),
+            &format!(
+                "#!/bin/sh\n{{ echo \"state=$1\"; cat; }} >> '{}'\nexit 0\n",
+                log.display()
+            ),
+        );
+        git(&f.repo, &["commit", "-q", "--allow-empty", "-m", "B"]);
+        let recorded = std::fs::read_to_string(&log).unwrap();
+        assert!(recorded.contains("state=prepared"), "{recorded}");
+        assert!(recorded.contains("state=committed"), "{recorded}");
+        assert!(recorded.contains("refs/heads/main"), "{recorded}");
+    }
+}

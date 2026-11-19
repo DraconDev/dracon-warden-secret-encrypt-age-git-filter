@@ -4939,6 +4939,7 @@ fn refresh_global_hooks_if_stale() -> Result<bool> {
         ("pre-commit", PRE_COMMIT_HOOK),
         ("pre-push", PRE_PUSH_HOOK),
         ("pre-rebase", PRE_REBASE_HOOK),
+        ("reference-transaction", REFERENCE_TRANSACTION_HOOK),
     ] {
         refreshed |= refresh_warden_hook_if_stale(&dir.join(name), template)?;
     }
@@ -5064,6 +5065,7 @@ fn install_hook_set(dir: &Path) -> Result<Vec<PathBuf>> {
         ("pre-commit", PRE_COMMIT_HOOK),
         ("pre-push", PRE_PUSH_HOOK),
         ("pre-rebase", PRE_REBASE_HOOK),
+        ("reference-transaction", REFERENCE_TRANSACTION_HOOK),
     ];
     let mut plans = Vec::with_capacity(specs.len());
 
@@ -5791,7 +5793,7 @@ canonical_secret_matches() {
 #  web/games/wip/fp-nocull/art-source/key-art/night-market-raw.png, in the
 #  unpushed dracon-platform commit c8d7eaf390 (blob f56618effbc2), is
 #  AI-generated key art (agnes_image, 768x768 RGB). The scan matched
-#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBod1M3NFVwcXBiQ2xPcGlzdHIxdmloaW5jVWhIaE4xcEhxZUUrTEN1RTNVCldVVS9KRzk1UC9nTFhZQlRpdG9mL0VQQjM5RCtTblRQK0FFa1RaZjZSck0KLT4gWDI1NTE5IE5uNVo5WHV0R3BkOWRKK08xRldnZmx5aERZQVpNSTRyeGgwalJub3RBQ2sKSmxwNGZjYlFvUnQxSXJ1VmdyY3BNNHowQkhPbk9zaXNJUkFLMHJuTDU2cwotPiBYMjU1MTkgZ1J4eS83UlF1WjAxUituRUpIK2hFU2h2Q0xWNlZ3MWRPZ3lZTFN4RkZ3bwp4cnh5RVlDZ0RrVUdKZUdpS2RpSUw5SmFpZ09ZVm5WdEFWZzZmRHNLV0lrCi0+IFgyNTUxOSB0bVZXR3R3MHNCSHViK2xqS0NvNk5tRWczRnhoSWVOcVJvZE1JTThSbEY0CklyaFo3c0R2dDRUU1IxRTd3N1hCeXIzMjMzdWJLaGhuWFQvZGhDWFU1Q00KLT4gWDI1NTE5IFBqcWZIbUJtaGdhUUE0bGQzV2xFdXRHRmxCVTVuZFZjbXFuOXRFYys2RDAKSnlBT29DNW1HYUhoVjRpcGNlZE4wRE1vZHJvRVBXcHRqVlBsbUh5L1lTUQotPiAoQS1ncmVhc2UgKyBJUnM9IiBQdU40IE8yCkhBM04rdjREZUI5WnZBcEN2RU9CbUw3SEpXZDdxN0pCVjBiZlBOZW5udmFyS05RQ3pwN2RyNXNRMzRCbEU0RWgKcmFKcng2b28wQUVuSVBycUgwOWpGQUxGSHZEK3hJYUs2cjFZNzV5TFFENAotLS0gZEdLNy92ZmN4QXpkY0JsaksxTGJ4MUw2NU5KajVSWEZ0MmptbWhRclZCOAqUBWa/pjcf6K7QUndW6trJC5c2jC3Rl0XB50IRuPeX0O8ThQOxN8tGneFmOcfUC00q4U4T]`: 20 bytes of compressed IDAT pixel data that happen
+#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCTWdJVEowMVBndjA4YnFBcGRRTUdTN1d0OUZhbnh4cmFFOFcyczR0SGlzCk1ScjRRQ1RSTUhLODl1UlgzVVFNaUFJQ1h0cFZHbE5ZWndveUl3TWtCWEkKLT4gWDI1NTE5IFpNa3FKdG0rek44WnNSdVVXSGZiRTBhWExBSWxuMnZRcXZuQzRwMndvR3cKalI1UmhmcGJ3cUZyYXJpZStYM3I5dmJqYlZydnJjVjVZVzNFamxKTWF4NAotPiBYMjU1MTkgbi9mWjMvZjFWWjF1dTZsUW5iZGFmVVFpRjJlcnZ5S093a2czdXRHUUhRQQpMS1dGaGxqQW92S2lrbCttWGJIOGpmakFxOC9FaWtQSkFHUGtUbHYrbWNRCi0+IFgyNTUxOSB1RU9tbElENUFCQng4T3NyeFR5WVArdUVsQnk5ZWZHbldzNGV0ZTVMdVJ3Cm4wRmlLQkxHQ2NHQUlnQUhJS3E3bXF2Y1JpS1FDYUVMcHJCOTlRWmo5QkUKLT4gWDI1NTE5IFJrVzZtL240RWlCZjZJdFBSa3NDdHZyVkVCek1kaGlKNDRjM3FoNUtuUW8KZ0g3eEg0SDlxNUpJZUVwR1Ztam5uSDVkYTNhSVQra0F2TmhLcENUMHlCVQotPiBqSi1ncmVhc2UgKnFaQiBjXUdlPjggVzIKd2EzaUQ1TWJZZngxcEpEMG80ZmVzZnJka2ZLdDZWZ1A1TCtodTU1WDZvR3NXVUVXZlJJdUlEUmVFMENTK0xNYQpOV0JOQXJ6dWkybwotLS0gZGwva1d6N2VPZWRwTWxSVWRjUU5tU0pkWkxPQ0RYUVdxd3MwQ01XcmxSNArw/MxYr2XMkQirLW+rQ+1zXgnaqB34iLXzqxhy6GKFXrqMHM1HX1KQLybKcksSJi13JtlP]`: 20 bytes of compressed IDAT pixel data that happen
 #  to satisfy AKIA[A-Z0-9]{16}. They are not an AWS access key. The blob was
 #  deleted inside the same unpushed range (commit 3303148766) and exists on
 #  no remote, so accepting it publishes nothing.
@@ -6246,6 +6248,100 @@ fi
 exit 0
 "#;
 
+/// ADDED 2026-11-19: refuse to move a local branch OFF a commit that is
+/// already published (present on any remote-tracking ref) unless the move is
+/// a fast-forward. This is the one guard that catches `git commit --amend`
+/// of a pushed commit, which no other hook sees: Git has no pre-amend hook,
+/// pre-rebase never fires, and pre-push only notices hours later when the
+/// divergence has hundreds of commits built on it.
+///
+/// INCIDENT (ai-auto-writer, 2026-11-18): the daemon pushed `c92fd27` at
+/// 23:39:44; an agent loop amended it at 23:39:47; 435 commits landed on the
+/// amended sibling and every push failed non-fast-forward for ~10h.
+///
+/// Scope, deliberately narrow so ordinary work never pays more than one
+/// `merge-base --is-ancestor` per updated branch:
+/// - only the `prepared` state can refuse; `committed`/`aborted` only chain;
+/// - only `refs/heads/*` (fetch, stash, tags, notes are untouched);
+/// - branch creation and deletion are untouched (an all-zero OLD id is
+///   "unverified update", not creation — the current value is resolved);
+/// - fast-forward moves pass immediately;
+/// - a non-fast-forward move passes when the OLD tip is unpublished
+///   (amending/resetting local-only work stays allowed).
+/// Bypass for sanctioned rewrites: DRACON_ALLOW_REWRITE=1 (the daemon's
+/// auto-repair sets it). Like pre-rebase, "published" means LOCAL
+/// remote-tracking refs; the daemon keeps them fresh.
+const REFERENCE_TRANSACTION_HOOK: &str = r#"#!/bin/sh
+# dracon-warden-managed-hook-v1
+# Dracon Warden — reference-transaction hook
+# Refuse moving a branch off an already-published commit (amend/reset/
+# branch -f after push). Installed by: dracon-warden setup-hooks
+# Bypass deliberately: DRACON_ALLOW_REWRITE=1 git ...
+STATE="$1"
+INPUT=$(cat)
+
+chain() {
+    # Chain the repository-local and any preserved foreign hook with the
+    # same state argument and the same ref stream.
+    GIT_COMMON_DIR=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+    LOCAL_HOOK="$GIT_COMMON_DIR/hooks/reference-transaction"
+    LOCAL_IS_WARDEN=0
+    grep -qE '^# dracon-warden-managed-hook-v[0-9]+$' "$LOCAL_HOOK" 2>/dev/null && LOCAL_IS_WARDEN=1
+    if [ -x "$LOCAL_HOOK" ] && [ "$LOCAL_IS_WARDEN" -eq 0 ]; then
+        printf '%s\n' "$INPUT" | "$LOCAL_HOOK" "$@" || return $?
+    fi
+    DRACON_FOREIGN_HOOK=__DRACON_FOREIGN_HOOK__
+    if [ -n "$DRACON_FOREIGN_HOOK" ] && [ -x "$DRACON_FOREIGN_HOOK" ]; then
+        printf '%s\n' "$INPUT" | "$DRACON_FOREIGN_HOOK" "$@" || return $?
+    fi
+    return 0
+}
+
+is_zero() {
+    case "$1" in
+        *[!0]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+if [ "$STATE" = "prepared" ] && [ -z "$DRACON_ALLOW_REWRITE" ] && [ -n "$INPUT" ]; then
+    # Read via a here-doc, not a pipe, so `exit 1` leaves the hook itself.
+    while read -r old new ref; do
+        case "$ref" in
+            refs/heads/*) ;;
+            *) continue ;;
+        esac
+        [ -z "$old" ] || [ -z "$new" ] && continue
+        # Deletions are untouched (the remote still holds the commit).
+        is_zero "$new" && continue
+        # An all-zero OLD id means "no expected old value" (e.g.
+        # `git branch -f`), NOT creation: resolve the current value, which
+        # is still visible in the prepared state. Unresolvable = creation.
+        if is_zero "$old"; then
+            old=$(git rev-parse --verify --quiet "$ref^{commit}" 2>/dev/null) || continue
+            [ -z "$old" ] && continue
+        fi
+        [ "$old" = "$new" ] && continue
+        git merge-base --is-ancestor "$old" "$new" 2>/dev/null && continue
+        published=$(git for-each-ref --count=1 --contains "$old" --format='%(refname:short)' refs/remotes 2>/dev/null)
+        [ -z "$published" ] && continue
+        branch=${ref#refs/heads/}
+        short=$(printf '%.12s' "$old")
+        echo "❌ dracon-warden: refusing to move $branch off $short — that commit is already published ($published)." >&2
+        echo "   This is an amend/reset/branch -f of pushed history; the auto-sync daemon has" >&2
+        echo "   (or will have) pushed it, so rewriting it diverges every mirror." >&2
+        echo "   Instead: make a NEW commit (fixup on top), or 'git revert' to undo." >&2
+        echo "   Bypass (operator-approved rewrites only): DRACON_ALLOW_REWRITE=1" >&2
+        exit 1
+    done <<EOF_REFS
+$INPUT
+EOF_REFS
+fi
+
+chain "$@" || exit $?
+exit 0
+"#;
+
 fn run_setup_hooks(mode: HookMode, repo: Option<&Path>) -> Result<()> {
     let dir = hook_dir(mode, repo)?;
     fs::create_dir_all(&dir)
@@ -6265,6 +6361,7 @@ fn run_setup_hooks(mode: HookMode, repo: Option<&Path>) -> Result<()> {
     let pre_commit_path = dir.join("pre-commit");
     let pre_push_path = dir.join("pre-push");
     let pre_rebase_path = dir.join("pre-rebase");
+    let reference_transaction_path = dir.join("reference-transaction");
 
     for name in [
         "pre-commit.pre-dracon",
@@ -6298,7 +6395,8 @@ fn run_setup_hooks(mode: HookMode, repo: Option<&Path>) -> Result<()> {
         let perms = fs::Permissions::from_mode(0o755);
         fs::set_permissions(&pre_commit_path, perms.clone())?;
         fs::set_permissions(&pre_push_path, perms.clone())?;
-        fs::set_permissions(&pre_rebase_path, perms)?;
+        fs::set_permissions(&pre_rebase_path, perms.clone())?;
+        fs::set_permissions(&reference_transaction_path, perms)?;
     }
 
     // Set core.hooksPath
@@ -6326,6 +6424,7 @@ fn run_setup_hooks(mode: HookMode, repo: Option<&Path>) -> Result<()> {
             println!("   pre-commit hook = blocks commits if warden filter is missing");
             println!("   pre-push hook   = scans secrets + blocks non-ff (history guard)");
             println!("   pre-rebase hook = blocks rebasing published commits (history guard)");
+            println!("   reference-transaction = blocks amend/reset of published commits (history guard)");
             println!();
             println!("   Next: commit a file with secrets to test the encryption filter");
         }
@@ -6457,6 +6556,10 @@ fn install_hooks_for_repo(repo: &Path) -> Result<()> {
     refresh_warden_hook_if_stale(&local_hooks_dir.join("pre-commit"), PRE_COMMIT_HOOK)?;
     refresh_warden_hook_if_stale(&local_hooks_dir.join("pre-push"), PRE_PUSH_HOOK)?;
     refresh_warden_hook_if_stale(&local_hooks_dir.join("pre-rebase"), PRE_REBASE_HOOK)?;
+    refresh_warden_hook_if_stale(
+        &local_hooks_dir.join("reference-transaction"),
+        REFERENCE_TRANSACTION_HOOK,
+    )?;
     if !same_path(&effective_hooks, &local_hooks_dir) {
         // Global or repo-local core.hooksPath is active.  Do not seed files
         // into an inactive directory; the effective wrapper is responsible
