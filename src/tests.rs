@@ -698,6 +698,85 @@ mod tests {
         );
     }
 
+    /// A commit that ADDS a gitlink (a submodule entry, mode 160000) must not
+    /// be refused by the added-blob scan.
+    ///
+    /// A gitlink holds no file content: the path resolves to a commit object
+    /// that lives in the SUBMODULE's repository, not in this one. The scan
+    /// used to hand the path to `git cat-file blob`, which cannot read it
+    /// ("expected blob, got commit" / "object not found"), and the hook
+    /// treated that failure as a refusal — so EVERY push that added a
+    /// submodule was blocked ("warden: blob scan failed"). Observed on the
+    /// platform repo when the typing-games game was converted to a submodule
+    /// (2026-11-20): the repo could not publish the conversion at all.
+    ///
+    /// The submodule's own repository runs this same hook over its own
+    /// content, so skipping the gitlink entry loses no coverage.
+    #[test]
+    fn pre_push_hook_allows_added_gitlink() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_gitlink");
+        let repo = td.path();
+
+        // A child repository supplies the submodule commit. Its object does
+        // NOT exist in the parent's object store — exactly the real shape.
+        let child = td.path().join("child");
+        fs::create_dir_all(&child).unwrap();
+        run_git_in(&child, &["init", "-q", "-b", "main"]);
+        run_git_in(&child, &["config", "user.email", "test@test.local"]);
+        run_git_in(&child, &["config", "user.name", "test"]);
+        fs::write(child.join("game.txt"), "game\n").unwrap();
+        run_git_in(&child, &["add", "game.txt"]);
+        run_git_in(&child, &["commit", "-q", "-m", "child"]);
+        let child_head = git_in_output(&child, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        fs::write(repo.join("hello.txt"), "hello world\n").unwrap();
+        run_git_in(repo, &["add", "hello.txt"]);
+        run_git_in(repo, &["commit", "-q", "-m", "init"]);
+        let base = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        // Record the child as a submodule entry (mode 160000) WITHOUT
+        // cloning it: `git update-index --cacheinfo` is how a gitlink is
+        // written, and it needs no local copy of the child.
+        run_git_in(
+            repo,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("160000,{child_head},games/child"),
+            ],
+        );
+        run_git_in(repo, &["commit", "-q", "-m", "add submodule"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+
+        // The entry really is a gitlink.
+        let tree_entry = git_in_output(repo, &["ls-tree", &head, "--", "games/child"]);
+        assert!(
+            tree_entry.starts_with("160000 commit "),
+            "fixture is not a gitlink: {}",
+            tree_entry.trim()
+        );
+
+        let (status, stderr) = run_hook(repo, &hook_path, &head, &base);
+        assert!(
+            status.success(),
+            "hook must not refuse a push that adds a gitlink, but exited with {:?}: {}",
+            status.code(),
+            stderr
+        );
+        assert!(
+            !stderr.contains("blob scan failed"),
+            "hook reported a blob scan failure for a gitlink: {}",
+            stderr
+        );
+    }
+
     /// A remote sha that is NOT in the local object store must not make the
     /// hook abort silently.
     ///
