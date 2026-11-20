@@ -5793,7 +5793,7 @@ canonical_secret_matches() {
 #  web/games/wip/fp-nocull/art-source/key-art/night-market-raw.png, in the
 #  unpushed dracon-platform commit c8d7eaf390 (blob f56618effbc2), is
 #  AI-generated key art (agnes_image, 768x768 RGB). The scan matched
-#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBoRUJZeGxmMy83Z2xCRGt4MjNFblVsYVg2bUJISGZucXl1TUs5cXB0MURRCmt0YThtOGk1Mk5uUjY1cmdUQzZzOXhnS0lrNEhjeFpwN04xejJyUlRsbzQKLT4gWDI1NTE5IGE0bk1QMFI2QVowdlJvQ1doWmV5V08yUDZwNUdON2c0ZkhEcXFmNWgxVDAKNVZsdGwvVC9KMVVVT0NzU1A2cGxHWlpBcXhWL0xqaTQ2bkF4T3FWcWY3bwotPiBYMjU1MTkgTEZjb2VyZVI1SVB0bjQxOEZSajlvTkdQUCtuN0c1VkpIY21NQVJzSVdqQQp6VmVyaDV1YVNoeVJzUVRnMnFyU0JjRnpnRGxZV0JtcVlEVlNZNEpTTlZJCi0+IFgyNTUxOSBUNnhaa0NIaUxNYkRrS0V3Z0VucVpPL2s5MHFuQ01yTU1Vc01BWXI2Q3hBCm1sbHJzbEMrNGtteXovUWFhd0pMV0Y2dGFaVmxJV0p5dStVQk8xZFdzTFUKLT4gWDI1NTE5IEJ0RlN6ZHhmdWhwNUpXYVNWanRHZkdjQmVPUHhITGFYdnlma3d4VTdrMk0KbGoyOVRKSnlHNEZKZlVkWXk1R1pzdXYzWWZYN05VaUVUMkdVUktoaElGZwotPiAtQnEwLWdyZWFzZQpITWVka3VpRFZ3MUozV2JYMGtNcFYwRVRmVWpGd2hRa2s2VHl5NThOdHRHaFlFeHZ2Znk3ZzlEYlY2NzdIZUJ3CmZlVDhMeWYvWXFyQmVUdVpySStDdkNmMTVnUTNPaEl2REEKLS0tICs5Vm1kUzhlYW1xYnYyRi9QbkI0QWVzQmxzL1NJQTdmREMvNS8zVDZnTkEKbCtmnxYn/wzMeAj4GReUltlipCFSpEOgqPeHU56XjWiF4kIo7EVcEe/UoHRMQRcpcf/fYw==]`: 20 bytes of compressed IDAT pixel data that happen
+#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBzTFNwSGpWUEZMSURWQko5YkhmWDFoa1NIR042Vmo0NG5iMncwNUtVY3l3CnZFTFRuNXMwanl5SU9jVmJtd01pUmpXdnBXRmllVnBLbUx6ZHBaZTJBZEEKLT4gWDI1NTE5IGNzSjlOQnRKVFNBaTA1cW5Ya2pLaTV1MGcvK21HUk4yWGpBNDBMNDlhaWcKb0ZwcXk4aUZDSTA3dkIrRmxRMWxNR0tpNGRtNUI4T0lsN3pGUmpkbVorMAotPiBYMjU1MTkgeFI0RWNwMUZZays4U1d6YnpXM1RvdndNWThONy9vSWRkL2hYdWowMVRSNApGamxRNzROM0FoMk5kMEJ2SW5lbkhNcUx6R3FOTVdLNWVqRlA1Vko1Ni8wCi0+IFgyNTUxOSBReEtCK04zVWhORTdRNGhzdjU1TFUvVlNWR3JVUEhtaGsxa05URk4vRndvCmFVWlNWNTlaV1ZURWpBNVZ6Wm5JY3A2ZGFDLzA0NTJDY3o5eVlPeVZNUDgKLT4gWDI1NTE5IGErTW1kSWJhV2FLaFJHcnd1TnM2U2JPbmdYQ1Q3dUR6UTVJVW1QNjZYbWcKR2hmVml5dUV6aVFqTXRNVko0WjFIZ3FoVjdvY1R0dnF1V2JlOVJpZkpOQQotPiBjLWdyZWFzZSBSVX1mSiBxeUc5PzkKQXVuZmVXYnEwbC8vdmtNWXAxcmx2QlA5Zm1raEFrYUxkMUtzSU9FKzJQdVNCaWd0TDNSWGt3RHg2b2E3YVEKLS0tIHBJR2JBM0NrVjBjTSt1S0drL3RTUGtxZnQ1Z0lTYmI5MVFmdWlpeXJtZmcKIpKt4Xtiyn6eOzGV1aP+IzoO6L8tZVlxWDkk5SztB4+gynjqswLOq36xA9oTj8VXG42x3A==]`: 20 bytes of compressed IDAT pixel data that happen
 #  to satisfy AKIA[A-Z0-9]{16}. They are not an AWS access key. The blob was
 #  deleted inside the same unpushed range (commit 3303148766) and exists on
 #  no remote, so accepting it publishes nothing.
@@ -6032,6 +6032,25 @@ while read local_ref local_sha remote_ref remote_sha; do
         # Skip files hatched via a `.plaintext` sibling, matching the
         # text scan above. Anchored to $REPO (R4-W-08), not CWD.
         [ -f "$REPO/$af.plaintext" ] && { echo "hatched: $af" >&2; continue; }
+        # ADDED 2026-11-20 (typing-games release): a GITLINK (a submodule
+        # entry, mode 160000) carries no blob to scan. `git cat-file blob`
+        # cannot read it — the path resolves to a commit object that lives
+        # in the SUBMODULE's repository, not here — so the scan failed with
+        # "expected blob, got commit" (or "object not found") and the hook
+        # treated that failure as a REFUSAL: every push that ADDED a
+        # submodule was blocked with "warden: blob scan failed", and the
+        # platform repo could not publish a game conversion at all
+        # (observed on web/games/released/typing-games, 2026-11-20).
+        # `git ls-tree` reads the tree entry's mode and type WITHOUT
+        # needing the submodule object to be present, so it is the only
+        # reliable probe here. Skipping the gitlink loses no coverage: a
+        # gitlink holds a commit SHA, never file content, and the
+        # submodule's own repository runs this same hook over its own
+        # content.
+        ADDED_TYPE=$(git ls-tree "$scan_commit" -- "$af" 2>/dev/null | awk 'NR==1 {print $2}')
+        if [ "$ADDED_TYPE" = commit ]; then
+            continue
+        fi
         MATCHES=$(blob_secret_matches "$scan_commit:$af") || { echo 'warden: blob scan failed' >&2; exit 1; }
         if [ -n "$MATCHES" ]; then
             # FIXED 2026-10-03 (audit L10): blob-novelty check — a blob
