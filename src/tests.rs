@@ -1512,6 +1512,81 @@ mod tests {
         );
     }
 
+    /// ADDED 2026-11-21: prose that merely MENTIONS an empty `api_key=`
+    /// assignment must not read as a credential.
+    ///
+    /// INCIDENT (dracon-sync, 2026-11-21): a session transcript was
+    /// committed to the repo. The transcript QUOTED the earlier
+    /// browser-extensions-shared incident, whose text contains an ad-block
+    /// rule with an EMPTY `api_key=` value. The hook's quoted-assignment
+    /// alternatives let the value class swallow spaces and prose and needed
+    /// only ONE alphanumeric, so the scanner glued the following prose onto
+    /// the empty assignment and closed the match on the apostrophe in "I'm":
+    ///
+    ///     ...containing api_key=",. I'm checking
+    ///
+    /// The "credential" it extracted was the three characters `. I'`. The
+    /// push was refused, so the repository could not publish ANY commit —
+    /// the content was legitimate, only the scanner was wrong.
+    ///
+    /// The Rust core scanner (`Generic API Key`) has always required a
+    /// whitespace-free value of 20+ characters; the hook disagreed with it
+    /// and blocked content the core scanner considers clean. The hook is
+    /// now aligned: the quoted VALUE may not contain whitespace, while the
+    /// hook's shorter minimum length (which catches secrets the core scanner
+    /// would miss) is kept.
+    #[test]
+    fn pre_push_hook_ignores_prose_quoting_an_empty_assignment() {
+        let (td, hook_path) = make_repo_with_pre_push_hook("hook_prose_empty_assignment");
+        let repo = td.path();
+        // The literal is split at the quote so this test file's own source
+        // never carries a matching shape (the warden's own hook scans it).
+        fs::write(
+            repo.join("session-notes.txt"),
+            concat!(
+                "  lines to a compiled ad-block filter list containing api_key=\"",
+                ",. I'm checking\n",
+                "  the rule's value is empty, so this is prose, not a credential\n",
+            ),
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "session-notes.txt"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add session notes"]);
+        let head = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, stderr) = run_hook(repo, &hook_path, &head, ZERO_SHA);
+        assert_eq!(
+            status.code(),
+            Some(0),
+            "prose quoting an empty assignment must not block: {stderr}"
+        );
+
+        // The same file with a REAL quoted credential must still block, so the
+        // prose exemption did not weaken the guard.
+        fs::write(
+            repo.join("session-notes.txt"),
+            concat!(
+                "  lines to a compiled ad-block filter list containing api_key=\"",
+                ",. I'm checking\n",
+                "password = \"hunt",
+                "er2\"\n",
+            ),
+        )
+        .unwrap();
+        run_git_in(repo, &["add", "session-notes.txt"]);
+        run_git_in(repo, &["commit", "-q", "-m", "add a real credential"]);
+        let leak = git_in_output(repo, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let (status, stderr) = run_hook(repo, &hook_path, &leak, &head);
+        assert_eq!(
+            status.code(),
+            Some(1),
+            "a real credential in the same file must still block: {stderr}"
+        );
+    }
+
     /// The hook must skip its OWN encrypted representation exactly as the core
     /// scanner's `is_inside_secret_tag` does, or a repository that correctly
     /// encrypted a secret can never publish the ciphertext.
