@@ -611,7 +611,10 @@ mod tests {
         )
         .unwrap();
         let (status, err) = run_hook(repo, &hook, head.trim(), ZERO_SHA);
-        assert!(!status.success(), "binary match accepted without blob binding");
+        assert!(
+            !status.success(),
+            "binary match accepted without blob binding"
+        );
         assert!(err.contains("binary-safe scan"), "{err}");
 
         // Control 3: a receipt bound to the exact blob but a DIFFERENT match
@@ -627,7 +630,10 @@ mod tests {
         )
         .unwrap();
         let (status, err) = run_hook(repo, &hook, head.trim(), ZERO_SHA);
-        assert!(!status.success(), "unreviewed match inherited the blob receipt");
+        assert!(
+            !status.success(),
+            "unreviewed match inherited the blob receipt"
+        );
         assert!(err.contains("binary-safe scan"), "{err}");
 
         // Acceptance: bind BOTH halves. The blob digest is over the stored
@@ -1809,12 +1815,18 @@ mod tests {
         assert_pre_push_blocks_content(
             "hook_token_inside_substitution",
             "rotate2.sh",
-            concat!("secret=\"$(echo gh", "p_abcdefghijklmnopqrstuvwxyz0123456789)\"\n"),
+            concat!(
+                "secret=\"$(echo gh",
+                "p_abcdefghijklmnopqrstuvwxyz0123456789)\"\n"
+            ),
         );
         assert_pre_push_blocks_content(
             "hook_quoted_token_inside_substitution",
             "rotate3.sh",
-            concat!("secret=\"$(printf '%s' 'gh", "p_abcdefghijklmnopqrstuvwxyz0123456789')\"\n"),
+            concat!(
+                "secret=\"$(printf '%s' 'gh",
+                "p_abcdefghijklmnopqrstuvwxyz0123456789')\"\n"
+            ),
         );
         assert_pre_push_blocks_content(
             "hook_literal_beside_substitution",
@@ -2506,10 +2518,16 @@ mod tests {
                 filter_clean_refusal_with_limit(true, limit + 1, None, limit, &[], &[], &[])
                     .is_some()
             );
-            assert!(
-                filter_clean_refusal_with_limit(true, 1, Some("../secret"), limit, &[], &[], &[])
-                    .is_some()
-            );
+            assert!(filter_clean_refusal_with_limit(
+                true,
+                1,
+                Some("../secret"),
+                limit,
+                &[],
+                &[],
+                &[]
+            )
+            .is_some());
         }
         for limit in [
             0,
@@ -3083,12 +3101,10 @@ mod tests {
             error.to_string().contains("target directory symlink"),
             "error should identify the rejected target directory: {error:#}"
         );
-        assert!(
-            fs::symlink_metadata(repo.join(".dracon"))
-                .expect("inspect directory link")
-                .file_type()
-                .is_symlink()
-        );
+        assert!(fs::symlink_metadata(repo.join(".dracon"))
+            .expect("inspect directory link")
+            .file_type()
+            .is_symlink());
         assert!(
             !external_dir.join("data").exists(),
             "publication must not create output below an external target directory"
@@ -5031,11 +5047,9 @@ watch_roots = ["/tmp/test"]
             started + std::time::Duration::from_millis(50),
         )
         .expect_err("resmudge apply must wait for the canonical metadata writer fence");
-        assert!(
-            error
-                .to_string()
-                .contains("canonical writer fence deadline expired")
-        );
+        assert!(error
+            .to_string()
+            .contains("canonical writer fence deadline expired"));
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         assert_eq!(
             fs::read(&metadata).expect("read canonical metadata"),
@@ -5097,16 +5111,14 @@ watch_roots = ["/tmp/test"]
         );
 
         drop(held);
-        assert!(
-            acquire_resmudge_metadata_fence_until(
-                &repo,
-                ".gitattributes",
-                true,
-                std::time::Instant::now() + std::time::Duration::from_secs(1),
-            )
-            .expect("fence reacquires after owner close")
-            .is_some()
-        );
+        assert!(acquire_resmudge_metadata_fence_until(
+            &repo,
+            ".gitattributes",
+            true,
+            std::time::Instant::now() + std::time::Duration::from_secs(1),
+        )
+        .expect("fence reacquires after owner close")
+        .is_some());
     }
 
     #[test]
@@ -7678,18 +7690,16 @@ mod binary_carve_out_tests {
         let protected = vec!["secrets/**".to_string()];
 
         // Unprotected: the carve-out applies (the D2 fix itself).
-        assert!(
-            filter_clean_refusal_with_limit(
-                true,
-                OVER,
-                Some("assets/dump.png"),
-                LIMIT,
-                &exempt(),
-                &[],
-                &[]
-            )
-            .is_none()
-        );
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("assets/dump.png"),
+            LIMIT,
+            &exempt(),
+            &[],
+            &[]
+        )
+        .is_none());
 
         // Same extension, same size, but under a protected directory:
         // the operator said "this path is sensitive", and that wins.
@@ -7756,61 +7766,53 @@ mod binary_carve_out_tests {
         let media = vec!["internal-dashboards/**".to_string()];
         // Opted-in: same extension, same size as the carve-out case,
         // but the operator asked for encryption — fail closed.
-        assert!(
-            filter_clean_refusal_with_limit(
-                true,
-                OVER,
-                Some("internal-dashboards/shot.png"),
-                LIMIT,
-                &exempt(),
-                &[],
-                &media,
-            )
-            .is_some()
-        );
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("internal-dashboards/shot.png"),
+            LIMIT,
+            &exempt(),
+            &[],
+            &media,
+        )
+        .is_some());
         // The option off (empty media list): the carve-out applies.
-        assert!(
-            filter_clean_refusal_with_limit(
-                true,
-                OVER,
-                Some("internal-dashboards/shot.png"),
-                LIMIT,
-                &exempt(),
-                &[],
-                &[],
-            )
-            .is_none()
-        );
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("internal-dashboards/shot.png"),
+            LIMIT,
+            &exempt(),
+            &[],
+            &[],
+        )
+        .is_none());
     }
 
     #[test]
     fn unknown_extension_is_not_exempt() {
         // `.bin` is exempt but `.weirdext` is not — the carve-out is an
         // explicit allowlist, not a "looks binary" heuristic.
-        assert!(
-            filter_clean_refusal_with_limit(
-                true,
-                OVER,
-                Some("a/b.bin"),
-                LIMIT,
-                &exempt(),
-                &[],
-                &[]
-            )
-            .is_none()
-        );
-        assert!(
-            filter_clean_refusal_with_limit(
-                true,
-                OVER,
-                Some("a/b.weirdext"),
-                LIMIT,
-                &exempt(),
-                &[],
-                &[]
-            )
-            .is_some()
-        );
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("a/b.bin"),
+            LIMIT,
+            &exempt(),
+            &[],
+            &[]
+        )
+        .is_none());
+        assert!(filter_clean_refusal_with_limit(
+            true,
+            OVER,
+            Some("a/b.weirdext"),
+            LIMIT,
+            &exempt(),
+            &[],
+            &[]
+        )
+        .is_some());
     }
 
     #[test]
@@ -7825,18 +7827,16 @@ mod binary_carve_out_tests {
 
     #[test]
     fn smudge_direction_is_never_refused() {
-        assert!(
-            filter_clean_refusal_with_limit(
-                false,
-                OVER,
-                Some("a/b.png"),
-                LIMIT,
-                &exempt(),
-                &[],
-                &[]
-            )
-            .is_none()
-        );
+        assert!(filter_clean_refusal_with_limit(
+            false,
+            OVER,
+            Some("a/b.png"),
+            LIMIT,
+            &exempt(),
+            &[],
+            &[]
+        )
+        .is_none());
     }
 
     // --- the generated .gitattributes block ----------------------------
@@ -8244,7 +8244,10 @@ mod reference_transaction_guard_tests {
         let repo = temp.path().join("repo");
         let hooks = temp.path().join("hooks");
         std::fs::create_dir_all(&hooks).unwrap();
-        git(temp.path(), &["init", "-q", "-b", "main", repo.to_str().unwrap()]);
+        git(
+            temp.path(),
+            &["init", "-q", "-b", "main", repo.to_str().unwrap()],
+        );
         for (key, value) in [
             ("user.email", "guard@test.local"),
             ("user.name", "guard"),
@@ -8253,7 +8256,10 @@ mod reference_transaction_guard_tests {
         ] {
             git(&repo, &["config", key, value]);
         }
-        write_exec(&hooks.join("reference-transaction"), REFERENCE_TRANSACTION_HOOK);
+        write_exec(
+            &hooks.join("reference-transaction"),
+            REFERENCE_TRANSACTION_HOOK,
+        );
         git(&repo, &["commit", "-q", "--allow-empty", "-m", "A"]);
         publish(&repo);
         Fixture { _temp: temp, repo }
@@ -8274,10 +8280,20 @@ mod reference_transaction_guard_tests {
         let before = head(&f.repo);
         let out = git_raw(
             &f.repo,
-            &["commit", "-q", "--amend", "--allow-empty", "-m", "A amended"],
+            &[
+                "commit",
+                "-q",
+                "--amend",
+                "--allow-empty",
+                "-m",
+                "A amended",
+            ],
             &[],
         );
-        assert!(!out.status.success(), "amend of a published commit must fail");
+        assert!(
+            !out.status.success(),
+            "amend of a published commit must fail"
+        );
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(stderr.contains("refusing to move main"), "stderr: {stderr}");
         assert!(stderr.contains("origin/main"), "names the remote: {stderr}");
@@ -8288,7 +8304,17 @@ mod reference_transaction_guard_tests {
     fn amend_of_unpublished_commit_is_allowed() {
         let f = fixture();
         git(&f.repo, &["commit", "-q", "--allow-empty", "-m", "B local"]);
-        git(&f.repo, &["commit", "-q", "--amend", "--allow-empty", "-m", "B reworded"]);
+        git(
+            &f.repo,
+            &[
+                "commit",
+                "-q",
+                "--amend",
+                "--allow-empty",
+                "-m",
+                "B reworded",
+            ],
+        );
         assert_eq!(git(&f.repo, &["log", "-1", "--format=%s"]), "B reworded");
     }
 
@@ -8314,12 +8340,18 @@ mod reference_transaction_guard_tests {
         publish(&f.repo);
         let before = head(&f.repo);
         let reset = git_raw(&f.repo, &["reset", "-q", "--hard", "HEAD~1"], &[]);
-        assert!(!reset.status.success(), "reset past a published commit must fail");
+        assert!(
+            !reset.status.success(),
+            "reset past a published commit must fail"
+        );
         assert_eq!(head(&f.repo), before);
 
         git(&f.repo, &["checkout", "-q", "--detach"]);
         let force = git_raw(&f.repo, &["branch", "-f", "main", "HEAD~1"], &[]);
-        assert!(!force.status.success(), "branch -f off a published tip must fail");
+        assert!(
+            !force.status.success(),
+            "branch -f off a published tip must fail"
+        );
         assert_eq!(git(&f.repo, &["rev-parse", "main"]), before);
     }
 
@@ -8328,7 +8360,14 @@ mod reference_transaction_guard_tests {
         let f = fixture();
         let out = git_raw(
             &f.repo,
-            &["commit", "-q", "--amend", "--allow-empty", "-m", "A sanctioned"],
+            &[
+                "commit",
+                "-q",
+                "--amend",
+                "--allow-empty",
+                "-m",
+                "A sanctioned",
+            ],
             &[("DRACON_ALLOW_REWRITE", "1")],
         );
         assert!(
@@ -8345,7 +8384,10 @@ mod reference_transaction_guard_tests {
         // A non-fast-forward move of a remote-tracking ref (what a fetch of a
         // force-pushed remote does) and of a tag must never be refused.
         git(&f.repo, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
-        git(&f.repo, &["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
+        git(
+            &f.repo,
+            &["update-ref", "refs/remotes/origin/main", "HEAD~1"],
+        );
         git(&f.repo, &["tag", "t1", "HEAD"]);
         git(&f.repo, &["tag", "-f", "t1", "HEAD~1"]);
     }

@@ -671,7 +671,11 @@ impl WardenPolicy {
         if self.protected_patterns.is_empty() {
             return Vec::new();
         }
-        let merged = self.protected_patterns.iter().cloned().collect::<BTreeSet<_>>();
+        let merged = self
+            .protected_patterns
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
         merged.into_iter().collect()
     }
 
@@ -2308,7 +2312,9 @@ pub(crate) fn run_keygen() -> Result<()> {
 
     let created = OffsetDateTime::now_local()
         .unwrap_or_else(|_| OffsetDateTime::now_utc())
-        .format(format_description!("[year]-[month]-[day] [hour]:[minute]:[second]"))
+        .format(format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second]"
+        ))
         .context("formatting key creation timestamp")?;
     let secret_content = Zeroizing::new(format!(
         "# created by dracon-warden keygen on {}\n# public key: {}\n# machine: {}\n{}\n",
@@ -5793,7 +5799,7 @@ canonical_secret_matches() {
 #  web/games/wip/fp-nocull/art-source/key-art/night-market-raw.png, in the
 #  unpushed dracon-platform commit c8d7eaf390 (blob f56618effbc2), is
 #  AI-generated key art (agnes_image, 768x768 RGB). The scan matched
-#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBxdnFLb25oSytsNWl3TGdIaXkzN0JlTC9ta1ZtQWRIWmQ1cUVSN1dYeVRvClkyWnphZnBFdFBkdU85QW4vODI4V3lqbE9vY0ZpZm50aXQrajB6UGpwS2cKLT4gWDI1NTE5IEsyZlEwUktaRDl0cUtBNFMyaHFxMTNycWVKeUhzK0tsaU9wTlNNckRCaDAKRk5EOEF2SjBRcytTN1VKZUtBREd5Tnd5UUJSVy9ITmFyYkJCaHNjT2FqcwotPiBYMjU1MTkgMWxpSi91NjdHS1UvWTU1QVFkM3NyQXJ1Y0RTeEJGbURWZy9vRThTNVBUawpUeFhZNmNuWVovQVpOTUtObWlkdG9yblJQOW0rVk41ektqNG5Kc1ZONmRrCi0+IFgyNTUxOSBpVVlNUkZUaWFEbnorN2tJaGtYbVplSENjN3pEYmkxcFlKRVhVTHYyVDI4ClhiY29lbGIrbmJTRTlmMHpleSt6RThid2pOWWRHaTdQRXZzU0VML1V6ckkKLT4gWDI1NTE5IFIxVGJ0Mml5ZWtBRkRLakVEYkpRUHZ4eDVIbGh4ZTdEcnFEc1BBZG1kd0EKZitpVWpmSmlPaFZXaTZLTFR0VXF0YysvMmRCdjhpSU56MlBUeVZkalFKOAotPiBbVH1PLWdyZWFzZQo5dE5NZjN2Rk0zemJjNk84N0dsVUJ4TWZXWEJzNFV3L2NaUDdwQVRHTUc3ZXN3Ci0tLSBtMFFKK2NCb0FPWGJ3dTlyOUxMMzBNSUdDWHUwU1lYK2xoNkxZM0xMN1NFCr4olWq1Mud9gV+QlEJenF41I4wnMioB8z7CSmyHjdjU7Tl9XiA5EpxVrW0u4wbV/ZumcEM=]`: 20 bytes of compressed IDAT pixel data that happen
+#  `[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBuSU5nK25wMFRlcFdCalN3ZERHQ3VUcFhFaTB3OC9nTVVaNWZNQzVKRFNVCkRiK09LdTE0THlIUGlLSkFYaXpqOW4wV1J6RXhkNnJOY3lucUsxbjBTRlEKLT4gWDI1NTE5IDhBSkRRcXhiY0diTzZiRlhXZFFHT0dYd05SSS9FblAwV3pBVmJCb2NyU0kKL25XTVhKRlg2L2c1MldLMkdsUlRPSjRwZUFnVWRXRXNCS2lMZnptR1RGTQotPiBYMjU1MTkgL3NQQ0hzUWtCNXdnakZOSFQwd3pMT2xzMFRzbS9BMDkydlpkYmNOc3NCZwp0RmdSUmtjYW5RZjlhWWVnNnRrMzhrdmdaZTYxd2hPdGtiZk12YVFmTjZzCi0+IFgyNTUxOSA1VGVmQlExMllzK2NPbVhLZUlIcXRsWlhsV0FFL3pCMzhGaTREbTduYm5rCnI5N3lialdjelFxMHpxZGgrMWx5RlNXTU52M3ZRbU4xbzZFbnpuMmpGSUUKLT4gWDI1NTE5IEh4TVdBcjhPNVMvVEhOc0c4NzZSa1kzbE9FZXZoM3dObVRPWE1oZjk0R2cKeFZrVUp6eVQ4Umd2WUhQZFR1YVMzYkg0MS9aYmdSNjlIdms4TmJVZ0FZZwotPiBNT2gtZ3JlYXNlIERSIT9DZTNTIE9RP29+MSB7MDEkIHoKdjQ5ZUFQTFN6QmNmR1VLTVJOaldIY3M4bi8zdURsU2Jsa0JCOXN4WEdTNXFaK0Q1YXRNaDA0bUVSSkRCRCsvRAplUmlpSVpaU1FaekgrcXJ1VlZXcwotLS0gRnNCSFdFYTRwaFM5TkZXQ0RSeW5EWis4WDhGS3E3UXJGeEMwUEhjRHVyUQqMu7skiFiR5x/4PDr4KdpPDbEXbuPPc5DADu9pIX19WOoYTiX88p+IwwZe7cuHKQWX2qZw]`: 20 bytes of compressed IDAT pixel data that happen
 #  to satisfy AKIA[A-Z0-9]{16}. They are not an AWS access key. The blob was
 #  deleted inside the same unpushed range (commit 3303148766) and exists on
 #  no remote, so accepting it publishes nothing.

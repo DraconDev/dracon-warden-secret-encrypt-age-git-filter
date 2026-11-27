@@ -89,21 +89,46 @@ fn newly_detected_secrets_in_index_force_reencryption() {
 fn inline_key_tag_with_exterior_newline_reuses_only_exact_plaintext_and_layout() {
     let s = security();
     let plain = format!(
-        "[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBRTnJEeVpNcTkvVUc1WUFUdEVObFZ5U1FXZ3k3SC9reUdaUlEvUzVKSVdVCkVKTHd2cXFvNTJSazRqKzRCZW1yVDZwR0U4cjZadGdXaHNxYUkza1JmTmcKLT4gWDI1NTE5IHJCQUFrS2ludGRDY0NYQVpmYTN0VDduNDRsNmRhekRneW1WTG9HaVVnQ00KaXlvZDR5Vk0vRE14cnlHc3dyTUlKR0lxbm9Td2paTEtPdmRoUVdMdFJsTQotPiBYMjU1MTkgVTRwbHdLZ01FdnhQY3lNTHdwV1Y5NzZlVE1oWkpmYmVwZWlhV0RvLzhEZwptUmJyTzRYb1hmekR5cWdyWUVNSWd5TUpYTzdlN2pwMGlscysyTGVJdWc4Ci0+IFgyNTUxOSAxakpSTUZ1Q0VNRld2RVRXZHR0MmYvNFV2OXpVcUw2eTJtVndVRnBKU2hvCithTjhIMjN4SkhzVlJMYVJzRlAzMGhyVWYwVmxTbDlxcDRRMTRuWmdmTDAKLT4gWDI1NTE5IE1UYUU1YVRpNXJEeUhJM3pTLzFBMnZ1OUIwaXZ3UzVTR0sreXpBRklhd0kKQUJIUXRaV011ZVpqdjZiM3RTQXBVcWVkblV5RzNXa0ZIeUdxZ3hTbXFwMAotPiBtRS1ncmVhc2UKZFVqMkFPU3JFUUx3c3FiRmNTZzU1WDhZd0hvM29WYytaMWg3ZnZsVlBFbnphVFFMMjBOMnFKYmdReS9xQ3gvSApVNTB1SEEKLS0tIFNCSWNvVXZyM0tmbkhGZGFodDNBWDJ3MXpmcmRTV0pmcUQyT3NSZXdmL2cKDbH9APRnzCY3qnCqAdUpQ82lvMewg7epMiScF59LM4F//b+PSjQ/h9vZuUrRYF8/nULLSCU9+KlDAw5OhDF3M1+t2hbNIrePMiI8ZDutuQK8qNfAZvbZdzrvC/m0Bn4nKzO3qLEecrBvUQ==]\n",
+        "[DRACON_SECRET:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2Q1hkcnVlSnFKaWhNWHhyNzFSakxsN0dnd3p0VU5BdWpBS2NDcjVtTEhFCjBPQng4T0l6ckJiemxXZG0wZ1FxMHFtTmdqdG5idE5LcWFzYlBsUVVtNE0KLT4gWDI1NTE5IGV3dkhhM0tKd0pMZXhTUWN2Qm5WSzR6QlJGaS90bWZCeUVXbkRJZUFjbFEKVFlPR0FiKyt4eVJFTFhvSXJlRFR3VmxJTlZxa2E2TXNXS25hL2NSb3R4OAotPiBYMjU1MTkgOW1NWjYwSlJsOVFGbzNmaFR4cGFJaXVPeGtoYXhkK1RZSlJSRW04RWdoZwpCY00xN2M3dUtUbEJFMzZJR0oraytsT1cxekJsRGkvWjN3ZFBlNFR0TWNFCi0+IFgyNTUxOSBKODFrSmpaS1BrNXo5SEdqcTNZYVp2SUNUaFBwUnR2VmxUTVlOQWRFekVvClpZWm1TMVhrRGJpV2pYQmVnOXB3a2xyK3ZQNG1RQVNqZksycThGYkZYc0kKLT4gWDI1NTE5IDRoMTNCdm5nWTlMZ0s2YTR4eWdIUGlYYjdZQTVyZlNFdEg5ME9RZDZ5elkKTHFGV3F3YnAwaDZoZTRGeWdCdXQyK214WTZSZWQ1L1YybHA3YmNtdGVHZwotPiBPXVc/SW4/LWdyZWFzZSBQCjJOQQotLS0gVS9tdURxY2I3VFBMSUtVQWFlMmRsUEhxZXl3UkE3ek1KMXJ1UXdpQjZ1OApEfDj3z8PMI1vTu45c1UYnJTFSoaslc2oJEHkaTcQkr7WVI1dg8cT4E661WOXndFZK0nvW9BY9kVbJQ9vQRiNUnKETKW+jzu00I9iQdV0ED9ECI4Ed9z7wmwWHkjskGRhtLsGhTUN5tKtO]\n",
         "QUJD".repeat(60)
     );
-    let old = s.smart_clean_with_path(plain.as_bytes(), "secrets/key").unwrap();
+    let old = s
+        .smart_clean_with_path(plain.as_bytes(), "secrets/key")
+        .unwrap();
     assert!(old.starts_with(b"[DRACON_SECRET:"));
-    assert!(old.ends_with(b"]\n"), "scanner keeps the PEM's exterior newline");
-    assert_eq!(s.smart_smudge(std::str::from_utf8(&old).unwrap()).unwrap(), plain);
-    assert_eq!(s.clean_reusing_index(plain.as_bytes(), "secrets/key", Some(&old)).unwrap(), old);
-    for edited in [plain.trim_end().to_string(), format!("{plain}\n"), plain.replace("QUJD", "REVG")] {
-        assert_ne!(s.clean_reusing_index(edited.as_bytes(), "secrets/key", Some(&old)).unwrap(), old,
-            "real content or exterior whitespace edits must remain visible");
+    assert!(
+        old.ends_with(b"]\n"),
+        "scanner keeps the PEM's exterior newline"
+    );
+    assert_eq!(
+        s.smart_smudge(std::str::from_utf8(&old).unwrap()).unwrap(),
+        plain
+    );
+    assert_eq!(
+        s.clean_reusing_index(plain.as_bytes(), "secrets/key", Some(&old))
+            .unwrap(),
+        old
+    );
+    for edited in [
+        plain.trim_end().to_string(),
+        format!("{plain}\n"),
+        plain.replace("QUJD", "REVG"),
+    ] {
+        assert_ne!(
+            s.clean_reusing_index(edited.as_bytes(), "secrets/key", Some(&old))
+                .unwrap(),
+            old,
+            "real content or exterior whitespace edits must remain visible"
+        );
     }
     let upgraded = s.with_managed_patterns(vec!["credentials".into()]);
-    assert_ne!(upgraded.clean_reusing_index(plain.as_bytes(), "credentials", Some(&old)).unwrap(), old,
-        "whole-file upgrade must move the exterior newline inside the encrypted payload");
+    assert_ne!(
+        upgraded
+            .clean_reusing_index(plain.as_bytes(), "credentials", Some(&old))
+            .unwrap(),
+        old,
+        "whole-file upgrade must move the exterior newline inside the encrypted payload"
+    );
 }
 
 #[test]
@@ -112,12 +137,37 @@ fn generated_env_header_does_not_reencrypt_an_unchanged_headerless_worktree() {
     let raw = b"PASSWORD=synthetic-example\n";
     let old = s.smart_clean_with_path(raw, "service/.env.dev").unwrap();
     assert!(old.starts_with(b"[DRACON_SECRET:"));
-    assert_eq!(s.clean_reusing_index(raw, "service/.env.dev", Some(&old)).unwrap(), old);
-    assert_ne!(s.clean_reusing_index(b"PASSWORD=changed-example\n", "service/.env.dev", Some(&old)).unwrap(), old);
+    assert_eq!(
+        s.clean_reusing_index(raw, "service/.env.dev", Some(&old))
+            .unwrap(),
+        old
+    );
+    assert_ne!(
+        s.clean_reusing_index(
+            b"PASSWORD=changed-example\n",
+            "service/.env.dev",
+            Some(&old)
+        )
+        .unwrap(),
+        old
+    );
     let managed = s.smart_smudge(std::str::from_utf8(&old).unwrap()).unwrap();
-    let bumped = s.smart_clean_with_path(managed.as_bytes(), "service/.env.dev").unwrap();
-    assert_eq!(s.clean_reusing_index(managed.as_bytes(), "service/.env.dev", Some(&bumped)).unwrap(), bumped);
-    for changed in [managed.replace("synthetic-example", "changed-example"), format!("{managed}\n")] {
-        assert_ne!(s.clean_reusing_index(changed.as_bytes(), "service/.env.dev", Some(&bumped)).unwrap(), bumped);
+    let bumped = s
+        .smart_clean_with_path(managed.as_bytes(), "service/.env.dev")
+        .unwrap();
+    assert_eq!(
+        s.clean_reusing_index(managed.as_bytes(), "service/.env.dev", Some(&bumped))
+            .unwrap(),
+        bumped
+    );
+    for changed in [
+        managed.replace("synthetic-example", "changed-example"),
+        format!("{managed}\n"),
+    ] {
+        assert_ne!(
+            s.clean_reusing_index(changed.as_bytes(), "service/.env.dev", Some(&bumped))
+                .unwrap(),
+            bumped
+        );
     }
 }
